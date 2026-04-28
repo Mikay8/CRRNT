@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Category } from "./category";
+import type { StorySentiment } from "./storySentiment";
+import type { Tweet } from "./tweet";
 
 export interface Story {
   articleId: string;
@@ -23,4 +25,12 @@ export interface Story {
   insight: string;
   /** Plain-language financial explanation written by Claude */
   explanation: string;
+  /** How this news affects regular people (consumers, workers, families) */
+  everydayImpact?: string;
+  /** AI-generated summary of tweet sentiment */
+  tweetSummary?: string;
+  /** Overall social media sentiment */
+  sentiment?: StorySentiment;
+  /** Top tweets related to this story */
+  tweets?: Tweet[];
 }

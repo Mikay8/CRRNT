@@ -161,6 +161,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /push-token:
+    post:
+      operationId: registerPushToken
+      tags: [admin]
+      summary: Register an Expo push token for a device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenRequest"
+      responses:
+        "200":
+          description: Token registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required:
+                  - ok
   /admin/status:
     get:
       operationId: getIngestionStatus
@@ -185,6 +208,67 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/IngestionStatus"
+  /admin/config:
+    get:
+      operationId: getAdminConfig
+      tags: [admin]
+      summary: Get current ingestion config
+      responses:
+        "200":
+          description: Config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionConfig"
+    post:
+      operationId: setAdminConfig
+      tags: [admin]
+      summary: Update ingestion config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestionConfig"
+      responses:
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionConfig"
+  /admin/stats:
+    get:
+      operationId: getAdminStats
+      tags: [admin]
+      summary: Get KV cache stats
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheStats"
+  /admin/stories:
+    delete:
+      operationId: deleteAllStories
+      tags: [admin]
+      summary: Delete all cached story data
+      responses:
+        "200":
+          description: Deletion result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  deleted:
+                    type: object
+                required:
+                  - ok
+                  - deleted
 components:
   schemas:
     HealthStatus:
@@ -198,6 +282,32 @@ components:
       type: string
       enum: [celebrity, tech, government, sports, business, science, entertainment]
       description: Marktr's editorial category
+    Tweet:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        author:
+          type: string
+          description: "@handle"
+        authorName:
+          type: string
+        url:
+          type: string
+        likes:
+          type: integer
+        retweets:
+          type: integer
+        createdAt:
+          type: string
+      required:
+        - id
+        - text
+        - author
+        - authorName
+        - url
     Story:
       type: object
       properties:
@@ -228,6 +338,21 @@ components:
         explanation:
           type: string
           description: Plain-language financial explanation written by Claude
+        everydayImpact:
+          type: string
+          description: How this news affects regular people (consumers, workers, families)
+        tweetSummary:
+          type: string
+          description: AI-generated summary of tweet sentiment
+        sentiment:
+          type: string
+          enum: [bullish, bearish, mixed, neutral]
+          description: Overall social media sentiment
+        tweets:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tweet"
+          description: Top tweets related to this story
       required:
         - articleId
         - title
@@ -368,6 +493,41 @@ components:
           type: string
       required:
         - state
+    IngestionConfig:
+      type: object
+      properties:
+        perCategory:
+          type: integer
+          minimum: 1
+          maximum: 25
+      required:
+        - perCategory
+    CacheStats:
+      type: object
+      properties:
+        stories:
+          type: integer
+        newsBatches:
+          type: integer
+        articles:
+          type: integer
+        stocks:
+          type: integer
+        pushTokens:
+          type: integer
+      required:
+        - stories
+        - newsBatches
+        - articles
+        - stocks
+        - pushTokens
+    PushTokenRequest:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
     ErrorResponse:
       type: object
       properties:

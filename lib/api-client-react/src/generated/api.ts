@@ -17,11 +17,16 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  CacheStats,
+  DeleteAllStories200,
   ErrorResponse,
   GetStockHistoryParams,
   HealthStatus,
+  IngestionConfig,
   IngestionStatus,
   ListStoriesParams,
+  PushTokenRequest,
+  RegisterPushToken200,
   SearchResponse,
   SearchStoriesParams,
   SimulateRequest,
@@ -584,6 +589,92 @@ export const useSimulateInvestment = <
 };
 
 /**
+ * @summary Register an Expo push token for a device
+ */
+export const getRegisterPushTokenUrl = () => {
+  return `/api/push-token`;
+};
+
+export const registerPushToken = async (
+  pushTokenRequest: PushTokenRequest,
+  options?: RequestInit,
+): Promise<RegisterPushToken200> => {
+  return customFetch<RegisterPushToken200>(getRegisterPushTokenUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(pushTokenRequest),
+  });
+};
+
+export const getRegisterPushTokenMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof registerPushToken>>,
+    TError,
+    { data: BodyType<PushTokenRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof registerPushToken>>,
+  TError,
+  { data: BodyType<PushTokenRequest> },
+  TContext
+> => {
+  const mutationKey = ["registerPushToken"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof registerPushToken>>,
+    { data: BodyType<PushTokenRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return registerPushToken(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RegisterPushTokenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof registerPushToken>>
+>;
+export type RegisterPushTokenMutationBody = BodyType<PushTokenRequest>;
+export type RegisterPushTokenMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Register an Expo push token for a device
+ */
+export const useRegisterPushToken = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof registerPushToken>>,
+    TError,
+    { data: BodyType<PushTokenRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof registerPushToken>>,
+  TError,
+  { data: BodyType<PushTokenRequest> },
+  TContext
+> => {
+  return useMutation(getRegisterPushTokenMutationOptions(options));
+};
+
+/**
  * @summary Get the latest ingestion status
  */
 export const getGetIngestionStatusUrl = () => {
@@ -737,4 +828,321 @@ export const useTriggerIngestion = <
   TContext
 > => {
   return useMutation(getTriggerIngestionMutationOptions(options));
+};
+
+/**
+ * @summary Get current ingestion config
+ */
+export const getGetAdminConfigUrl = () => {
+  return `/api/admin/config`;
+};
+
+export const getAdminConfig = async (
+  options?: RequestInit,
+): Promise<IngestionConfig> => {
+  return customFetch<IngestionConfig>(getGetAdminConfigUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAdminConfigQueryKey = () => {
+  return [`/api/admin/config`] as const;
+};
+
+export const getGetAdminConfigQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminConfig>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminConfig>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminConfigQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminConfig>>> = ({
+    signal,
+  }) => getAdminConfig({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminConfig>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAdminConfigQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminConfig>>
+>;
+export type GetAdminConfigQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get current ingestion config
+ */
+
+export function useGetAdminConfig<
+  TData = Awaited<ReturnType<typeof getAdminConfig>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminConfig>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAdminConfigQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update ingestion config
+ */
+export const getSetAdminConfigUrl = () => {
+  return `/api/admin/config`;
+};
+
+export const setAdminConfig = async (
+  ingestionConfig: IngestionConfig,
+  options?: RequestInit,
+): Promise<IngestionConfig> => {
+  return customFetch<IngestionConfig>(getSetAdminConfigUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(ingestionConfig),
+  });
+};
+
+export const getSetAdminConfigMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setAdminConfig>>,
+    TError,
+    { data: BodyType<IngestionConfig> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setAdminConfig>>,
+  TError,
+  { data: BodyType<IngestionConfig> },
+  TContext
+> => {
+  const mutationKey = ["setAdminConfig"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setAdminConfig>>,
+    { data: BodyType<IngestionConfig> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return setAdminConfig(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetAdminConfigMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setAdminConfig>>
+>;
+export type SetAdminConfigMutationBody = BodyType<IngestionConfig>;
+export type SetAdminConfigMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update ingestion config
+ */
+export const useSetAdminConfig = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setAdminConfig>>,
+    TError,
+    { data: BodyType<IngestionConfig> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setAdminConfig>>,
+  TError,
+  { data: BodyType<IngestionConfig> },
+  TContext
+> => {
+  return useMutation(getSetAdminConfigMutationOptions(options));
+};
+
+/**
+ * @summary Get KV cache stats
+ */
+export const getGetAdminStatsUrl = () => {
+  return `/api/admin/stats`;
+};
+
+export const getAdminStats = async (
+  options?: RequestInit,
+): Promise<CacheStats> => {
+  return customFetch<CacheStats>(getGetAdminStatsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAdminStatsQueryKey = () => {
+  return [`/api/admin/stats`] as const;
+};
+
+export const getGetAdminStatsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminStats>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminStats>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminStatsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminStats>>> = ({
+    signal,
+  }) => getAdminStats({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminStats>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAdminStatsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminStats>>
+>;
+export type GetAdminStatsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get KV cache stats
+ */
+
+export function useGetAdminStats<
+  TData = Awaited<ReturnType<typeof getAdminStats>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminStats>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAdminStatsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Delete all cached story data
+ */
+export const getDeleteAllStoriesUrl = () => {
+  return `/api/admin/stories`;
+};
+
+export const deleteAllStories = async (
+  options?: RequestInit,
+): Promise<DeleteAllStories200> => {
+  return customFetch<DeleteAllStories200>(getDeleteAllStoriesUrl(), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteAllStoriesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAllStories>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAllStories>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["deleteAllStories"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAllStories>>,
+    void
+  > = () => {
+    return deleteAllStories(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAllStoriesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAllStories>>
+>;
+
+export type DeleteAllStoriesMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete all cached story data
+ */
+export const useDeleteAllStories = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAllStories>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAllStories>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getDeleteAllStoriesMutationOptions(options));
 };

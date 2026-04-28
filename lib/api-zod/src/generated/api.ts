@@ -68,6 +68,35 @@ export const ListStoriesResponse = zod.object({
       explanation: zod
         .string()
         .describe("Plain-language financial explanation written by Claude"),
+      everydayImpact: zod
+        .string()
+        .optional()
+        .describe(
+          "How this news affects regular people (consumers, workers, families)",
+        ),
+      tweetSummary: zod
+        .string()
+        .optional()
+        .describe("AI-generated summary of tweet sentiment"),
+      sentiment: zod
+        .enum(["bullish", "bearish", "mixed", "neutral"])
+        .optional()
+        .describe("Overall social media sentiment"),
+      tweets: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            text: zod.string(),
+            author: zod.string().describe("@handle"),
+            authorName: zod.string(),
+            url: zod.string(),
+            likes: zod.number().optional(),
+            retweets: zod.number().optional(),
+            createdAt: zod.string().optional(),
+          }),
+        )
+        .optional()
+        .describe("Top tweets related to this story"),
     }),
   ),
   isStale: zod.boolean().optional(),
@@ -111,6 +140,35 @@ export const GetStoryResponse = zod.object({
   explanation: zod
     .string()
     .describe("Plain-language financial explanation written by Claude"),
+  everydayImpact: zod
+    .string()
+    .optional()
+    .describe(
+      "How this news affects regular people (consumers, workers, families)",
+    ),
+  tweetSummary: zod
+    .string()
+    .optional()
+    .describe("AI-generated summary of tweet sentiment"),
+  sentiment: zod
+    .enum(["bullish", "bearish", "mixed", "neutral"])
+    .optional()
+    .describe("Overall social media sentiment"),
+  tweets: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        text: zod.string(),
+        author: zod.string().describe("@handle"),
+        authorName: zod.string(),
+        url: zod.string(),
+        likes: zod.number().optional(),
+        retweets: zod.number().optional(),
+        createdAt: zod.string().optional(),
+      }),
+    )
+    .optional()
+    .describe("Top tweets related to this story"),
 });
 
 /**
@@ -170,6 +228,35 @@ export const SearchStoriesResponse = zod.object({
       explanation: zod
         .string()
         .describe("Plain-language financial explanation written by Claude"),
+      everydayImpact: zod
+        .string()
+        .optional()
+        .describe(
+          "How this news affects regular people (consumers, workers, families)",
+        ),
+      tweetSummary: zod
+        .string()
+        .optional()
+        .describe("AI-generated summary of tweet sentiment"),
+      sentiment: zod
+        .enum(["bullish", "bearish", "mixed", "neutral"])
+        .optional()
+        .describe("Overall social media sentiment"),
+      tweets: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            text: zod.string(),
+            author: zod.string().describe("@handle"),
+            authorName: zod.string(),
+            url: zod.string(),
+            likes: zod.number().optional(),
+            retweets: zod.number().optional(),
+            createdAt: zod.string().optional(),
+          }),
+        )
+        .optional()
+        .describe("Top tweets related to this story"),
     }),
   ),
 });
@@ -224,6 +311,17 @@ export const SimulateInvestmentResponse = zod.object({
 });
 
 /**
+ * @summary Register an Expo push token for a device
+ */
+export const RegisterPushTokenBody = zod.object({
+  token: zod.string(),
+});
+
+export const RegisterPushTokenResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
  * @summary Get the latest ingestion status
  */
 export const GetIngestionStatusResponse = zod.object({
@@ -233,4 +331,47 @@ export const GetIngestionStatusResponse = zod.object({
   startedAt: zod.string().optional(),
   finishedAt: zod.string().optional(),
   message: zod.string().optional(),
+});
+
+/**
+ * @summary Get current ingestion config
+ */
+export const getAdminConfigResponsePerCategoryMax = 25;
+
+export const GetAdminConfigResponse = zod.object({
+  perCategory: zod.number().min(1).max(getAdminConfigResponsePerCategoryMax),
+});
+
+/**
+ * @summary Update ingestion config
+ */
+export const setAdminConfigBodyPerCategoryMax = 25;
+
+export const SetAdminConfigBody = zod.object({
+  perCategory: zod.number().min(1).max(setAdminConfigBodyPerCategoryMax),
+});
+
+export const setAdminConfigResponsePerCategoryMax = 25;
+
+export const SetAdminConfigResponse = zod.object({
+  perCategory: zod.number().min(1).max(setAdminConfigResponsePerCategoryMax),
+});
+
+/**
+ * @summary Get KV cache stats
+ */
+export const GetAdminStatsResponse = zod.object({
+  stories: zod.number(),
+  newsBatches: zod.number(),
+  articles: zod.number(),
+  stocks: zod.number(),
+  pushTokens: zod.number(),
+});
+
+/**
+ * @summary Delete all cached story data
+ */
+export const DeleteAllStoriesResponse = zod.object({
+  ok: zod.boolean(),
+  deleted: zod.object({}).passthrough(),
 });

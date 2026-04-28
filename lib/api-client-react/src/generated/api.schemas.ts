@@ -24,6 +24,31 @@ export const Category = {
   entertainment: "entertainment",
 } as const;
 
+export interface Tweet {
+  id: string;
+  text: string;
+  /** @handle */
+  author: string;
+  authorName: string;
+  url: string;
+  likes?: number;
+  retweets?: number;
+  createdAt?: string;
+}
+
+/**
+ * Overall social media sentiment
+ */
+export type StorySentiment =
+  (typeof StorySentiment)[keyof typeof StorySentiment];
+
+export const StorySentiment = {
+  bullish: "bullish",
+  bearish: "bearish",
+  mixed: "mixed",
+  neutral: "neutral",
+} as const;
+
 export interface Story {
   articleId: string;
   title: string;
@@ -40,6 +65,14 @@ export interface Story {
   insight: string;
   /** Plain-language financial explanation written by Claude */
   explanation: string;
+  /** How this news affects regular people (consumers, workers, families) */
+  everydayImpact?: string;
+  /** AI-generated summary of tweet sentiment */
+  tweetSummary?: string;
+  /** Overall social media sentiment */
+  sentiment?: StorySentiment;
+  /** Top tweets related to this story */
+  tweets?: Tweet[];
 }
 
 export interface StoriesResponse {
@@ -109,6 +142,26 @@ export interface IngestionStatus {
   message?: string;
 }
 
+export interface IngestionConfig {
+  /**
+   * @minimum 1
+   * @maximum 25
+   */
+  perCategory: number;
+}
+
+export interface CacheStats {
+  stories: number;
+  newsBatches: number;
+  articles: number;
+  stocks: number;
+  pushTokens: number;
+}
+
+export interface PushTokenRequest {
+  token: string;
+}
+
 export interface ErrorResponse {
   message: string;
   code?: string;
@@ -153,3 +206,14 @@ export const GetStockHistoryRange = {
   "1y": "1y",
   "5y": "5y",
 } as const;
+
+export type RegisterPushToken200 = {
+  ok: boolean;
+};
+
+export type DeleteAllStories200Deleted = { [key: string]: unknown };
+
+export type DeleteAllStories200 = {
+  ok: boolean;
+  deleted: DeleteAllStories200Deleted;
+};

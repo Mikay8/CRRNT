@@ -12,12 +12,14 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import * as Speech from "expo-speech";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useGetStockHistory,
   useGetStory,
   type Story,
+  type Tweet,
 } from "@workspace/api-client-react";
 import palette from "@/constants/colors";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
@@ -30,11 +32,31 @@ import { formatRelativeTime, formatDateTime } from "@/utils/time";
 type StockRange = "1d" | "5d" | "1mo" | "1y";
 
 const RANGE_TABS: { label: string; value: StockRange; hint: string }[] = [
-  { label: "1D",  value: "1d",  hint: "Today" },
-  { label: "1W",  value: "5d",  hint: "This week" },
-  { label: "1M",  value: "1mo", hint: "30 days" },
-  { label: "1Y",  value: "1y",  hint: "1 year" },
+  { label: "1D", value: "1d",  hint: "Today" },
+  { label: "1W", value: "5d",  hint: "This week" },
+  { label: "1M", value: "1mo", hint: "30 days" },
+  { label: "1Y", value: "1y",  hint: "1 year" },
 ];
+
+const SENTIMENT_CONFIG = {
+  bullish: { label: "Bullish", color: palette.positive, icon: "trending-up" as const },
+  bearish: { label: "Bearish", color: palette.negative, icon: "trending-down" as const },
+  mixed:   { label: "Mixed",   color: "#FFB347",        icon: "swap-horizontal" as const },
+  neutral: { label: "Neutral", color: palette.textMuted, icon: "remove" as const },
+} as const;
+
+function buildSpeechText(story: Story): string {
+  const parts: string[] = [];
+  parts.push(story.title + ".");
+  if (story.everydayImpact) {
+    parts.push("Here's how it affects you. " + story.everydayImpact);
+  }
+  parts.push("How does it stocks? " + story.insight + ". " + story.explanation);
+  if (story.tweetSummary) {
+    parts.push("What people are saying. " + story.tweetSummary);
+  }
+  return parts.join(" ");
+}
 
 export default function StoryDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -42,6 +64,7 @@ export default function StoryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { saved } = useSavedStories();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const localFallback = saved.find((s) => s.articleId === id) ?? null;
 
@@ -60,6 +83,11 @@ export default function StoryDetailScreen() {
     { range: stockRange },
     { query: { enabled: !!ticker, staleTime: 5 * 60 * 1000 } as any }
   );
+
+  // Stop speech when screen unmounts
+  useEffect(() => {
+    return () => { Speech.stop(); };
+  }, []);
 
   const screenWidth = Dimensions.get("window").width;
   const hPad = Math.max(16, insets.left + 4);
@@ -102,12 +130,41 @@ export default function StoryDetailScreen() {
     if (story.link) Linking.openURL(story.link).catch(() => undefined);
   };
 
+  const openTweet = (url: string) => {
+    Haptics.selectionAsync().catch(() => undefined);
+    Linking.openURL(url).catch(() => undefined);
+  };
+
   const handleRangeChange = (r: StockRange) => {
     Haptics.selectionAsync().catch(() => undefined);
     setStockRange(r);
   };
 
+  const toggleAudio = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    if (isPlaying) {
+      await Speech.stop();
+      setIsPlaying(false);
+    } else {
+      const text = buildSpeechText(story);
+      setIsPlaying(true);
+      Speech.speak(text, {
+        language: "en-US",
+        rate: 0.9,
+        pitch: 1.0,
+        onDone: () => setIsPlaying(false),
+        onError: () => setIsPlaying(false),
+        onStopped: () => setIsPlaying(false),
+      });
+    }
+  };
+
   const activeTab = RANGE_TABS.find((t) => t.value === stockRange)!;
+  const tweets: Tweet[] = (story as any).tweets ?? [];
+  const tweetSummary: string | null = (story as any).tweetSummary ?? null;
+  const sentimentKey = ((story as any).sentiment ?? "neutral") as keyof typeof SENTIMENT_CONFIG;
+  const sentimentCfg = SENTIMENT_CONFIG[sentimentKey] ?? SENTIMENT_CONFIG.neutral;
+  const hasSocialData = tweetSummary || tweets.length > 0;
 
   return (
     <ScrollView
@@ -130,9 +187,28 @@ export default function StoryDetailScreen() {
       <View style={[styles.heroOverlay, { height: insets.top + 220 }]} />
 
       <View style={[styles.content, { marginTop: -50, paddingHorizontal: hPad }]}>
+        {/* Top row: category + action buttons */}
         <View style={styles.metaRow}>
           <CategoryBadge category={story.category} size="md" />
-          <SaveButton story={story} size={26} />
+          <View style={styles.actionButtons}>
+            {/* Audio play/stop button */}
+            <Pressable
+              onPress={toggleAudio}
+              style={({ pressed }) => [
+                styles.audioBtn,
+                isPlaying && styles.audioBtnActive,
+                { opacity: pressed ? 0.7 : 1 },
+              ]}
+              accessibilityLabel={isPlaying ? "Stop audio" : "Listen to story"}
+            >
+              <Ionicons
+                name={isPlaying ? "stop" : "volume-high"}
+                size={16}
+                color={isPlaying ? palette.bg : palette.accent}
+              />
+            </Pressable>
+            <SaveButton story={story} size={26} />
+          </View>
         </View>
 
         <Text style={styles.title}>{story.title}</Text>
@@ -148,18 +224,32 @@ export default function StoryDetailScreen() {
           </Text>
         </Pressable>
 
+        {/* ── How does it stocks? ──────────────────────────────────── */}
         <View style={styles.insightCard}>
-          <View style={styles.insightHeader}>
+          <View style={styles.sectionHeader}>
             <Ionicons name="sparkles" size={16} color={palette.accent} />
-            <Text style={styles.insightLabel}>Marktr take</Text>
+            <Text style={styles.sectionLabel}>How does it stocks?</Text>
           </View>
           <Text style={styles.insight}>{story.insight}</Text>
           <Text style={styles.explanation}>{story.explanation}</Text>
         </View>
 
+        {/* ── How does it affect me? ───────────────────────────────── */}
+        {story.everydayImpact ? (
+          <View style={[styles.insightCard, styles.impactCard]}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="people" size={16} color="#7B68EE" />
+              <Text style={[styles.sectionLabel, { color: "#7B68EE" }]}>
+                How does it affect me?
+              </Text>
+            </View>
+            <Text style={styles.impactText}>{story.everydayImpact}</Text>
+          </View>
+        ) : null}
+
+        {/* ── Stock chart ──────────────────────────────────────────── */}
         {ticker ? (
           <View style={styles.stockCard}>
-            {/* Header row: ticker + current price/delta */}
             <View style={styles.stockHeader}>
               <View>
                 <Text style={styles.tickerLabel}>${ticker}</Text>
@@ -186,7 +276,6 @@ export default function StoryDetailScreen() {
               ) : null}
             </View>
 
-            {/* Range tab selector */}
             <View style={styles.rangeTabs}>
               {RANGE_TABS.map((tab) => {
                 const isActive = tab.value === stockRange;
@@ -224,7 +313,6 @@ export default function StoryDetailScreen() {
               })}
             </View>
 
-            {/* Chart */}
             {stockQuery.isLoading ? (
               <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
                 <ActivityIndicator color={palette.textMuted} />
@@ -242,7 +330,6 @@ export default function StoryDetailScreen() {
               </View>
             )}
 
-            {/* Context hint */}
             {stock && story.publishedDate ? (
               <Text style={styles.chartHint}>
                 <Ionicons name="time-outline" size={11} color={palette.textDim} />{" "}
@@ -259,6 +346,87 @@ export default function StoryDetailScreen() {
           </View>
         )}
 
+        {/* ── What are people saying? ──────────────────────────────── */}
+        {hasSocialData ? (
+          <View style={[styles.insightCard, styles.socialCard]}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.xLogo}>𝕏</Text>
+              <Text style={[styles.sectionLabel, { color: "#1DA1F2" }]}>
+                What are people saying?
+              </Text>
+            </View>
+
+            {/* Sentiment badge */}
+            <View style={styles.sentimentRow}>
+              <View
+                style={[
+                  styles.sentimentBadge,
+                  { backgroundColor: sentimentCfg.color + "22", borderColor: sentimentCfg.color + "55" },
+                ]}
+              >
+                <Ionicons name={sentimentCfg.icon} size={13} color={sentimentCfg.color} />
+                <Text style={[styles.sentimentLabel, { color: sentimentCfg.color }]}>
+                  {sentimentCfg.label}
+                </Text>
+              </View>
+            </View>
+
+            {tweetSummary ? (
+              <Text style={styles.tweetSummary}>{tweetSummary}</Text>
+            ) : null}
+
+            {tweets.length > 0 ? (
+              <View style={styles.tweetList}>
+                {tweets.map((tweet) => (
+                  <Pressable
+                    key={tweet.id}
+                    onPress={() => openTweet(tweet.url)}
+                    style={({ pressed }) => [
+                      styles.tweetCard,
+                      { opacity: pressed ? 0.75 : 1 },
+                    ]}
+                  >
+                    <View style={styles.tweetHeader}>
+                      <View style={styles.tweetAvatar}>
+                        <Text style={styles.tweetAvatarText}>
+                          {tweet.authorName.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.tweetAuthorName} numberOfLines={1}>
+                          {tweet.authorName}
+                        </Text>
+                        <Text style={styles.tweetHandle} numberOfLines={1}>
+                          {tweet.author}
+                        </Text>
+                      </View>
+                      <Ionicons name="open-outline" size={12} color={palette.textDim} />
+                    </View>
+                    <Text style={styles.tweetText} numberOfLines={3}>
+                      {tweet.text}
+                    </Text>
+                    <View style={styles.tweetStats}>
+                      <View style={styles.tweetStat}>
+                        <Ionicons name="heart-outline" size={12} color={palette.textDim} />
+                        <Text style={styles.tweetStatText}>
+                          {formatCount(tweet.likes)}
+                        </Text>
+                      </View>
+                      <View style={styles.tweetStat}>
+                        <Ionicons name="repeat-outline" size={12} color={palette.textDim} />
+                        <Text style={styles.tweetStatText}>
+                          {formatCount(tweet.retweets)}
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* ── Read full story ──────────────────────────────────────── */}
         <Pressable
           onPress={openSource}
           style={({ pressed }) => [
@@ -279,24 +447,19 @@ function pctChange(start?: number, end?: number): string {
   return (((end - start) / start) * 100).toFixed(2);
 }
 
+function formatCount(n: number | undefined): string {
+  if (!n) return "0";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
+  return String(n);
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: palette.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: palette.bg },
-  hero: {
-    width: "100%",
-    height: 280,
-    backgroundColor: palette.surfaceHigh,
-  },
-  heroPlaceholder: {
-    backgroundColor: palette.surfaceHigh,
-  },
-  heroOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "transparent",
-  },
+  hero: { width: "100%", height: 280, backgroundColor: palette.surfaceHigh },
+  heroPlaceholder: { backgroundColor: palette.surfaceHigh },
+  heroOverlay: { position: "absolute", top: 0, left: 0, right: 0, backgroundColor: "transparent" },
   content: {
     gap: 16,
     backgroundColor: palette.bg,
@@ -304,10 +467,21 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingTop: 22,
   },
-  metaRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  metaRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  actionButtons: { flexDirection: "row", alignItems: "center", gap: 10 },
+  audioBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.border,
     alignItems: "center",
+    justifyContent: "center",
+  },
+  audioBtnActive: {
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
   },
   title: {
     fontFamily: "Inter_700Bold",
@@ -329,17 +503,31 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
   },
-  insightHeader: {
+  impactCard: {
+    borderColor: "#7B68EE44",
+    backgroundColor: "#7B68EE0A",
+  },
+  socialCard: {
+    borderColor: "#1DA1F233",
+    backgroundColor: "#1DA1F20A",
+  },
+  sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  insightLabel: {
+  sectionLabel: {
     fontFamily: "Inter_700Bold",
     fontSize: 12,
     color: palette.accent,
     letterSpacing: 1,
     textTransform: "uppercase",
+  },
+  xLogo: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#1DA1F2",
+    lineHeight: 18,
   },
   insight: {
     fontFamily: "Inter_700Bold",
@@ -354,6 +542,12 @@ const styles = StyleSheet.create({
     color: palette.textMuted,
     marginTop: 4,
   },
+  impactText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 15,
+    lineHeight: 22,
+    color: palette.text,
+  },
   stockCard: {
     backgroundColor: palette.surface,
     borderRadius: 18,
@@ -362,48 +556,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
   },
-  stockHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  tickerLabel: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 22,
-    color: palette.text,
-    letterSpacing: 0.5,
-  },
-  company: {
-    marginTop: 2,
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
-    color: palette.textMuted,
-  },
-  price: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 20,
-    color: palette.text,
-  },
-  delta: {
-    marginTop: 2,
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 13,
-  },
-  rangeTabs: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  rangeTab: {
-    flex: 1,
-    paddingVertical: 7,
-    borderRadius: 8,
-    alignItems: "center",
-    borderWidth: 1,
-  },
-  rangeTabLabel: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 12,
-  },
+  stockHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  tickerLabel: { fontFamily: "Inter_700Bold", fontSize: 22, color: palette.text, letterSpacing: 0.5 },
+  company: { marginTop: 2, fontFamily: "Inter_500Medium", fontSize: 12, color: palette.textMuted },
+  price: { fontFamily: "Inter_700Bold", fontSize: 20, color: palette.text },
+  delta: { marginTop: 2, fontFamily: "Inter_600SemiBold", fontSize: 13 },
+  rangeTabs: { flexDirection: "row", gap: 8 },
+  rangeTab: { flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: "center", borderWidth: 1 },
+  rangeTabLabel: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
   chartPlaceholder: {
     height: 160,
     alignItems: "center",
@@ -411,11 +571,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.bgElevated,
     borderRadius: 12,
   },
-  chartEmpty: {
-    fontFamily: "Inter_500Medium",
-    color: palette.textDim,
-    fontSize: 13,
-  },
+  chartEmpty: { fontFamily: "Inter_500Medium", color: palette.textDim, fontSize: 13 },
   chartHint: {
     fontFamily: "Inter_400Regular",
     fontSize: 11,
@@ -433,12 +589,50 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
   },
-  noTickerText: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 13,
-    color: palette.textMuted,
-    flex: 1,
+  noTickerText: { fontFamily: "Inter_500Medium", fontSize: 13, color: palette.textMuted, flex: 1 },
+  // Social / Twitter section
+  sentimentRow: { flexDirection: "row", alignItems: "center" },
+  sentimentBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    borderWidth: 1,
   },
+  sentimentLabel: { fontFamily: "Inter_700Bold", fontSize: 12 },
+  tweetSummary: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    lineHeight: 21,
+    color: palette.textMuted,
+  },
+  tweetList: { gap: 10, marginTop: 4 },
+  tweetCard: {
+    backgroundColor: palette.bgElevated,
+    borderRadius: 14,
+    padding: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  tweetHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  tweetAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#1DA1F233",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tweetAvatarText: { fontFamily: "Inter_700Bold", fontSize: 13, color: "#1DA1F2" },
+  tweetAuthorName: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: palette.text },
+  tweetHandle: { fontFamily: "Inter_400Regular", fontSize: 12, color: palette.textDim },
+  tweetText: { fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 19, color: palette.textMuted },
+  tweetStats: { flexDirection: "row", gap: 16 },
+  tweetStat: { flexDirection: "row", alignItems: "center", gap: 4 },
+  tweetStatText: { fontFamily: "Inter_400Regular", fontSize: 12, color: palette.textDim },
   sourceBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -451,9 +645,5 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     marginTop: 4,
   },
-  sourceBtnText: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 14,
-    color: palette.text,
-  },
+  sourceBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: palette.text },
 });

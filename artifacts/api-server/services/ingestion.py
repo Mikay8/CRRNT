@@ -1,7 +1,8 @@
 """Daily ingestion orchestration.
 
-Fetches news from NewsMesh, enriches with Claude, and stores in cache
+Fetches news from NewsMesh, enriches with Claude + X API, and stores in cache
 under news:YYYY-MM-DD plus a flat per-article index.
+Sends Expo push notification on successful completion.
 """
 from __future__ import annotations
 
@@ -10,11 +11,11 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
-from services import cache, enrichment, news_fetcher
+from services import cache, config as config_service, enrichment, news_fetcher, push
 
 log = logging.getLogger("marktr.ingestion")
 
-PER_CATEGORY = 10
+_DEFAULT_PER_CATEGORY = 10
 STATUS_KEY = "ingestion:status"
 NEWS_RETENTION_DAYS = 7
 ARTICLE_RETENTION_DAYS = 14
@@ -34,9 +35,7 @@ def article_key(article_id: str) -> str:
 
 
 def get_status() -> dict[str, Any]:
-    return cache.get(STATUS_KEY) or {
-        "state": "idle",
-    }
+    return cache.get(STATUS_KEY) or {"state": "idle"}
 
 
 def _set_status(status: dict[str, Any]) -> None:
@@ -45,7 +44,8 @@ def _set_status(status: dict[str, Any]) -> None:
 
 async def ensure_today_ingested(*, background: bool = True) -> None:
     """Ensure today's news batch is cached, ingesting in the background if not."""
-    if cache.get(news_key(_today())):
+    payload = cache.get(news_key(_today()))
+    if payload and payload.get("stories"):
         log.info("Today's news already cached")
         return
     status = get_status()
@@ -66,45 +66,64 @@ async def run_ingestion() -> dict[str, Any]:
         if existing.get("state") == "running" and existing.get("date") == today:
             return existing
 
+        cfg = config_service.get_config()
+        per_category = int(cfg.get("perCategory", _DEFAULT_PER_CATEGORY))
+
         status: dict[str, Any] = {
             "date": today,
             "state": "running",
             "storyCount": 0,
+            "perCategory": per_category,
             "startedAt": datetime.utcnow().isoformat() + "Z",
         }
         _set_status(status)
 
     try:
-        log.info("Ingestion starting for %s", today)
-        raw = await news_fetcher.fetch_all_categories(per_category=PER_CATEGORY)
+        log.info("Ingestion starting for %s (perCategory=%d)", today, per_category)
+        raw = await news_fetcher.fetch_all_categories(per_category=per_category)
         log.info("Fetched %d raw articles", len(raw))
 
         enriched = await enrichment.enrich_all(raw) if raw else []
 
-        cache.set(news_key(today), {
-            "date": today,
-            "totalCount": len(enriched),
-            "stories": enriched,
-        })
-        for story in enriched:
-            aid = story.get("articleId")
-            if aid:
-                cache.set(article_key(aid), story)
+        if enriched:
+            cache.set(news_key(today), {
+                "date": today,
+                "totalCount": len(enriched),
+                "stories": enriched,
+            })
+            for story in enriched:
+                aid = story.get("articleId")
+                if aid:
+                    cache.set(article_key(aid), story)
+        else:
+            log.warning("Ingestion produced 0 stories — preserving existing cache if present")
 
         status = {
             "date": today,
-            "state": "success",
+            "state": "success" if enriched else "empty",
             "storyCount": len(enriched),
+            "perCategory": per_category,
             "startedAt": status["startedAt"],
             "finishedAt": datetime.utcnow().isoformat() + "Z",
         }
         _set_status(status)
         log.info("Ingestion finished: %d stories", len(enriched))
+
         try:
             cleanup_old_cache()
         except Exception as exc:  # noqa: BLE001
             log.warning("Cache cleanup after ingestion failed: %s", exc)
+
+        try:
+            await push.send_push(
+                "Updated News",
+                f"{len(enriched)} fresh stories are ready for you.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Push notification after ingestion failed: %s", exc)
+
         return status
+
     except Exception as exc:  # noqa: BLE001
         log.exception("Ingestion failed: %s", exc)
         status = {
@@ -124,16 +143,12 @@ def get_today_payload() -> Optional[dict[str, Any]]:
 
 
 def get_latest_payload(max_lookback_days: int = NEWS_RETENTION_DAYS) -> Optional[dict[str, Any]]:
-    """Return today's payload if present, else the most recent cached batch.
-
-    Falls back up to ``max_lookback_days`` so that a transient provider
-    outage doesn't leave the feed empty.
-    """
+    """Return the most recent cached batch that contains at least one story."""
     today = date.today()
     for offset in range(max_lookback_days + 1):
         day = (today - timedelta(days=offset)).isoformat()
         payload = cache.get(news_key(day))
-        if payload:
+        if payload and payload.get("stories"):
             if offset > 0:
                 payload = {**payload, "isStale": True, "asOfDate": day}
             return payload
@@ -181,3 +196,33 @@ def cleanup_old_cache() -> dict[str, int]:
         deleted_articles,
     )
     return {"news": deleted_news, "articles": deleted_articles}
+
+
+def delete_all_stories() -> dict[str, int]:
+    """Delete all story-related cache entries (news + articles). Config and tokens preserved."""
+    deleted_news = 0
+    for key in cache.list_keys("news:"):
+        cache.delete(key)
+        deleted_news += 1
+
+    deleted_articles = 0
+    for key in cache.list_keys("article:"):
+        cache.delete(key)
+        deleted_articles += 1
+
+    log.info("Admin: deleted %d news + %d article cache entries", deleted_news, deleted_articles)
+    return {"news": deleted_news, "articles": deleted_articles}
+
+
+def get_cache_stats() -> dict[str, int]:
+    news_count = len(cache.list_keys("news:"))
+    articles_count = len(cache.list_keys("article:"))
+    stocks_count = len(cache.list_keys("stock:"))
+    push_tokens = push.token_count()
+    return {
+        "stories": articles_count,
+        "newsBatches": news_count,
+        "articles": articles_count,
+        "stocks": stocks_count,
+        "pushTokens": push_tokens,
+    }

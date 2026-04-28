@@ -1,8 +1,10 @@
 """Claude-powered enrichment for news stories.
 
-For each story we extract a primary stock ticker (or null), a short
-one-line insight, and a plain-language explanation aimed at young adults
-who are new to investing.
+Pass 1 — Claude extracts per story:
+  ticker, companyName, insight, explanation, everydayImpact, category
+
+Pass 2 — For stories with tweets from GetXAPI:
+  tweetSummary, sentiment  (via a second, lightweight Claude call)
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ log = logging.getLogger("marktr.enrichment")
 
 MODEL = "claude-haiku-4-5"
 MAX_CONCURRENCY = 5
+MAX_CONCURRENCY_TWEETS = 3
 
 _client: Optional[AsyncAnthropic] = None
 
@@ -44,6 +47,11 @@ SYSTEM_PROMPT = (
     "(2-3 sentences, max 320 characters) in plain language explaining how this "
     "news might affect that company or the broader market. Avoid jargon. Speak "
     "like a smart friend, not a finance textbook.\n\n"
+    "Write EVERYDAYIMPACT (2-3 sentences, max 350 characters): how this news "
+    "concretely affects regular people — consumers, workers, families, or "
+    "communities. Think prices, jobs, products, lifestyle changes. Make it "
+    "personal and relatable. Start with 'You' or 'If you' when possible. "
+    "Avoid finance jargon entirely.\n\n"
     "CATEGORY REFINEMENT: When the input category is 'celebrity', you must also "
     "classify the story. Set 'category' to 'celebrity' if the story is primarily "
     "about a specific famous person's life, relationships, fashion, or personal "
@@ -52,12 +60,22 @@ SYSTEM_PROMPT = (
     "franchise. For all other input categories, omit the 'category' field.\n\n"
     "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
     "with keys: ticker (string|null), companyName (string|null), "
-    "insight (string), explanation (string), category (string, optional)."
+    "insight (string), explanation (string), everydayImpact (string), "
+    "category (string, optional)."
+)
+
+SENTIMENT_SYSTEM_PROMPT = (
+    "You analyze social media sentiment about news stories. Given a set of "
+    "real tweets, write a brief, casual sentiment summary and classify the "
+    "overall mood. Be honest — if tweets are negative, say so.\n\n"
+    "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
+    "with keys: sentiment ('bullish'|'bearish'|'mixed'|'neutral'), "
+    "tweetSummary (string, 2-3 sentences, max 280 characters, casual tone)."
 )
 
 
 async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
-    """Enrich a single story with Claude. Returns the story dict in-place."""
+    """Pass 1: Enrich a single story with Claude. Returns story dict updated in-place."""
     title = story.get("title") or ""
     description = story.get("description") or ""
     category = story.get("category") or ""
@@ -75,7 +93,7 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
         client = _get_client()
         msg = await client.messages.create(
             model=MODEL,
-            max_tokens=400,
+            max_tokens=600,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
         )
@@ -113,6 +131,14 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
             "headlines like this in the days that follow."
         )
 
+    everyday_impact = (parsed.get("everydayImpact") or "").strip()
+    if not everyday_impact:
+        everyday_impact = (
+            "This story may have ripple effects that touch everyday life — "
+            "from prices at the checkout to job opportunities in the industry. "
+            "Keep an eye on how it develops."
+        )
+
     # Refine category for celebrity→entertainment split
     refined_cat = (parsed.get("category") or "").strip().lower()
     if refined_cat in ("celebrity", "entertainment") and story.get("category") == "celebrity":
@@ -122,6 +148,52 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     story["companyName"] = company_name
     story["insight"] = insight
     story["explanation"] = explanation
+    story["everydayImpact"] = everyday_impact
+    # Tweet fields — populated in Pass 2 if tweets are found
+    story.setdefault("tweetSummary", None)
+    story.setdefault("sentiment", None)
+    story.setdefault("tweets", [])
+    return story
+
+
+async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]]) -> dict[str, Any]:
+    """Pass 2: Analyze tweet sentiment with Claude. Mutates story in-place."""
+    if not tweets:
+        return story
+
+    title = story.get("title", "")
+    ticker = story.get("ticker", "")
+    tweets_text = "\n".join(
+        f"- @{t.get('authorName', '?')}: {t.get('text', '')} [♥{t.get('likes', 0)} 🔁{t.get('retweets', 0)}]"
+        for t in tweets[:5]
+    )
+
+    user_prompt = (
+        f"Article: {title}\n"
+        f"Ticker: {ticker or 'N/A'}\n\n"
+        f"Tweets:\n{tweets_text}\n\n"
+        "Reply with JSON only."
+    )
+
+    try:
+        client = _get_client()
+        msg = await client.messages.create(
+            model=MODEL,
+            max_tokens=200,
+            system=SENTIMENT_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        text = "".join(
+            block.text for block in msg.content if getattr(block, "type", "") == "text"
+        )
+        parsed = _parse_json(text)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Tweet sentiment failed for %s: %s", title[:60], exc)
+        parsed = {}
+
+    story["sentiment"] = parsed.get("sentiment") or "neutral"
+    story["tweetSummary"] = (parsed.get("tweetSummary") or "").strip() or None
+    story["tweets"] = tweets
     return story
 
 
@@ -154,11 +226,29 @@ def _fallback_insight(category: str, title: str) -> str:
 
 
 async def enrich_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Enrich a batch of stories in parallel with bounded concurrency."""
-    sem = asyncio.Semaphore(MAX_CONCURRENCY)
+    """Run both enrichment passes for all stories."""
+    from services import xapi  # avoid circular at module level
 
-    async def _bounded(story: dict[str, Any]) -> dict[str, Any]:
-        async with sem:
+    # Pass 1: Claude enrichment (ticker, insight, explanation, everydayImpact)
+    sem1 = asyncio.Semaphore(MAX_CONCURRENCY)
+
+    async def _bounded_enrich(story: dict[str, Any]) -> dict[str, Any]:
+        async with sem1:
             return await enrich_story(story)
 
-    return await asyncio.gather(*[_bounded(s) for s in stories])
+    enriched = await asyncio.gather(*[_bounded_enrich(s) for s in stories])
+
+    # Pass 2: Tweet fetch + sentiment (only for stories with tickers)
+    sem2 = asyncio.Semaphore(MAX_CONCURRENCY_TWEETS)
+
+    async def _bounded_tweets(story: dict[str, Any]) -> dict[str, Any]:
+        if not story.get("ticker"):
+            return story
+        async with sem2:
+            tweets = await xapi.fetch_story_tweets(story)
+            if tweets:
+                return await enrich_story_tweets(story, tweets)
+            return story
+
+    enriched = await asyncio.gather(*[_bounded_tweets(s) for s in enriched])
+    return list(enriched)

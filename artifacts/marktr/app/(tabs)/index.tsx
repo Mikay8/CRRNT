@@ -50,12 +50,16 @@ export default function FeedScreen() {
   const showEmpty = !isLoading && stories.length === 0;
   const showLoading = isLoading && stories.length === 0;
 
+  const hPad = Math.max(16, insets.left + 4);
+
   const listPadding = useMemo(
     () => ({
       paddingTop: insets.top + headerHeight,
-      paddingBottom: insets.bottom + (Platform.OS === "web" ? 100 : 100),
+      paddingBottom: insets.bottom + 100,
+      paddingLeft: insets.left,
+      paddingRight: insets.right,
     }),
-    [insets.top, insets.bottom]
+    [insets.top, insets.bottom, insets.left, insets.right]
   );
 
   return (
@@ -65,11 +69,13 @@ export default function FeedScreen() {
           styles.header,
           {
             paddingTop: (Platform.OS === "web" ? 16 : insets.top) + 8,
+            paddingLeft: Math.max(0, insets.left),
+            paddingRight: Math.max(0, insets.right),
             backgroundColor: palette.bg,
           },
         ]}
       >
-        <View style={styles.titleRow}>
+        <View style={[styles.titleRow, { paddingHorizontal: hPad }]}>
           <Text style={styles.brand}>Marktr</Text>
           {isFetching && stories.length > 0 ? (
             <ActivityIndicator size="small" color={palette.textDim} />
@@ -138,7 +144,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
     paddingBottom: 8,
   },
   brand: {

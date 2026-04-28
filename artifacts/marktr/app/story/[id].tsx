@@ -52,7 +52,8 @@ export default function StoryDetailScreen() {
   );
 
   const screenWidth = Dimensions.get("window").width;
-  const chartWidth = screenWidth - 64;
+  const hPad = Math.max(16, insets.left + 4);
+  const chartWidth = screenWidth - hPad * 2 - 32;
 
   if (isLoading && !story) {
     return (
@@ -96,6 +97,8 @@ export default function StoryDetailScreen() {
       style={styles.container}
       contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
       showsVerticalScrollIndicator={false}
+      scrollIndicatorInsets={{ top: insets.top, bottom: insets.bottom }}
+      automaticallyAdjustsScrollIndicatorInsets={false}
     >
       {story.mediaUrl ? (
         <Image
@@ -109,7 +112,7 @@ export default function StoryDetailScreen() {
 
       <View style={[styles.heroOverlay, { height: insets.top + 220 }]} />
 
-      <View style={[styles.content, { marginTop: -50 }]}>
+      <View style={[styles.content, { marginTop: -50, paddingHorizontal: hPad }]}>
         <View style={styles.metaRow}>
           <CategoryBadge category={story.category} size="md" />
           <SaveButton story={story} size={26} />
@@ -243,12 +246,11 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   content: {
-    paddingHorizontal: 16,
     gap: 16,
     backgroundColor: palette.bg,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingTop: 18,
+    paddingTop: 22,
   },
   metaRow: {
     flexDirection: "row",

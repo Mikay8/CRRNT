@@ -10,16 +10,22 @@ export default function SavedScreen() {
   const insets = useSafeAreaInsets();
   const { saved } = useSavedStories();
 
+  const hPad = Math.max(16, insets.left + 4);
+
   return (
     <View style={styles.container}>
       <View
         style={[
           styles.header,
-          { paddingTop: (Platform.OS === "web" ? 16 : insets.top) + 8 },
+          {
+            paddingTop: (Platform.OS === "web" ? 16 : insets.top) + 8,
+            paddingLeft: Math.max(0, insets.left),
+            paddingRight: Math.max(0, insets.right),
+          },
         ]}
       >
-        <Text style={styles.brand}>Saved</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.brand, { paddingHorizontal: hPad }]}>Saved</Text>
+        <Text style={[styles.subtitle, { paddingHorizontal: hPad }]}>
           {saved.length} {saved.length === 1 ? "story" : "stories"} you bookmarked
         </Text>
       </View>
@@ -31,6 +37,8 @@ export default function SavedScreen() {
         contentContainerStyle={{
           paddingTop: insets.top + 96,
           paddingBottom: insets.bottom + 100,
+          paddingLeft: insets.left,
+          paddingRight: insets.right,
         }}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
@@ -70,5 +78,6 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     fontSize: 13,
     color: palette.textMuted,
+    paddingBottom: 2,
   },
 });

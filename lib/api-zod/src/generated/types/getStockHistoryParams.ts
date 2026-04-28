@@ -5,7 +5,8 @@
  * Marktr API — news, stocks, and investment simulation
  * OpenAPI spec version: 0.1.0
  */
+import type { GetStockHistoryRange } from "./getStockHistoryRange";
 
-export interface HealthStatus {
-  status: string;
-}
+export type GetStockHistoryParams = {
+  range?: GetStockHistoryRange;
+};

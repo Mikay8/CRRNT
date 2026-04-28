@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface SimulateRequest {
+  ticker: string;
+  amount: number;
+  /** ISO date YYYY-MM-DD when the investment was made */
+  startDate: string;
 }

@@ -3,20 +3,25 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Marktr API — news, stocks, and investment simulation
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: news
+    description: Daily enriched news stories
+  - name: stocks
+    description: Stock price data
+  - name: admin
+    description: Ingestion / admin controls
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +29,133 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /news:
+    get:
+      operationId: listStories
+      tags: [news]
+      summary: List today's enriched stories
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Category"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: List of stories
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoriesResponse"
+  /news/{articleId}:
+    get:
+      operationId: getStory
+      tags: [news]
+      summary: Get a single enriched story by id
+      parameters:
+        - name: articleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Story
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Story"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /stock/{ticker}:
+    get:
+      operationId: getStockHistory
+      tags: [stocks]
+      summary: Get cached daily price history for a ticker
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [1mo, 3mo, 6mo, 1y, 5y]
+      responses:
+        "200":
+          description: Stock price history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockHistory"
+        "404":
+          description: Ticker not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /simulate:
+    post:
+      operationId: simulateInvestment
+      tags: [stocks]
+      summary: Simulate a hypothetical investment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulateRequest"
+      responses:
+        "200":
+          description: Simulation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulateResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/status:
+    get:
+      operationId: getIngestionStatus
+      tags: [admin]
+      summary: Get the latest ingestion status
+      responses:
+        "200":
+          description: Ingestion status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionStatus"
+  /admin/refresh:
+    post:
+      operationId: triggerIngestion
+      tags: [admin]
+      summary: Trigger ingestion of today's news (runs in background)
+      responses:
+        "202":
+          description: Ingestion accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionStatus"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +165,167 @@ components:
           type: string
       required:
         - status
-
+    Category:
+      type: string
+      enum: [celebrity, tech, government, sports]
+      description: Marktr's editorial category
+    Story:
+      type: object
+      properties:
+        articleId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        link:
+          type: string
+        mediaUrl:
+          type: string
+        publishedDate:
+          type: string
+        source:
+          type: string
+        category:
+          $ref: "#/components/schemas/Category"
+        ticker:
+          type: string
+          description: Primary stock ticker mentioned or implied (null if none)
+        companyName:
+          type: string
+        insight:
+          type: string
+          description: One-line financial insight written by Claude
+        explanation:
+          type: string
+          description: Plain-language financial explanation written by Claude
+      required:
+        - articleId
+        - title
+        - link
+        - publishedDate
+        - source
+        - category
+        - insight
+        - explanation
+    StoriesResponse:
+      type: object
+      properties:
+        date:
+          type: string
+        totalCount:
+          type: integer
+        stories:
+          type: array
+          items:
+            $ref: "#/components/schemas/Story"
+      required:
+        - date
+        - totalCount
+        - stories
+    StockPricePoint:
+      type: object
+      properties:
+        date:
+          type: string
+        close:
+          type: number
+      required:
+        - date
+        - close
+    StockHistory:
+      type: object
+      properties:
+        ticker:
+          type: string
+        currency:
+          type: string
+        range:
+          type: string
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/StockPricePoint"
+        latestPrice:
+          type: number
+        previousClose:
+          type: number
+        cachedAt:
+          type: string
+      required:
+        - ticker
+        - range
+        - points
+        - cachedAt
+    SimulateRequest:
+      type: object
+      properties:
+        ticker:
+          type: string
+        amount:
+          type: number
+        startDate:
+          type: string
+          description: ISO date YYYY-MM-DD when the investment was made
+      required:
+        - ticker
+        - amount
+        - startDate
+    SimulateResponse:
+      type: object
+      properties:
+        ticker:
+          type: string
+        startDate:
+          type: string
+        amount:
+          type: number
+        startPrice:
+          type: number
+        currentPrice:
+          type: number
+        sharesPurchased:
+          type: number
+        currentValue:
+          type: number
+        profitLoss:
+          type: number
+        percentChange:
+          type: number
+      required:
+        - ticker
+        - startDate
+        - amount
+        - startPrice
+        - currentPrice
+        - sharesPurchased
+        - currentValue
+        - profitLoss
+        - percentChange
+    IngestionStatus:
+      type: object
+      properties:
+        date:
+          type: string
+        state:
+          type: string
+          enum: [idle, running, success, error]
+        storyCount:
+          type: integer
+        startedAt:
+          type: string
+        finishedAt:
+          type: string
+        message:
+          type: string
+      required:
+        - state
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+      required:
+        - message

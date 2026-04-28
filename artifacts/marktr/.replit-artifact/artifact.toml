@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "Marktr"
+version = "1.0.0"
+id = "artifacts/marktr"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 20256
+
+[services.development]
+run = "pnpm --filter @workspace/marktr run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/marktr", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/marktr", "run", "serve" ]
+
+[services.env]
+PORT = "20256"
+BASE_PATH = "/"

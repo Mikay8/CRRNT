@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "jWeATstLuKdIIejUIOAV6"
+uri = "file://artifacts/marktr/assets/images/icon.png"
+type = "image"
+title = "marktr app icon"

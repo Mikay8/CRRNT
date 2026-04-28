@@ -5,7 +5,10 @@
  * Marktr API — news, stocks, and investment simulation
  * OpenAPI spec version: 0.1.0
  */
+import type { Story } from "./story";
 
-export interface HealthStatus {
-  status: string;
+export interface StoriesResponse {
+  date: string;
+  totalCount: number;
+  stories: Story[];
 }

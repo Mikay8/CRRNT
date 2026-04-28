@@ -8,7 +8,7 @@ from services import ingestion
 
 router = APIRouter(tags=["news"])
 
-ALLOWED_CATEGORIES = {"celebrity", "tech", "government", "sports"}
+ALLOWED_CATEGORIES = {"celebrity", "tech", "government", "sports", "business", "science"}
 
 
 @router.get("/news")
@@ -53,3 +53,36 @@ async def get_story(article_id: str) -> dict:
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     return story
+
+
+@router.get("/search")
+async def search_stories(
+    q: str = Query(..., min_length=1, max_length=200, description="Search query"),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> dict:
+    """Full-text search across all fields of today's cached stories."""
+    payload = ingestion.get_latest_payload()
+    if not payload:
+        return {"query": q, "totalCount": 0, "stories": []}
+
+    needle = q.strip().lower()
+    results = []
+    for s in payload.get("stories", []):
+        haystack = " ".join(filter(None, [
+            s.get("title"),
+            s.get("description"),
+            s.get("insight"),
+            s.get("explanation"),
+            s.get("source"),
+            s.get("ticker"),
+            s.get("companyName"),
+            s.get("category"),
+        ])).lower()
+        if needle in haystack:
+            results.append(s)
+
+    return {
+        "query": q,
+        "totalCount": len(results),
+        "stories": results[:limit],
+    }

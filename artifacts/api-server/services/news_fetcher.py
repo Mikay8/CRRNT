@@ -25,9 +25,11 @@ CATEGORY_MAP: dict[str, str] = {
     "tech": "technology",
     "government": "politics",
     "sports": "sports",
+    "business": "business",
+    "science": "science",
 }
 
-ALL_CATEGORIES: list[str] = ["celebrity", "tech", "government", "sports"]
+ALL_CATEGORIES: list[str] = ["celebrity", "tech", "government", "sports", "business", "science"]
 
 
 class NewsmeshError(RuntimeError):

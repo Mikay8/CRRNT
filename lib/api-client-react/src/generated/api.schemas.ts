@@ -19,6 +19,8 @@ export const Category = {
   tech: "tech",
   government: "government",
   sports: "sports",
+  business: "business",
+  science: "science",
 } as const;
 
 export interface Story {
@@ -41,6 +43,14 @@ export interface Story {
 
 export interface StoriesResponse {
   date: string;
+  totalCount: number;
+  stories: Story[];
+  isStale?: boolean;
+  asOfDate?: string;
+}
+
+export interface SearchResponse {
+  query: string;
   totalCount: number;
   stories: Story[];
 }
@@ -108,6 +118,20 @@ export type ListStoriesParams = {
   /**
    * @minimum 1
    * @maximum 200
+   */
+  limit?: number;
+};
+
+export type SearchStoriesParams = {
+  /**
+   * Search query (matches title, description, insight, ticker, source)
+   * @minLength 1
+   * @maxLength 200
+   */
+  q: string;
+  /**
+   * @minimum 1
+   * @maximum 100
    */
   limit?: number;
 };

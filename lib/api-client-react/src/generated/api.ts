@@ -22,6 +22,8 @@ import type {
   HealthStatus,
   IngestionStatus,
   ListStoriesParams,
+  SearchResponse,
+  SearchStoriesParams,
   SimulateRequest,
   SimulateResponse,
   StockHistory,
@@ -284,6 +286,100 @@ export function useGetStory<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetStoryQueryOptions(articleId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Full-text search across today's stories
+ */
+export const getSearchStoriesUrl = (params: SearchStoriesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/search?${stringifiedParams}`
+    : `/api/search`;
+};
+
+export const searchStories = async (
+  params: SearchStoriesParams,
+  options?: RequestInit,
+): Promise<SearchResponse> => {
+  return customFetch<SearchResponse>(getSearchStoriesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getSearchStoriesQueryKey = (params?: SearchStoriesParams) => {
+  return [`/api/search`, ...(params ? [params] : [])] as const;
+};
+
+export const getSearchStoriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchStories>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchStoriesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchStories>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getSearchStoriesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchStories>>> = ({
+    signal,
+  }) => searchStories(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchStories>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type SearchStoriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchStories>>
+>;
+export type SearchStoriesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Full-text search across today's stories
+ */
+
+export function useSearchStories<
+  TData = Awaited<ReturnType<typeof searchStories>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchStoriesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchStories>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getSearchStoriesQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

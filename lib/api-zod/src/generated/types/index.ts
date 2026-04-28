@@ -14,6 +14,8 @@ export * from "./healthStatus";
 export * from "./ingestionStatus";
 export * from "./ingestionStatusState";
 export * from "./listStoriesParams";
+export * from "./searchResponse";
+export * from "./searchStoriesParams";
 export * from "./simulateRequest";
 export * from "./simulateResponse";
 export * from "./stockHistory";

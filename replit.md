@@ -1,6 +1,6 @@
 # Marktr
 
-A finance-meets-pop-culture mobile app for young adults. Discover trending news in Celebrity, Tech, Government, and Sports — every story is paired with a relevant public stock ticker, an AI-written market insight, a price chart, and a "What If I had invested?" simulator.
+A finance-meets-pop-culture mobile app for young adults. Discover trending news in Celebrity, Tech, Government, Sports, Business, and Science — every story is paired with a relevant public stock ticker, an AI-written market insight, a price chart, and a "What If I had invested?" simulator.
 
 ## Architecture
 
@@ -21,13 +21,13 @@ Plus internal tooling:
 - **Entrypoint**: `main.py` mounts routers under `/api`
 - **Routers**: `routes/{health,news,stocks,admin}.py`
 - **Services**:
-  - `services/news_fetcher.py` — calls NewsMesh `/v1/latest` once per category sequentially (1.5s spacing) to avoid rate limit. Maps editorial categories: celebrity→entertainment, tech→technology, government→politics, sports→sports.
+  - `services/news_fetcher.py` — calls NewsMesh `/v1/latest` once per category sequentially (1.5s spacing) to avoid rate limit. Maps editorial categories: celebrity→entertainment, tech→technology, government→politics, sports→sports, business→business, science→science.
   - `services/enrichment.py` — Claude `claude-haiku-4-5` enriches each article with `{ticker, companyName, insight, explanation}`. Concurrency capped at 5; falls back to a generic insight on failure.
   - `services/stock_service.py` — yfinance for historical OHLC and the simulate endpoint. Returns `latestPrice` / `previousClose` at the top level, `points: [{date, close}]` for the chart.
   - `services/cache.py` — Replit DB HTTP wrapper with in-memory fallback. Keys: `news:YYYY-MM-DD`, `article:{id}`, `stock:{TICKER}:{range}:{date}`, `ingestion:status`.
   - `services/ingestion.py` — orchestrates fetch + enrich, persists daily news payload.
   - `services/scheduler.py` — APScheduler daily 8 AM ET; lifespan hook also ensures today's news is cached on startup.
-- **Endpoints**: `/api/healthz`, `/api/news`, `/api/news/{id}`, `/api/stock/{ticker}`, `/api/simulate`, `/api/admin/status`, `/api/admin/refresh`
+- **Endpoints**: `/api/healthz`, `/api/news`, `/api/news/{id}`, `/api/search?q=<query>`, `/api/stock/{ticker}`, `/api/simulate`, `/api/admin/status`, `/api/admin/refresh`
 
 ## Frontend (`artifacts/marktr`)
 

@@ -1,17 +1,21 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Platform,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import { Ionicons } from "@expo/vector-icons";
 import {
   useListStories,
+  useSearchStories,
   useTriggerIngestion,
   type Story,
 } from "@workspace/api-client-react";
@@ -24,16 +28,49 @@ import type { Category } from "@/constants/categories";
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [category, setCategory] = useState<Category | null>(null);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearchChange = (text: string) => {
+    setSearchQuery(text);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => setDebouncedQuery(text.trim()), 300);
+  };
+
+  const isSearchActive = searchVisible && debouncedQuery.length >= 1;
 
   const { data, isLoading, isFetching, refetch, error } = useListStories(
     category ? { category } : undefined,
-    { query: { staleTime: 60_000 } }
+    { query: { staleTime: 60_000, enabled: !isSearchActive } as any }
+  );
+
+  const { data: searchData, isFetching: searchFetching } = useSearchStories(
+    { q: debouncedQuery || " " },
+    { query: { staleTime: 30_000, enabled: isSearchActive } as any }
   );
 
   const triggerIngestion = useTriggerIngestion();
 
-  const stories: Story[] = data?.stories ?? [];
+  const stories: Story[] = isSearchActive
+    ? (searchData?.stories ?? [])
+    : (data?.stories ?? []);
+
   const headerHeight = 96;
+
+  const openSearch = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    setSearchVisible(true);
+    setSearchQuery("");
+    setDebouncedQuery("");
+  };
+
+  const closeSearch = () => {
+    setSearchVisible(false);
+    setSearchQuery("");
+    setDebouncedQuery("");
+  };
 
   const handleRefresh = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
@@ -47,8 +84,11 @@ export default function FeedScreen() {
     await refetch();
   }, [refetch, stories.length, triggerIngestion]);
 
-  const showEmpty = !isLoading && stories.length === 0;
-  const showLoading = isLoading && stories.length === 0;
+  const showLoading =
+    isLoading && !isSearchActive
+      ? stories.length === 0
+      : isSearchActive && searchFetching && stories.length === 0;
+  const showEmpty = !showLoading && stories.length === 0;
 
   const hPad = Math.max(16, insets.left + 4);
 
@@ -76,12 +116,64 @@ export default function FeedScreen() {
         ]}
       >
         <View style={[styles.titleRow, { paddingHorizontal: hPad }]}>
-          <Text style={styles.brand}>Marktr</Text>
-          {isFetching && stories.length > 0 ? (
-            <ActivityIndicator size="small" color={palette.textDim} />
-          ) : null}
+          {searchVisible ? (
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Ticker, company, topic…"
+              placeholderTextColor={palette.textDim}
+              value={searchQuery}
+              onChangeText={handleSearchChange}
+              autoFocus
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          ) : (
+            <Text style={styles.brand}>Marktr</Text>
+          )}
+
+          <View style={styles.headerActions}>
+            {!searchVisible && isFetching && stories.length > 0 ? (
+              <ActivityIndicator
+                size="small"
+                color={palette.textDim}
+                style={{ marginRight: 8 }}
+              />
+            ) : null}
+            <Pressable
+              onPress={searchVisible ? closeSearch : openSearch}
+              hitSlop={10}
+              style={styles.iconBtn}
+            >
+              <Ionicons
+                name={searchVisible ? "close" : "search-outline"}
+                size={22}
+                color={searchVisible ? palette.textMuted : palette.textMuted}
+              />
+            </Pressable>
+          </View>
         </View>
-        <CategoryFilter active={category} onChange={setCategory} />
+
+        {searchVisible ? (
+          <View style={[styles.searchMeta, { paddingHorizontal: hPad }]}>
+            {isSearchActive && !searchFetching ? (
+              <Text style={styles.searchMetaText}>
+                {searchData?.totalCount ?? 0}{" "}
+                {searchData?.totalCount === 1 ? "result" : "results"}
+                {" "}for{" "}
+                <Text style={styles.searchMetaQuery}>"{debouncedQuery}"</Text>
+              </Text>
+            ) : isSearchActive && searchFetching ? (
+              <Text style={styles.searchMetaText}>Searching…</Text>
+            ) : (
+              <Text style={styles.searchMetaText}>
+                Search titles, tickers, insights &amp; more
+              </Text>
+            )}
+          </View>
+        ) : (
+          <CategoryFilter active={category} onChange={setCategory} />
+        )}
       </View>
 
       <FlatList
@@ -90,37 +182,50 @@ export default function FeedScreen() {
         renderItem={({ item }) => <StoryCard story={item} />}
         contentContainerStyle={listPadding}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
-          <RefreshControl
-            refreshing={isFetching && stories.length > 0}
-            onRefresh={handleRefresh}
-            tintColor={palette.accent}
-          />
+          !isSearchActive ? (
+            <RefreshControl
+              refreshing={isFetching && stories.length > 0}
+              onRefresh={handleRefresh}
+              tintColor={palette.accent}
+            />
+          ) : undefined
         }
         ListEmptyComponent={
           showLoading ? (
             <View style={styles.loading}>
               <ActivityIndicator color={palette.accent} />
-              <Text style={styles.loadingText}>Loading today's stories…</Text>
+              <Text style={styles.loadingText}>
+                {isSearchActive ? "Searching…" : "Loading today's stories…"}
+              </Text>
             </View>
           ) : showEmpty ? (
-            <EmptyState
-              icon="newspaper-outline"
-              title={
-                error
-                  ? "Couldn't load the feed"
-                  : "Today's feed is being prepared"
-              }
-              message={
-                error
-                  ? "Pull to refresh and try again."
-                  : "Marktr enriches each story with a financial angle. Tap below to fetch the latest batch."
-              }
-              actionLabel={
-                triggerIngestion.isPending ? "Refreshing…" : "Refresh now"
-              }
-              onAction={handleRefresh}
-            />
+            isSearchActive ? (
+              <EmptyState
+                icon="search-outline"
+                title="No results"
+                message={`No stories matched "${debouncedQuery}". Try a ticker symbol, company name, or topic.`}
+              />
+            ) : (
+              <EmptyState
+                icon="newspaper-outline"
+                title={
+                  error
+                    ? "Couldn't load the feed"
+                    : "Today's feed is being prepared"
+                }
+                message={
+                  error
+                    ? "Pull to refresh and try again."
+                    : "Marktr enriches each story with a financial angle. Tap below to fetch the latest batch."
+                }
+                actionLabel={
+                  triggerIngestion.isPending ? "Refreshing…" : "Refresh now"
+                }
+                onAction={handleRefresh}
+              />
+            )
           ) : null
         }
       />
@@ -151,6 +256,37 @@ const styles = StyleSheet.create({
     fontSize: 28,
     color: palette.text,
     letterSpacing: -0.5,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  iconBtn: {
+    padding: 4,
+  },
+  searchInput: {
+    flex: 1,
+    height: 36,
+    backgroundColor: palette.surfaceHigh,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    color: palette.text,
+    fontFamily: "Inter_400Regular",
+    fontSize: 15,
+    marginRight: 10,
+  },
+  searchMeta: {
+    height: 36,
+    justifyContent: "center",
+  },
+  searchMetaText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: palette.textDim,
+  },
+  searchMetaQuery: {
+    color: palette.textMuted,
+    fontFamily: "Inter_500Medium",
   },
   loading: {
     paddingVertical: 80,

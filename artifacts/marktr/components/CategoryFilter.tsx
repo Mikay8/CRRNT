@@ -14,6 +14,8 @@ const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
   "hardware-chip": "hardware-chip",
   business: "business",
   trophy: "trophy",
+  briefcase: "briefcase-outline",
+  planet: "planet-outline",
 };
 
 export function CategoryFilter({ active, onChange }: CategoryFilterProps) {

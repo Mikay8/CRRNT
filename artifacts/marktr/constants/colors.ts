@@ -27,6 +27,8 @@ const palette = {
   tech: "#5EC2FF", // electric blue
   government: "#FFB347", // amber
   sports: "#A06BFF", // royal violet
+  business: "#F97316", // orange
+  science: "#2DD4BF", // teal
 } as const;
 
 export type ColorPalette = typeof palette;

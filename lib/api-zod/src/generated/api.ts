@@ -20,7 +20,9 @@ export const HealthCheckResponse = zod.object({
 export const listStoriesQueryLimitMax = 200;
 
 export const ListStoriesQueryParams = zod.object({
-  category: zod.enum(["celebrity", "tech", "government", "sports"]).optional(),
+  category: zod
+    .enum(["celebrity", "tech", "government", "sports", "business", "science"])
+    .optional(),
   limit: zod.coerce.number().min(1).max(listStoriesQueryLimitMax).optional(),
 });
 
@@ -37,7 +39,14 @@ export const ListStoriesResponse = zod.object({
       publishedDate: zod.string(),
       source: zod.string(),
       category: zod
-        .enum(["celebrity", "tech", "government", "sports"])
+        .enum([
+          "celebrity",
+          "tech",
+          "government",
+          "sports",
+          "business",
+          "science",
+        ])
         .describe("Marktr's editorial category"),
       ticker: zod
         .string()
@@ -52,6 +61,8 @@ export const ListStoriesResponse = zod.object({
         .describe("Plain-language financial explanation written by Claude"),
     }),
   ),
+  isStale: zod.boolean().optional(),
+  asOfDate: zod.string().optional(),
 });
 
 /**
@@ -70,7 +81,7 @@ export const GetStoryResponse = zod.object({
   publishedDate: zod.string(),
   source: zod.string(),
   category: zod
-    .enum(["celebrity", "tech", "government", "sports"])
+    .enum(["celebrity", "tech", "government", "sports", "business", "science"])
     .describe("Marktr's editorial category"),
   ticker: zod
     .string()
@@ -83,6 +94,66 @@ export const GetStoryResponse = zod.object({
   explanation: zod
     .string()
     .describe("Plain-language financial explanation written by Claude"),
+});
+
+/**
+ * @summary Full-text search across today's stories
+ */
+export const searchStoriesQueryQMax = 200;
+
+export const searchStoriesQueryLimitDefault = 20;
+export const searchStoriesQueryLimitMax = 100;
+
+export const SearchStoriesQueryParams = zod.object({
+  q: zod.coerce
+    .string()
+    .min(1)
+    .max(searchStoriesQueryQMax)
+    .describe(
+      "Search query (matches title, description, insight, ticker, source)",
+    ),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(searchStoriesQueryLimitMax)
+    .default(searchStoriesQueryLimitDefault),
+});
+
+export const SearchStoriesResponse = zod.object({
+  query: zod.string(),
+  totalCount: zod.number(),
+  stories: zod.array(
+    zod.object({
+      articleId: zod.string(),
+      title: zod.string(),
+      description: zod.string().optional(),
+      link: zod.string(),
+      mediaUrl: zod.string().optional(),
+      publishedDate: zod.string(),
+      source: zod.string(),
+      category: zod
+        .enum([
+          "celebrity",
+          "tech",
+          "government",
+          "sports",
+          "business",
+          "science",
+        ])
+        .describe("Marktr's editorial category"),
+      ticker: zod
+        .string()
+        .optional()
+        .describe("Primary stock ticker mentioned or implied (null if none)"),
+      companyName: zod.string().optional(),
+      insight: zod
+        .string()
+        .describe("One-line financial insight written by Claude"),
+      explanation: zod
+        .string()
+        .describe("Plain-language financial explanation written by Claude"),
+    }),
+  ),
 });
 
 /**

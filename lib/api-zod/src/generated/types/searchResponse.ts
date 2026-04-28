@@ -7,10 +7,8 @@
  */
 import type { Story } from "./story";
 
-export interface StoriesResponse {
-  date: string;
+export interface SearchResponse {
+  query: string;
   totalCount: number;
   stories: Story[];
-  isStale?: boolean;
-  asOfDate?: string;
 }

@@ -78,6 +78,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /search:
+    get:
+      operationId: searchStories
+      tags: [news]
+      summary: Full-text search across today's stories
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+          description: Search query (matches title, description, insight, ticker, source)
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
   /stock/{ticker}:
     get:
       operationId: getStockHistory
@@ -167,7 +196,7 @@ components:
         - status
     Category:
       type: string
-      enum: [celebrity, tech, government, sports]
+      enum: [celebrity, tech, government, sports, business, science]
       description: Marktr's editorial category
     Story:
       type: object
@@ -219,8 +248,27 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Story"
+        isStale:
+          type: boolean
+        asOfDate:
+          type: string
       required:
         - date
+        - totalCount
+        - stories
+    SearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        totalCount:
+          type: integer
+        stories:
+          type: array
+          items:
+            $ref: "#/components/schemas/Story"
+      required:
+        - query
         - totalCount
         - stories
     StockPricePoint:

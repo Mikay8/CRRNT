@@ -106,6 +106,28 @@ async def delete_stories(
     return {"deleted": result, "ok": True}
 
 
+class SeedPayload(BaseModel):
+    date: str
+    totalCount: int
+    stories: list[dict]
+
+
+@router.post("/admin/seed")
+async def seed_today(
+    body: SeedPayload,
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict:
+    """Write a JSON payload directly into today's KV cache entry."""
+    _require_admin(x_admin_token)
+    ingestion.cache.set(ingestion.news_key(body.date), body.model_dump())
+    for story in body.stories:
+        aid = story.get("articleId")
+        if aid:
+            ingestion.cache.set(ingestion.article_key(str(aid)), story)
+    log.info("Admin: seeded %d stories for %s", len(body.stories), body.date)
+    return {"ok": True, "storyCount": len(body.stories), "date": body.date}
+
+
 # ── Public endpoint: device push token registration ───────────────────────────
 
 class PushTokenBody(BaseModel):

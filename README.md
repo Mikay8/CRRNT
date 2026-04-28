@@ -64,9 +64,11 @@ NEWSMESH_API_KEY=...
 # Required — GetXAPI (X/Twitter social data)
 XAPI_KEY=...
 
-# Required — Replit KV store URL (provided automatically on Replit;
-# for local dev you can omit it and the server will fall back to in-memory cache)
-REPLIT_DB_URL=https://kv.replit.com/v0/...
+# Optional — Replit KV store URL.
+# On Replit this is injected automatically — do not add it manually there.
+# For local development outside Replit you can omit it entirely;
+# the server will fall back to an in-memory dictionary (data lost on restart).
+# REPLIT_DB_URL=https://kv.replit.com/v0/...
 
 # Required — Admin portal authentication
 SESSION_SECRET=<any long random string>

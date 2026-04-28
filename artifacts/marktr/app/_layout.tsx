@@ -60,7 +60,7 @@ async function registerPushToken(): Promise<void> {
     // Android needs a notification channel
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync("default", {
-        name: "Marktr News",
+        name: "CRRNT",
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: palette.accent,

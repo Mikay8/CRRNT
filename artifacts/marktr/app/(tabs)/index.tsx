@@ -129,7 +129,7 @@ export default function FeedScreen() {
               autoCorrect={false}
             />
           ) : (
-            <Text style={styles.brand}>Marktr</Text>
+            <Text style={styles.brand}>CRRNT</Text>
           )}
 
           <View style={styles.headerActions}>
@@ -218,7 +218,7 @@ export default function FeedScreen() {
                 message={
                   error
                     ? "Pull to refresh and try again."
-                    : "Marktr enriches each story with a financial angle. Tap below to fetch the latest batch."
+                    : "CRRNT enriches each story with a financial angle. Tap below to fetch the latest batch."
                 }
                 actionLabel={
                   triggerIngestion.isPending ? "Refreshing…" : "Refresh now"

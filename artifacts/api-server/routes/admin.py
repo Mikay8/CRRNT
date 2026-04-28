@@ -166,7 +166,7 @@ _PORTAL_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Marktr Admin</title>
+<title>CRRNT Admin</title>
 <style>
 :root{
   --bg:#0A0E1A;--surface:#161D2E;--hi:#1F2840;--border:#222B45;
@@ -210,7 +210,7 @@ input[type=number]{background:var(--hi);border:1px solid var(--border);border-ra
 <body>
 <div class="header">
   <div>
-    <h1>&#128274; Marktr Admin</h1>
+    <h1>&#128274; CRRNT Admin</h1>
     <p>Internal control panel — handle with care</p>
   </div>
 </div>

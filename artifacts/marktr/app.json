@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Marktr",
+    "name": "CRRNT",
     "slug": "marktr",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "marktr",
+    "scheme": "crrnt",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {

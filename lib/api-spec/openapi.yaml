@@ -123,7 +123,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [1mo, 3mo, 6mo, 1y, 5y]
+            enum: [1d, 5d, 1mo, 3mo, 6mo, 1y, 5y]
       responses:
         "200":
           description: Stock price history
@@ -196,7 +196,7 @@ components:
         - status
     Category:
       type: string
-      enum: [celebrity, tech, government, sports, business, science]
+      enum: [celebrity, tech, government, sports, business, science, entertainment]
       description: Marktr's editorial category
     Story:
       type: object

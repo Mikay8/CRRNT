@@ -29,6 +29,7 @@ const palette = {
   sports: "#A06BFF", // royal violet
   business: "#F97316", // orange
   science: "#2DD4BF", // teal
+  entertainment: "#EF4444", // cinema red
 } as const;
 
 export type ColorPalette = typeof palette;

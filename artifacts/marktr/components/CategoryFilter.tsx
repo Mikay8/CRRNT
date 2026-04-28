@@ -16,6 +16,7 @@ const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
   trophy: "trophy",
   briefcase: "briefcase-outline",
   planet: "planet-outline",
+  film: "film-outline",
 };
 
 export function CategoryFilter({ active, onChange }: CategoryFilterProps) {

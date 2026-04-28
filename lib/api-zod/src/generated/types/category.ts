@@ -18,4 +18,5 @@ export const Category = {
   sports: "sports",
   business: "business",
   science: "science",
+  entertainment: "entertainment",
 } as const;

@@ -21,7 +21,15 @@ export const listStoriesQueryLimitMax = 200;
 
 export const ListStoriesQueryParams = zod.object({
   category: zod
-    .enum(["celebrity", "tech", "government", "sports", "business", "science"])
+    .enum([
+      "celebrity",
+      "tech",
+      "government",
+      "sports",
+      "business",
+      "science",
+      "entertainment",
+    ])
     .optional(),
   limit: zod.coerce.number().min(1).max(listStoriesQueryLimitMax).optional(),
 });
@@ -46,6 +54,7 @@ export const ListStoriesResponse = zod.object({
           "sports",
           "business",
           "science",
+          "entertainment",
         ])
         .describe("Marktr's editorial category"),
       ticker: zod
@@ -81,7 +90,15 @@ export const GetStoryResponse = zod.object({
   publishedDate: zod.string(),
   source: zod.string(),
   category: zod
-    .enum(["celebrity", "tech", "government", "sports", "business", "science"])
+    .enum([
+      "celebrity",
+      "tech",
+      "government",
+      "sports",
+      "business",
+      "science",
+      "entertainment",
+    ])
     .describe("Marktr's editorial category"),
   ticker: zod
     .string()
@@ -139,6 +156,7 @@ export const SearchStoriesResponse = zod.object({
           "sports",
           "business",
           "science",
+          "entertainment",
         ])
         .describe("Marktr's editorial category"),
       ticker: zod
@@ -164,7 +182,7 @@ export const GetStockHistoryParams = zod.object({
 });
 
 export const GetStockHistoryQueryParams = zod.object({
-  range: zod.enum(["1mo", "3mo", "6mo", "1y", "5y"]).optional(),
+  range: zod.enum(["1d", "5d", "1mo", "3mo", "6mo", "1y", "5y"]).optional(),
 });
 
 export const GetStockHistoryResponse = zod.object({

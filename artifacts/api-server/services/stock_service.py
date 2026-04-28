@@ -12,7 +12,13 @@ from services import cache
 
 log = logging.getLogger("marktr.stock")
 
-VALID_RANGES = {"1mo", "3mo", "6mo", "1y", "5y"}
+VALID_RANGES = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "5y"}
+
+# Intraday ranges use a smaller candle interval
+INTRADAY_INTERVALS = {
+    "1d": "5m",
+    "5d": "1h",
+}
 
 
 def _today() -> str:
@@ -42,9 +48,10 @@ async def get_history(ticker: str, rng: str = "1y") -> Optional[dict[str, Any]]:
 
 
 def _fetch_sync(ticker: str, rng: str) -> Optional[dict[str, Any]]:
+    interval = INTRADAY_INTERVALS.get(rng, "1d")
     try:
         t = yf.Ticker(ticker)
-        hist = t.history(period=rng, interval="1d", auto_adjust=False)
+        hist = t.history(period=rng, interval=interval, auto_adjust=False)
     except Exception as exc:  # noqa: BLE001
         log.warning("yfinance.history failed for %s: %s", ticker, exc)
         return None
@@ -52,13 +59,18 @@ def _fetch_sync(ticker: str, rng: str) -> Optional[dict[str, Any]]:
     if hist is None or hist.empty:
         return None
 
+    is_intraday = rng in INTRADAY_INTERVALS
     points: list[dict[str, Any]] = []
     for idx, row in hist.iterrows():
         try:
             close = float(row["Close"])
         except (KeyError, TypeError, ValueError):
             continue
-        d = idx.date().isoformat() if hasattr(idx, "date") else str(idx)
+        if is_intraday:
+            # Preserve time for intraday — strip timezone, keep YYYY-MM-DDTHH:MM
+            d = str(idx)[:16].replace(" ", "T")
+        else:
+            d = idx.date().isoformat() if hasattr(idx, "date") else str(idx)
         points.append({"date": d, "close": round(close, 4)})
 
     if not points:

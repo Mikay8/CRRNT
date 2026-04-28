@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
+import { useState } from "react";
 import {
   useGetStockHistory,
   useGetStory,
@@ -23,23 +24,32 @@ import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import CategoryBadge from "@/components/CategoryBadge";
 import PriceChart from "@/components/PriceChart";
 import SaveButton from "@/components/SaveButton";
-import SimulatorPanel from "@/components/SimulatorPanel";
 import EmptyState from "@/components/EmptyState";
+import { formatRelativeTime, formatDateTime } from "@/utils/time";
+
+type StockRange = "1d" | "5d" | "1mo" | "1y";
+
+const RANGE_TABS: { label: string; value: StockRange; hint: string }[] = [
+  { label: "1D",  value: "1d",  hint: "Today" },
+  { label: "1W",  value: "5d",  hint: "This week" },
+  { label: "1M",  value: "1mo", hint: "30 days" },
+  { label: "1Y",  value: "1y",  hint: "1 year" },
+];
 
 export default function StoryDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { saved } = useSavedStories();
+  const [stockRange, setStockRange] = useState<StockRange>("1d");
 
-  // Try local saved cache first so deep-linking still works for offline saves.
   const localFallback = saved.find((s) => s.articleId === id) ?? null;
 
   const { data, isLoading, error } = useGetStory(id ?? "", {
     query: {
       enabled: !!id,
       placeholderData: localFallback ?? undefined,
-    },
+    } as any,
   });
 
   const story: Story | null = (data as Story | undefined) ?? localFallback;
@@ -47,8 +57,8 @@ export default function StoryDetailScreen() {
   const ticker = story?.ticker ?? null;
   const stockQuery = useGetStockHistory(
     ticker ?? "",
-    { range: "1y" },
-    { query: { enabled: !!ticker, staleTime: 5 * 60 * 1000 } }
+    { range: stockRange },
+    { query: { enabled: !!ticker, staleTime: 5 * 60 * 1000 } as any }
   );
 
   const screenWidth = Dimensions.get("window").width;
@@ -92,6 +102,13 @@ export default function StoryDetailScreen() {
     if (story.link) Linking.openURL(story.link).catch(() => undefined);
   };
 
+  const handleRangeChange = (r: StockRange) => {
+    Haptics.selectionAsync().catch(() => undefined);
+    setStockRange(r);
+  };
+
+  const activeTab = RANGE_TABS.find((t) => t.value === stockRange)!;
+
   return (
     <ScrollView
       style={styles.container}
@@ -123,7 +140,9 @@ export default function StoryDetailScreen() {
         <Pressable onPress={openSource} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
           <Text style={styles.source}>
             {story.source}
-            {story.publishedDate ? `  ·  ${formatDate(story.publishedDate)}` : ""}
+            {story.publishedDate
+              ? `  ·  ${formatRelativeTime(story.publishedDate)}  ·  ${formatDateTime(story.publishedDate)}`
+              : ""}
             {"   "}
             <Ionicons name="open-outline" size={12} color={palette.textDim} />
           </Text>
@@ -140,6 +159,7 @@ export default function StoryDetailScreen() {
 
         {ticker ? (
           <View style={styles.stockCard}>
+            {/* Header row: ticker + current price/delta */}
             <View style={styles.stockHeader}>
               <View>
                 <Text style={styles.tickerLabel}>${ticker}</Text>
@@ -149,22 +169,62 @@ export default function StoryDetailScreen() {
               </View>
               {stock ? (
                 <View style={{ alignItems: "flex-end" }}>
-                  <Text style={styles.price}>${stock.latestPrice?.toFixed(2)}</Text>
+                  <Text style={styles.price}>
+                    ${stock.latestPrice?.toFixed(2)}
+                  </Text>
                   <Text
                     style={[
                       styles.delta,
-                      {
-                        color: priceUp ? palette.positive : palette.negative,
-                      },
+                      { color: priceUp ? palette.positive : palette.negative },
                     ]}
                   >
-                    1Y {priceUp ? "▲" : "▼"}{" "}
+                    {activeTab.label}{" "}
+                    {priceUp ? "▲" : "▼"}{" "}
                     {pctChange(stock.points[0]?.close, stock.latestPrice)}%
                   </Text>
                 </View>
               ) : null}
             </View>
 
+            {/* Range tab selector */}
+            <View style={styles.rangeTabs}>
+              {RANGE_TABS.map((tab) => {
+                const isActive = tab.value === stockRange;
+                return (
+                  <Pressable
+                    key={tab.value}
+                    onPress={() => handleRangeChange(tab.value)}
+                    style={({ pressed }) => [
+                      styles.rangeTab,
+                      {
+                        backgroundColor: isActive
+                          ? (priceUp ? palette.positive : palette.negative) + "22"
+                          : "transparent",
+                        borderColor: isActive
+                          ? (priceUp ? palette.positive : palette.negative)
+                          : palette.border,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.rangeTabLabel,
+                        {
+                          color: isActive
+                            ? priceUp ? palette.positive : palette.negative
+                            : palette.textMuted,
+                        },
+                      ]}
+                    >
+                      {tab.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* Chart */}
             {stockQuery.isLoading ? (
               <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
                 <ActivityIndicator color={palette.textMuted} />
@@ -181,6 +241,14 @@ export default function StoryDetailScreen() {
                 <Text style={styles.chartEmpty}>Price data unavailable</Text>
               </View>
             )}
+
+            {/* Context hint */}
+            {stock && story.publishedDate ? (
+              <Text style={styles.chartHint}>
+                <Ionicons name="time-outline" size={11} color={palette.textDim} />{" "}
+                Story posted {formatRelativeTime(story.publishedDate)} — showing {activeTab.hint}
+              </Text>
+            ) : null}
           </View>
         ) : (
           <View style={styles.noTickerCard}>
@@ -190,8 +258,6 @@ export default function StoryDetailScreen() {
             </Text>
           </View>
         )}
-
-        {ticker ? <SimulatorPanel ticker={ticker} /> : null}
 
         <Pressable
           onPress={openSource}
@@ -211,20 +277,6 @@ export default function StoryDetailScreen() {
 function pctChange(start?: number, end?: number): string {
   if (!start || !end) return "0.00";
   return (((end - start) / start) * 100).toFixed(2);
-}
-
-function formatDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  } catch {
-    return iso;
-  }
 }
 
 const styles = StyleSheet.create({
@@ -337,6 +389,21 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontSize: 13,
   },
+  rangeTabs: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  rangeTab: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: "center",
+    borderWidth: 1,
+  },
+  rangeTabLabel: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+  },
   chartPlaceholder: {
     height: 160,
     alignItems: "center",
@@ -348,6 +415,13 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     color: palette.textDim,
     fontSize: 13,
+  },
+  chartHint: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    color: palette.textDim,
+    textAlign: "center",
+    marginTop: -4,
   },
   noTickerCard: {
     flexDirection: "row",

@@ -1,10 +1,16 @@
 """NewsMesh API client.
 
 Marktr's editorial categories map to NewsMesh categories as follows:
-  celebrity  -> entertainment
+  celebrity  -> entertainment  (Claude further splits into celebrity / entertainment)
   tech       -> technology
   government -> politics
   sports     -> sports
+  business   -> business
+  science    -> science
+
+The 'entertainment' Marktr category is populated by Claude at enrichment time —
+stories fetched under 'celebrity' are reclassified as either 'celebrity' (person-
+focused) or 'entertainment' (movie/show/event-focused) based on content.
 
 Free tier: 25 requests/day, max 10 articles per request, 24h freshness delay.
 """

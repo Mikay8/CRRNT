@@ -8,7 +8,7 @@ from services import ingestion
 
 router = APIRouter(tags=["news"])
 
-ALLOWED_CATEGORIES = {"celebrity", "tech", "government", "sports", "business", "science"}
+ALLOWED_CATEGORIES = {"celebrity", "tech", "government", "sports", "business", "science", "entertainment"}
 
 
 @router.get("/news")

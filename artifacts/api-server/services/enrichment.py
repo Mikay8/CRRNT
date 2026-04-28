@@ -44,9 +44,15 @@ SYSTEM_PROMPT = (
     "(2-3 sentences, max 320 characters) in plain language explaining how this "
     "news might affect that company or the broader market. Avoid jargon. Speak "
     "like a smart friend, not a finance textbook.\n\n"
+    "CATEGORY REFINEMENT: When the input category is 'celebrity', you must also "
+    "classify the story. Set 'category' to 'celebrity' if the story is primarily "
+    "about a specific famous person's life, relationships, fashion, or personal "
+    "drama. Set 'category' to 'entertainment' if the story is primarily about a "
+    "movie, TV show, music release, concert, streaming platform, or media "
+    "franchise. For all other input categories, omit the 'category' field.\n\n"
     "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
     "with keys: ticker (string|null), companyName (string|null), "
-    "insight (string), explanation (string)."
+    "insight (string), explanation (string), category (string, optional)."
 )
 
 
@@ -106,6 +112,11 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
             "but it's still worth keeping an eye on — markets often react to "
             "headlines like this in the days that follow."
         )
+
+    # Refine category for celebrity→entertainment split
+    refined_cat = (parsed.get("category") or "").strip().lower()
+    if refined_cat in ("celebrity", "entertainment") and story.get("category") == "celebrity":
+        story["category"] = refined_cat
 
     story["ticker"] = ticker
     story["companyName"] = company_name

@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import palette from "@/constants/colors";
 import CategoryBadge from "@/components/CategoryBadge";
 import SaveButton from "@/components/SaveButton";
+import { formatRelativeTime } from "@/utils/time";
 import type { Story } from "@workspace/api-client-react";
 
 interface StoryCardProps {
@@ -52,6 +53,11 @@ export function StoryCard({ story }: StoryCardProps) {
           <Text style={styles.source} numberOfLines={1}>
             {story.source || "Marktr"}
           </Text>
+          {story.publishedDate ? (
+            <Text style={styles.timestamp}>
+              {formatRelativeTime(story.publishedDate)}
+            </Text>
+          ) : null}
         </View>
       </View>
     </Pressable>
@@ -127,6 +133,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: palette.textDim,
     flex: 1,
+  },
+  timestamp: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    color: palette.textDim,
+    marginLeft: 8,
   },
 });
 

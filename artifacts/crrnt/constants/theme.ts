@@ -85,3 +85,36 @@ export const lightTheme: ThemeColors = {
   entertainment: "#9333EA",
 };
 export type ColorScheme = "dark" | "light";
+
+// ── Typography ────────────────────────────────────────────────────────────────
+
+export interface TypeStyle {
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing?: number;
+}
+
+export const fontFamily = {
+  // Outfit — display headings (H1, H2)
+  heading: "Outfit_700Bold",
+  headingSemiBold: "Outfit_600SemiBold",
+  // Inter — body and lower-level headings
+  body: "Inter_400Regular",
+  bodyMedium: "Inter_500Medium",
+  bodySemiBold: "Inter_600SemiBold",
+  bodyBold: "Inter_700Bold",
+} as const;
+
+export const typography: Record<string, TypeStyle> = {
+  h1: { fontFamily: fontFamily.heading,        fontSize: 32, lineHeight: 38, letterSpacing: -0.5 },
+  h2: { fontFamily: fontFamily.headingSemiBold, fontSize: 26, lineHeight: 32, letterSpacing: -0.3 },
+  h3: { fontFamily: fontFamily.bodyBold,        fontSize: 20, lineHeight: 26 },
+  h4: { fontFamily: fontFamily.bodySemiBold,    fontSize: 17, lineHeight: 22 },
+  body:         { fontFamily: fontFamily.body,         fontSize: 15, lineHeight: 22 },
+  bodyMedium:   { fontFamily: fontFamily.bodyMedium,   fontSize: 15, lineHeight: 22 },
+  bodySemiBold: { fontFamily: fontFamily.bodySemiBold, fontSize: 15, lineHeight: 22 },
+  bodySmall:    { fontFamily: fontFamily.body,         fontSize: 13, lineHeight: 19 },
+  caption:      { fontFamily: fontFamily.body,         fontSize: 11, lineHeight: 16 },
+  label:        { fontFamily: fontFamily.bodySemiBold, fontSize: 12, lineHeight: 16, letterSpacing: 0.5 },
+};

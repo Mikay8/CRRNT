@@ -244,6 +244,9 @@ _PORTAL_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CRRNT Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:#0A0E1A;--surface:#161D2E;--hi:#1F2840;--border:#222B45;
@@ -251,7 +254,7 @@ _PORTAL_HTML = """<!DOCTYPE html>
   --accent:#00D67E;--pos:#00E89E;--neg:#FF4D6D;--warn:#FFB347;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+body{font-family:'Outfit',-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 .header{background:var(--surface);border-bottom:1px solid var(--border);padding:18px 32px;display:flex;align-items:center;gap:12px}
 .header h1{font-size:20px;font-weight:700;letter-spacing:-0.5px}
 .header p{color:var(--muted);font-size:13px;margin-top:2px}

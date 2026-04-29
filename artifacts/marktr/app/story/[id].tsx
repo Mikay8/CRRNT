@@ -32,17 +32,29 @@ import { formatRelativeTime, formatDateTime } from "@/utils/time";
 type StockRange = "1d" | "5d" | "1mo" | "1y";
 
 const RANGE_TABS: { label: string; value: StockRange; hint: string }[] = [
-  { label: "1D", value: "1d",  hint: "Today" },
-  { label: "1W", value: "5d",  hint: "This week" },
+  { label: "1D", value: "1d", hint: "Today" },
+  { label: "1W", value: "5d", hint: "This week" },
   { label: "1M", value: "1mo", hint: "30 days" },
-  { label: "1Y", value: "1y",  hint: "1 year" },
+  { label: "1Y", value: "1y", hint: "1 year" },
 ];
 
 const SENTIMENT_CONFIG = {
-  bullish: { label: "Bullish", color: palette.positive, icon: "trending-up" as const },
-  bearish: { label: "Bearish", color: palette.negative, icon: "trending-down" as const },
-  mixed:   { label: "Mixed",   color: "#FFB347",        icon: "swap-horizontal" as const },
-  neutral: { label: "Neutral", color: palette.textMuted, icon: "remove" as const },
+  bullish: {
+    label: "Bullish",
+    color: palette.positive,
+    icon: "trending-up" as const,
+  },
+  bearish: {
+    label: "Bearish",
+    color: palette.negative,
+    icon: "trending-down" as const,
+  },
+  mixed: { label: "Mixed", color: "#FFB347", icon: "swap-horizontal" as const },
+  neutral: {
+    label: "Neutral",
+    color: palette.textMuted,
+    icon: "remove" as const,
+  },
 } as const;
 
 function buildSpeechText(story: Story): string {
@@ -81,12 +93,14 @@ export default function StoryDetailScreen() {
   const stockQuery = useGetStockHistory(
     ticker ?? "",
     { range: stockRange },
-    { query: { enabled: !!ticker, staleTime: 5 * 60 * 1000 } as any }
+    { query: { enabled: !!ticker, staleTime: 5 * 60 * 1000 } as any },
   );
 
   // Stop speech when screen unmounts
   useEffect(() => {
-    return () => { Speech.stop(); };
+    return () => {
+      Speech.stop();
+    };
   }, []);
 
   const screenWidth = Dimensions.get("window").width;
@@ -141,7 +155,9 @@ export default function StoryDetailScreen() {
   };
 
   const toggleAudio = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+      () => undefined,
+    );
     if (isPlaying) {
       await Speech.stop();
       setIsPlaying(false);
@@ -162,8 +178,10 @@ export default function StoryDetailScreen() {
   const activeTab = RANGE_TABS.find((t) => t.value === stockRange)!;
   const tweets: Tweet[] = (story as any).tweets ?? [];
   const tweetSummary: string | null = (story as any).tweetSummary ?? null;
-  const sentimentKey = ((story as any).sentiment ?? "neutral") as keyof typeof SENTIMENT_CONFIG;
-  const sentimentCfg = SENTIMENT_CONFIG[sentimentKey] ?? SENTIMENT_CONFIG.neutral;
+  const sentimentKey = ((story as any).sentiment ??
+    "neutral") as keyof typeof SENTIMENT_CONFIG;
+  const sentimentCfg =
+    SENTIMENT_CONFIG[sentimentKey] ?? SENTIMENT_CONFIG.neutral;
   const hasSocialData = tweetSummary || tweets.length > 0;
 
   return (
@@ -186,7 +204,9 @@ export default function StoryDetailScreen() {
 
       <View style={[styles.heroOverlay, { height: insets.top + 220 }]} />
 
-      <View style={[styles.content, { marginTop: -50, paddingHorizontal: hPad }]}>
+      <View
+        style={[styles.content, { marginTop: -50, paddingHorizontal: hPad }]}
+      >
         {/* Top row: category + action buttons */}
         <View style={styles.metaRow}>
           <CategoryBadge category={story.category} size="md" />
@@ -213,7 +233,10 @@ export default function StoryDetailScreen() {
 
         <Text style={styles.title}>{story.title}</Text>
 
-        <Pressable onPress={openSource} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+        <Pressable
+          onPress={openSource}
+          style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+        >
           <Text style={styles.source}>
             {story.source}
             {story.publishedDate
@@ -223,17 +246,10 @@ export default function StoryDetailScreen() {
             <Ionicons name="open-outline" size={12} color={palette.textDim} />
           </Text>
         </Pressable>
-
-        {/* ── How does it stocks? ──────────────────────────────────── */}
+        {/* ── Insights? ──────────────────────────────────── */}
         <View style={styles.insightCard}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="sparkles" size={16} color={palette.accent} />
-            <Text style={styles.sectionLabel}>How does it stocks?</Text>
-          </View>
           <Text style={styles.insight}>{story.insight}</Text>
-          <Text style={styles.explanation}>{story.explanation}</Text>
         </View>
-
         {/* ── How does it affect me? ───────────────────────────────── */}
         {story.everydayImpact ? (
           <View style={[styles.insightCard, styles.impactCard]}>
@@ -246,7 +262,14 @@ export default function StoryDetailScreen() {
             <Text style={styles.impactText}>{story.everydayImpact}</Text>
           </View>
         ) : null}
-
+        {/* ── How does it affect stocks? ──────────────────────────────────── */}
+        <View style={styles.insightCard}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="sparkles" size={16} color={palette.accent} />
+            <Text style={styles.sectionLabel}>How does it affect stocks?</Text>
+          </View>
+          <Text style={styles.impactText}>{story.explanation}</Text>
+        </View>
         {/* ── Stock chart ──────────────────────────────────────────── */}
         {ticker ? (
           <View style={styles.stockCard}>
@@ -268,8 +291,7 @@ export default function StoryDetailScreen() {
                       { color: priceUp ? palette.positive : palette.negative },
                     ]}
                   >
-                    {activeTab.label}{" "}
-                    {priceUp ? "▲" : "▼"}{" "}
+                    {activeTab.label} {priceUp ? "▲" : "▼"}{" "}
                     {pctChange(stock.points[0]?.close, stock.latestPrice)}%
                   </Text>
                 </View>
@@ -287,10 +309,13 @@ export default function StoryDetailScreen() {
                       styles.rangeTab,
                       {
                         backgroundColor: isActive
-                          ? (priceUp ? palette.positive : palette.negative) + "22"
+                          ? (priceUp ? palette.positive : palette.negative) +
+                            "22"
                           : "transparent",
                         borderColor: isActive
-                          ? (priceUp ? palette.positive : palette.negative)
+                          ? priceUp
+                            ? palette.positive
+                            : palette.negative
                           : palette.border,
                         opacity: pressed ? 0.7 : 1,
                       },
@@ -301,7 +326,9 @@ export default function StoryDetailScreen() {
                         styles.rangeTabLabel,
                         {
                           color: isActive
-                            ? priceUp ? palette.positive : palette.negative
+                            ? priceUp
+                              ? palette.positive
+                              : palette.negative
                             : palette.textMuted,
                         },
                       ]}
@@ -332,14 +359,23 @@ export default function StoryDetailScreen() {
 
             {stock && story.publishedDate ? (
               <Text style={styles.chartHint}>
-                <Ionicons name="time-outline" size={11} color={palette.textDim} />{" "}
-                Story posted {formatRelativeTime(story.publishedDate)} — showing {activeTab.hint}
+                <Ionicons
+                  name="time-outline"
+                  size={11}
+                  color={palette.textDim}
+                />{" "}
+                Story posted {formatRelativeTime(story.publishedDate)} — showing{" "}
+                {activeTab.hint}
               </Text>
             ) : null}
           </View>
         ) : (
           <View style={styles.noTickerCard}>
-            <Ionicons name="information-circle-outline" size={18} color={palette.textMuted} />
+            <Ionicons
+              name="information-circle-outline"
+              size={18}
+              color={palette.textMuted}
+            />
             <Text style={styles.noTickerText}>
               No public stock is closely tied to this story.
             </Text>
@@ -361,11 +397,20 @@ export default function StoryDetailScreen() {
               <View
                 style={[
                   styles.sentimentBadge,
-                  { backgroundColor: sentimentCfg.color + "22", borderColor: sentimentCfg.color + "55" },
+                  {
+                    backgroundColor: sentimentCfg.color + "22",
+                    borderColor: sentimentCfg.color + "55",
+                  },
                 ]}
               >
-                <Ionicons name={sentimentCfg.icon} size={13} color={sentimentCfg.color} />
-                <Text style={[styles.sentimentLabel, { color: sentimentCfg.color }]}>
+                <Ionicons
+                  name={sentimentCfg.icon}
+                  size={13}
+                  color={sentimentCfg.color}
+                />
+                <Text
+                  style={[styles.sentimentLabel, { color: sentimentCfg.color }]}
+                >
                   {sentimentCfg.label}
                 </Text>
               </View>
@@ -400,20 +445,32 @@ export default function StoryDetailScreen() {
                           {tweet.author}
                         </Text>
                       </View>
-                      <Ionicons name="open-outline" size={12} color={palette.textDim} />
+                      <Ionicons
+                        name="open-outline"
+                        size={12}
+                        color={palette.textDim}
+                      />
                     </View>
                     <Text style={styles.tweetText} numberOfLines={3}>
                       {tweet.text}
                     </Text>
                     <View style={styles.tweetStats}>
                       <View style={styles.tweetStat}>
-                        <Ionicons name="heart-outline" size={12} color={palette.textDim} />
+                        <Ionicons
+                          name="heart-outline"
+                          size={12}
+                          color={palette.textDim}
+                        />
                         <Text style={styles.tweetStatText}>
                           {formatCount(tweet.likes)}
                         </Text>
                       </View>
                       <View style={styles.tweetStat}>
-                        <Ionicons name="repeat-outline" size={12} color={palette.textDim} />
+                        <Ionicons
+                          name="repeat-outline"
+                          size={12}
+                          color={palette.textDim}
+                        />
                         <Text style={styles.tweetStatText}>
                           {formatCount(tweet.retweets)}
                         </Text>
@@ -435,7 +492,9 @@ export default function StoryDetailScreen() {
           ]}
         >
           <Ionicons name="open-outline" size={16} color={palette.text} />
-          <Text style={styles.sourceBtnText}>Read full story at {story.source}</Text>
+          <Text style={styles.sourceBtnText}>
+            Read full story at {story.source}
+          </Text>
         </Pressable>
       </View>
     </ScrollView>
@@ -456,10 +515,21 @@ function formatCount(n: number | undefined): string {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: palette.bg },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: palette.bg },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.bg,
+  },
   hero: { width: "100%", height: 280, backgroundColor: palette.surfaceHigh },
   heroPlaceholder: { backgroundColor: palette.surfaceHigh },
-  heroOverlay: { position: "absolute", top: 0, left: 0, right: 0, backgroundColor: "transparent" },
+  heroOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "transparent",
+  },
   content: {
     gap: 16,
     backgroundColor: palette.bg,
@@ -467,7 +537,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingTop: 22,
   },
-  metaRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  metaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   actionButtons: { flexDirection: "row", alignItems: "center", gap: 10 },
   audioBtn: {
     width: 34,
@@ -556,13 +630,33 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
   },
-  stockHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  tickerLabel: { fontFamily: "Inter_700Bold", fontSize: 22, color: palette.text, letterSpacing: 0.5 },
-  company: { marginTop: 2, fontFamily: "Inter_500Medium", fontSize: 12, color: palette.textMuted },
+  stockHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  tickerLabel: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 22,
+    color: palette.text,
+    letterSpacing: 0.5,
+  },
+  company: {
+    marginTop: 2,
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    color: palette.textMuted,
+  },
   price: { fontFamily: "Inter_700Bold", fontSize: 20, color: palette.text },
   delta: { marginTop: 2, fontFamily: "Inter_600SemiBold", fontSize: 13 },
   rangeTabs: { flexDirection: "row", gap: 8 },
-  rangeTab: { flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: "center", borderWidth: 1 },
+  rangeTab: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: "center",
+    borderWidth: 1,
+  },
   rangeTabLabel: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
   chartPlaceholder: {
     height: 160,
@@ -571,7 +665,11 @@ const styles = StyleSheet.create({
     backgroundColor: palette.bgElevated,
     borderRadius: 12,
   },
-  chartEmpty: { fontFamily: "Inter_500Medium", color: palette.textDim, fontSize: 13 },
+  chartEmpty: {
+    fontFamily: "Inter_500Medium",
+    color: palette.textDim,
+    fontSize: 13,
+  },
   chartHint: {
     fontFamily: "Inter_400Regular",
     fontSize: 11,
@@ -589,7 +687,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
   },
-  noTickerText: { fontFamily: "Inter_500Medium", fontSize: 13, color: palette.textMuted, flex: 1 },
+  noTickerText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+    color: palette.textMuted,
+    flex: 1,
+  },
   // Social / Twitter section
   sentimentRow: { flexDirection: "row", alignItems: "center" },
   sentimentBadge: {
@@ -626,13 +729,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  tweetAvatarText: { fontFamily: "Inter_700Bold", fontSize: 13, color: "#1DA1F2" },
-  tweetAuthorName: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: palette.text },
-  tweetHandle: { fontFamily: "Inter_400Regular", fontSize: 12, color: palette.textDim },
-  tweetText: { fontFamily: "Inter_400Regular", fontSize: 13, lineHeight: 19, color: palette.textMuted },
+  tweetAvatarText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 13,
+    color: "#1DA1F2",
+  },
+  tweetAuthorName: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
+    color: palette.text,
+  },
+  tweetHandle: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: palette.textDim,
+  },
+  tweetText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    lineHeight: 19,
+    color: palette.textMuted,
+  },
   tweetStats: { flexDirection: "row", gap: 16 },
   tweetStat: { flexDirection: "row", alignItems: "center", gap: 4 },
-  tweetStatText: { fontFamily: "Inter_400Regular", fontSize: 12, color: palette.textDim },
+  tweetStatText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: palette.textDim,
+  },
   sourceBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -645,5 +769,9 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     marginTop: 4,
   },
-  sourceBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: palette.text },
+  sourceBtnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+    color: palette.text,
+  },
 });

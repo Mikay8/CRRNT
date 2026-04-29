@@ -9,6 +9,7 @@ import {
   Text,
   TextInput,
   View,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -36,19 +37,22 @@ export default function FeedScreen() {
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => setDebouncedQuery(text.trim()), 300);
+    debounceTimer.current = setTimeout(
+      () => setDebouncedQuery(text.trim()),
+      300,
+    );
   };
 
   const isSearchActive = searchVisible && debouncedQuery.length >= 1;
 
   const { data, isLoading, isFetching, refetch, error } = useListStories(
     category ? { category } : undefined,
-    { query: { staleTime: 60_000, enabled: !isSearchActive } as any }
+    { query: { staleTime: 60_000, enabled: !isSearchActive } as any },
   );
 
   const { data: searchData, isFetching: searchFetching } = useSearchStories(
     { q: debouncedQuery || " " },
-    { query: { staleTime: 30_000, enabled: isSearchActive } as any }
+    { query: { staleTime: 30_000, enabled: isSearchActive } as any },
   );
 
   const triggerIngestion = useTriggerIngestion();
@@ -60,7 +64,9 @@ export default function FeedScreen() {
   const headerHeight = 96;
 
   const openSearch = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+      () => undefined,
+    );
     setSearchVisible(true);
     setSearchQuery("");
     setDebouncedQuery("");
@@ -73,7 +79,9 @@ export default function FeedScreen() {
   };
 
   const handleRefresh = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+      () => undefined,
+    );
     if (!stories.length) {
       try {
         await triggerIngestion.mutateAsync();
@@ -99,7 +107,7 @@ export default function FeedScreen() {
       paddingLeft: insets.left,
       paddingRight: insets.right,
     }),
-    [insets.top, insets.bottom, insets.left, insets.right]
+    [insets.top, insets.bottom, insets.left, insets.right],
   );
 
   return (
@@ -129,7 +137,12 @@ export default function FeedScreen() {
               autoCorrect={false}
             />
           ) : (
-            <Text style={styles.brand}>CRRNT</Text>
+            <Image
+              source={require("@/assets/images/full-logo.png")}
+              style={{ width: 100, height: 30 }}
+              resizeMode="contain"
+              accessibilityLabel="CRRNT"
+            />
           )}
 
           <View style={styles.headerActions}>
@@ -159,8 +172,7 @@ export default function FeedScreen() {
             {isSearchActive && !searchFetching ? (
               <Text style={styles.searchMetaText}>
                 {searchData?.totalCount ?? 0}{" "}
-                {searchData?.totalCount === 1 ? "result" : "results"}
-                {" "}for{" "}
+                {searchData?.totalCount === 1 ? "result" : "results"} for{" "}
                 <Text style={styles.searchMetaQuery}>"{debouncedQuery}"</Text>
               </Text>
             ) : isSearchActive && searchFetching ? (
@@ -218,7 +230,7 @@ export default function FeedScreen() {
                 message={
                   error
                     ? "Pull to refresh and try again."
-                    : "CRRNT enriches each story with a financial angle. Tap below to fetch the latest batch."
+                    : "CRRNT Tap below to fetch the latest batch."
                 }
                 actionLabel={
                   triggerIngestion.isPending ? "Refreshing…" : "Refresh now"

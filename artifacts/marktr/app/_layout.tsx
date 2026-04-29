@@ -12,7 +12,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { Platform } from "react-native";
+import { Image, Platform, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -109,7 +109,18 @@ export default function RootLayout() {
     registerPushToken();
   }, []);
 
-  if (!fontsLoaded && !fontError) return null;
+  if (!fontsLoaded && !fontError) {
+    return (
+      <View style={launchStyles.container}>
+        <StatusBar style="light" />
+        <Image
+          source={require("../assets/images/full-logo.png")}
+          style={launchStyles.logo}
+          resizeMode="contain"
+        />
+      </View>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: palette.bg }}>
@@ -153,3 +164,16 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+const launchStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#0A0E1A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logo: {
+    width: 220,
+    height: 220,
+  },
+});

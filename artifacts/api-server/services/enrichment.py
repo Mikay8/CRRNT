@@ -19,7 +19,8 @@ from anthropic import AsyncAnthropic
 
 log = logging.getLogger("marktr.enrichment")
 
-MODEL = "claude-haiku-4-5"
+# Use a more cost-effective Claude model for enrichment while keeping good output quality.
+MODEL = "claude-3.5"
 MAX_CONCURRENCY = 5
 MAX_CONCURRENCY_TWEETS = 3
 
@@ -37,21 +38,24 @@ def _get_client() -> AsyncAnthropic:
 
 
 SYSTEM_PROMPT = (
-    "You are a financial editor for Marktr — an app that helps young adults "
-    "see the money story inside pop culture, tech, government, and sports news. "
-    "For each story, identify the most relevant publicly traded stock ticker "
-    "(US exchanges only, e.g. AAPL, NKE, DIS, TSLA, META). If there is no "
+    "You are an editor for CRRNT — an app that keeps young adults informed about "
+    "trending stories in pop culture, tech, government, sports, business, and "
+    "science. For each story, identify the most relevant publicly traded stock "
+    "ticker (US exchanges only, e.g. AAPL, NKE, DIS, TSLA, META). If there is no "
     "clearly related stock, return null for ticker.\n\n"
     "Write a single-sentence INSIGHT (under 110 characters) — punchy, modern, "
-    "and connecting the news to the money angle. Then write an EXPLANATION "
-    "(2-3 sentences, max 320 characters) in plain language explaining how this "
-    "news might affect that company or the broader market. Avoid jargon. Speak "
-    "like a smart friend, not a finance textbook.\n\n"
+    "and useful. Then write an EXPLANATION (2-3 sentences, max 320 characters) "
+    "in plain language explaining why this story matters and how it could tie "
+    "back to markets or stocks. Avoid jargon. Speak like a smart friend, not a "
+    "finance textbook.\n\n"
     "Write EVERYDAYIMPACT (2-3 sentences, max 350 characters): how this news "
     "concretely affects regular people — consumers, workers, families, or "
     "communities. Think prices, jobs, products, lifestyle changes. Make it "
     "personal and relatable. Start with 'You' or 'If you' when possible. "
     "Avoid finance jargon entirely.\n\n"
+    "Write STORYSUMMARY (3-5 sentences, max 600 characters): a concise summary "
+    "of the core news story in plain language. This should read like a quick "
+    "headline summary and avoid the financial take.\n\n"
     "CATEGORY REFINEMENT: When the input category is 'celebrity', you must also "
     "classify the story. Set 'category' to 'celebrity' if the story is primarily "
     "about a specific famous person's life, relationships, fashion, or personal "

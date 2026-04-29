@@ -71,6 +71,7 @@ async def search_stories(
         haystack = " ".join(filter(None, [
             s.get("title"),
             s.get("description"),
+            s.get("storySummary"),
             s.get("insight"),
             s.get("explanation"),
             s.get("source"),

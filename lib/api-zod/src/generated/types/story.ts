@@ -27,6 +27,8 @@ export interface Story {
   explanation: string;
   /** How this news affects regular people (consumers, workers, families) */
   everydayImpact?: string;
+  /** AI-generated summary of the core news story */
+  storySummary?: string;
   /** AI-generated summary of tweet sentiment */
   tweetSummary?: string;
   /** Overall social media sentiment */

@@ -60,7 +60,7 @@ SYSTEM_PROMPT = (
     "franchise. For all other input categories, omit the 'category' field.\n\n"
     "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
     "with keys: ticker (string|null), companyName (string|null), "
-    "insight (string), explanation (string), everydayImpact (string), "
+    "insight (string), explanation (string), everydayImpact (string), storySummary (string), "
     "category (string, optional)."
 )
 
@@ -139,6 +139,10 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
             "Keep an eye on how it develops."
         )
 
+    story_summary = (parsed.get("storySummary") or "").strip()
+    if not story_summary:
+        story_summary = (description or title or "").strip() or None
+
     # Refine category for celebrity→entertainment split
     refined_cat = (parsed.get("category") or "").strip().lower()
     if refined_cat in ("celebrity", "entertainment") and story.get("category") == "celebrity":
@@ -149,6 +153,7 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     story["insight"] = insight
     story["explanation"] = explanation
     story["everydayImpact"] = everyday_impact
+    story["storySummary"] = story_summary
     # Tweet fields — populated in Pass 2 if tweets are found
     story.setdefault("tweetSummary", None)
     story.setdefault("sentiment", None)

@@ -158,20 +158,29 @@ export default function StoryDetailScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
       () => undefined,
     );
-    if (isPlaying) {
+
+    try {
+      if (isPlaying) {
+        await Speech.stop();
+        setIsPlaying(false);
+        return;
+      }
+
       await Speech.stop();
-      setIsPlaying(false);
-    } else {
       const text = buildSpeechText(story);
-      setIsPlaying(true);
       Speech.speak(text, {
         language: "en-US",
         rate: 0.9,
         pitch: 1.0,
+        volume: 1.0,
         onDone: () => setIsPlaying(false),
         onError: () => setIsPlaying(false),
         onStopped: () => setIsPlaying(false),
       });
+      setIsPlaying(true);
+    } catch (error) {
+      console.warn("Speech playback error:", error);
+      setIsPlaying(false);
     }
   };
 
@@ -246,9 +255,9 @@ export default function StoryDetailScreen() {
             <Ionicons name="open-outline" size={12} color={palette.textDim} />
           </Text>
         </Pressable>
-        {/* ── Insights? ──────────────────────────────────── */}
+        {/* ── story summary ──────────────────────────────────── */}
         <View style={styles.insightCard}>
-          <Text style={styles.insight}>{story.insight}</Text>
+          <Text style={styles.insight}>{story.storySummary ?? story.insight}</Text>
         </View>
         {/* ── How does it affect me? ───────────────────────────────── */}
         {story.everydayImpact ? (

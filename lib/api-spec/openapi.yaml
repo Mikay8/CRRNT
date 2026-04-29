@@ -341,6 +341,9 @@ components:
         everydayImpact:
           type: string
           description: How this news affects regular people (consumers, workers, families)
+        storySummary:
+          type: string
+          description: AI-generated summary of the core news story
         tweetSummary:
           type: string
           description: AI-generated summary of tweet sentiment

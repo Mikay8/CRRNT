@@ -114,7 +114,7 @@ export default function RootLayout() {
       <View style={launchStyles.container}>
         <StatusBar style="light" />
         <Image
-          source={require("../assets/images/full-logo.png")}
+          source={require("../assets/images/icon.png")}
           style={launchStyles.logo}
           resizeMode="contain"
         />

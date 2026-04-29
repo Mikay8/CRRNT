@@ -106,6 +106,83 @@ async def delete_stories(
     return {"deleted": result, "ok": True}
 
 
+@router.get("/admin/stories")
+async def list_stories(
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict:
+    _require_admin(x_admin_token)
+    keys = ingestion.cache.list_keys("article:")
+    stories = []
+    for key in sorted(keys):
+        article_id = key.split(":", 1)[1] if ":" in key else key
+        data = ingestion.cache.get(key)
+        if data:
+            stories.append({
+                "articleId": article_id,
+                "headline": data.get("headline") or data.get("title") or "",
+                "category": data.get("category", ""),
+                "date": data.get("date") or data.get("publishedAt", ""),
+                "source": data.get("source") or data.get("publisher", ""),
+            })
+    return {"stories": stories, "total": len(stories)}
+
+
+@router.delete("/admin/story")
+async def delete_story(
+    article_id: str = Query(...),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict:
+    _require_admin(x_admin_token)
+    key = ingestion.article_key(article_id)
+    article = ingestion.cache.get(key)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    article_date = (article.get("date") or article.get("publishedAt", ""))[:10]
+    if article_date:
+        news_batch = ingestion.cache.get(ingestion.news_key(article_date))
+        if news_batch and "stories" in news_batch:
+            news_batch["stories"] = [
+                s for s in news_batch["stories"]
+                if str(s.get("articleId", "")) != str(article_id)
+            ]
+            news_batch["totalCount"] = len(news_batch["stories"])
+            ingestion.cache.set(ingestion.news_key(article_date), news_batch)
+    ingestion.cache.delete(key)
+    log.info("Admin: deleted article %s", article_id)
+    return {"ok": True, "articleId": article_id}
+
+
+@router.get("/admin/stocks")
+async def list_stocks(
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict:
+    _require_admin(x_admin_token)
+    keys = ingestion.cache.list_keys("stock:")
+    stocks = []
+    for key in sorted(keys):
+        parts = key.split(":")
+        if len(parts) >= 4:
+            stocks.append({"key": key, "ticker": parts[1], "range": parts[2], "date": parts[3]})
+        else:
+            stocks.append({"key": key, "ticker": key, "range": "", "date": ""})
+    return {"stocks": stocks, "total": len(stocks)}
+
+
+@router.delete("/admin/stock")
+async def delete_stock(
+    key: str = Query(...),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict:
+    _require_admin(x_admin_token)
+    if not key.startswith("stock:"):
+        raise HTTPException(status_code=400, detail="Invalid stock key")
+    if ingestion.cache.get(key) is None:
+        raise HTTPException(status_code=404, detail="Stock cache not found")
+    ingestion.cache.delete(key)
+    log.info("Admin: deleted stock cache %s", key)
+    return {"ok": True, "key": key}
+
+
 class SeedPayload(BaseModel):
     date: str
     totalCount: int
@@ -205,6 +282,15 @@ input[type=number]{background:var(--hi);border:1px solid var(--border);border-ra
 .danger{border-color:#FF4D6D44}
 .toast{position:fixed;bottom:28px;right:28px;background:var(--hi);border:1px solid var(--border);border-radius:12px;padding:13px 18px;font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:99}
 .toast.show{opacity:1}
+.list{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto;padding-right:2px}
+.list::-webkit-scrollbar{width:4px}
+.list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.item{display:flex;align-items:center;gap:10px;background:var(--hi);border-radius:8px;padding:9px 12px}
+.item-info{flex:1;min-width:0}
+.item-title{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item-meta{font-size:11px;color:var(--muted);margin-top:2px}
+.btn-xs{padding:5px 10px;font-size:12px;border-radius:6px}
+.empty{color:var(--muted);font-size:13px;padding:18px;text-align:center}
 </style>
 </head>
 <body>
@@ -237,6 +323,24 @@ input[type=number]{background:var(--hi);border:1px solid var(--border);border-ra
       <div class="stat"><div class="sv" id="s-stocks">—</div><div class="sl">Stock Caches</div></div>
       <div class="stat"><div class="sv" id="s-tokens">—</div><div class="sl">Push Tokens</div></div>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>Cached Stories</h2>
+    <div class="row" style="margin-bottom:14px">
+      <span id="story-count" style="font-size:12px;color:var(--muted)">— stories</span>
+      <button class="btn btn-s btn-xs" onclick="loadStories()" style="margin-left:auto">Refresh</button>
+    </div>
+    <div class="list" id="story-list"><div class="empty">Loading…</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Stock Cache</h2>
+    <div class="row" style="margin-bottom:14px">
+      <span id="stock-count" style="font-size:12px;color:var(--muted)">— entries</span>
+      <button class="btn btn-s btn-xs" onclick="loadStockCaches()" style="margin-left:auto">Refresh</button>
+    </div>
+    <div class="list" id="stock-list"><div class="empty">Loading…</div></div>
   </div>
 
   <div class="card">
@@ -338,12 +442,68 @@ async function deleteStories(){
   try{
     const r=await fetch('/api/admin/stories',{method:'DELETE',headers:H});
     const d=await r.json();
-    if(r.ok){toast('Deleted '+d.deleted.articles+' stories.');loadStats();}
+    if(r.ok){toast('Deleted '+d.deleted.articles+' stories.');loadStats();loadStories();}
     else toast('Failed: '+r.status,false);
   }catch(e){toast('Request failed',false);}
 }
 
-loadStatus();loadStats();loadConfig();
+function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;}
+
+async function loadStories(){
+  const el=document.getElementById('story-list');
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const r=await fetch('/api/admin/stories',{headers:H});
+    const d=await r.json();
+    document.getElementById('story-count').textContent=d.total+' stories';
+    if(!d.stories.length){el.innerHTML='<div class="empty">No stories cached.</div>';return;}
+    el.innerHTML=d.stories.map(s=>`<div class="item">
+      <div class="item-info">
+        <div class="item-title">${esc(s.headline||'(no headline)')}</div>
+        <div class="item-meta">${[s.category,s.date,s.articleId].filter(Boolean).map(esc).join(' · ')}</div>
+      </div>
+      <button class="btn btn-r btn-xs" data-id="${esc(s.articleId)}" onclick="deleteStory(this.dataset.id)">Delete</button>
+    </div>`).join('');
+  }catch(e){el.innerHTML='<div class="empty">Failed to load.</div>';}
+}
+
+async function deleteStory(articleId){
+  if(!confirm('Delete story "'+articleId+'"?'))return;
+  try{
+    const r=await fetch('/api/admin/story?article_id='+encodeURIComponent(articleId),{method:'DELETE',headers:H});
+    if(r.ok){toast('Story deleted.');loadStories();loadStats();}
+    else{const d=await r.json().catch(()=>({}));toast('Failed: '+(d.detail||r.status),false);}
+  }catch(e){toast('Request failed',false);}
+}
+
+async function loadStockCaches(){
+  const el=document.getElementById('stock-list');
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const r=await fetch('/api/admin/stocks',{headers:H});
+    const d=await r.json();
+    document.getElementById('stock-count').textContent=d.total+' entries';
+    if(!d.stocks.length){el.innerHTML='<div class="empty">No stock cache entries.</div>';return;}
+    el.innerHTML=d.stocks.map(s=>`<div class="item">
+      <div class="item-info">
+        <div class="item-title">${esc(s.ticker)}</div>
+        <div class="item-meta">${esc(s.range)} · ${esc(s.date)}</div>
+      </div>
+      <button class="btn btn-r btn-xs" data-key="${esc(s.key)}" onclick="deleteStock(this.dataset.key)">Delete</button>
+    </div>`).join('');
+  }catch(e){el.innerHTML='<div class="empty">Failed to load.</div>';}
+}
+
+async function deleteStock(key){
+  if(!confirm('Delete stock cache: '+key+'?'))return;
+  try{
+    const r=await fetch('/api/admin/stock?key='+encodeURIComponent(key),{method:'DELETE',headers:H});
+    if(r.ok){toast('Stock cache deleted.');loadStockCaches();loadStats();}
+    else{const d=await r.json().catch(()=>({}));toast('Failed: '+(d.detail||r.status),false);}
+  }catch(e){toast('Request failed',false);}
+}
+
+loadStatus();loadStats();loadConfig();loadStories();loadStockCaches();
 setInterval(loadStatus,10000);
 setInterval(loadStats,30000);
 </script>

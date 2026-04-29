@@ -19,8 +19,7 @@ from anthropic import AsyncAnthropic
 
 log = logging.getLogger("marktr.enrichment")
 
-# Use a more cost-effective Claude model for enrichment while keeping good output quality.
-MODEL = "claude-3.5"
+MODEL = "claude-haiku-4-5"
 MAX_CONCURRENCY = 5
 MAX_CONCURRENCY_TWEETS = 3
 

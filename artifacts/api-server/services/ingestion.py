@@ -86,12 +86,17 @@ async def run_ingestion() -> dict[str, Any]:
         enriched = await enrichment.enrich_all(raw) if raw else []
 
         if enriched:
+            existing_payload = cache.get(news_key(today)) or {}
+            existing_stories = existing_payload.get("stories", [])
+            existing_ids = {s.get("articleId") for s in existing_stories if s.get("articleId")}
+            new_stories = [s for s in enriched if s.get("articleId") not in existing_ids]
+            merged = existing_stories + new_stories
             cache.set(news_key(today), {
                 "date": today,
-                "totalCount": len(enriched),
-                "stories": enriched,
+                "totalCount": len(merged),
+                "stories": merged,
             })
-            for story in enriched:
+            for story in new_stories:
                 aid = story.get("articleId")
                 if aid:
                     cache.set(article_key(aid), story)
@@ -143,16 +148,44 @@ def get_today_payload() -> Optional[dict[str, Any]]:
 
 
 def get_latest_payload(max_lookback_days: int = NEWS_RETENTION_DAYS) -> Optional[dict[str, Any]]:
-    """Return the most recent cached batch that contains at least one story."""
+    """Return all stories from the past max_lookback_days, newest-day-first.
+
+    Stories older than NEWS_RETENTION_DAYS are automatically purged by
+    cleanup_old_cache(), so this naturally respects the 7-day window.
+    """
     today = date.today()
+    today_str = today.isoformat()
+    all_stories: list[dict[str, Any]] = []
+    most_recent_date: Optional[str] = None
+    seen_ids: set[str] = set()
+
     for offset in range(max_lookback_days + 1):
         day = (today - timedelta(days=offset)).isoformat()
         payload = cache.get(news_key(day))
         if payload and payload.get("stories"):
-            if offset > 0:
-                payload = {**payload, "isStale": True, "asOfDate": day}
-            return payload
-    return None
+            if most_recent_date is None:
+                most_recent_date = day
+            for story in payload["stories"]:
+                aid = story.get("articleId")
+                if aid and aid in seen_ids:
+                    continue
+                if aid:
+                    seen_ids.add(aid)
+                all_stories.append(story)
+
+    if not all_stories:
+        return None
+
+    is_stale = most_recent_date != today_str
+    result: dict[str, Any] = {
+        "date": most_recent_date,
+        "totalCount": len(all_stories),
+        "stories": all_stories,
+        "isStale": is_stale,
+    }
+    if is_stale:
+        result["asOfDate"] = most_recent_date
+    return result
 
 
 def get_article(article_id: str) -> Optional[dict[str, Any]]:

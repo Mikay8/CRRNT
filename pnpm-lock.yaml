@@ -163,7 +163,7 @@ importers:
 
   artifacts/api-server: {}
 
-  artifacts/marktr:
+  artifacts/crrnt:
     dependencies:
       expo-device:
         specifier: ^55.0.15

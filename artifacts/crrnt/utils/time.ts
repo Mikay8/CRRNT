@@ -26,6 +26,17 @@ export function formatRelativeTime(iso: string | null | undefined): string {
   }
 }
 
+export function isToday(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return false;
+    return d.toDateString() === new Date().toDateString();
+  } catch {
+    return false;
+  }
+}
+
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "";
   try {

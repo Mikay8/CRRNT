@@ -4,7 +4,7 @@ import { router } from "expo-router";
 import palette from "@/constants/colors";
 import CategoryBadge from "@/components/CategoryBadge";
 import SaveButton from "@/components/SaveButton";
-import { formatRelativeTime } from "@/utils/time";
+import { formatRelativeTime, isToday } from "@/utils/time";
 import type { Story } from "@workspace/api-client-react";
 
 interface StoryCardProps {
@@ -53,11 +53,18 @@ export function StoryCard({ story }: StoryCardProps) {
           <Text style={styles.source} numberOfLines={1}>
             {story.source || "Marktr"}
           </Text>
-          {story.publishedDate ? (
-            <Text style={styles.timestamp}>
-              {formatRelativeTime(story.publishedDate)}
-            </Text>
-          ) : null}
+          <View style={styles.footerRight}>
+            {isToday(story.publishedDate) ? (
+              <View style={styles.todayBadge}>
+                <Text style={styles.todayBadgeText}>Today</Text>
+              </View>
+            ) : null}
+            {story.publishedDate ? (
+              <Text style={styles.timestamp}>
+                {formatRelativeTime(story.publishedDate)}
+              </Text>
+            ) : null}
+          </View>
         </View>
       </View>
     </Pressable>
@@ -134,11 +141,29 @@ const styles = StyleSheet.create({
     color: palette.textDim,
     flex: 1,
   },
+  footerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  todayBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: "#22C55E22",
+    borderWidth: 1,
+    borderColor: "#22C55E55",
+  },
+  todayBadgeText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 10,
+    color: "#22C55E",
+    letterSpacing: 0.3,
+  },
   timestamp: {
     fontFamily: "Inter_400Regular",
     fontSize: 11,
     color: palette.textDim,
-    marginLeft: 8,
   },
 });
 

@@ -57,9 +57,18 @@ export default function FeedScreen() {
 
   const triggerIngestion = useTriggerIngestion();
 
-  const stories: Story[] = isSearchActive
+  const rawStories: Story[] = isSearchActive
     ? (searchData?.stories ?? [])
     : (data?.stories ?? []);
+
+  const stories = useMemo(() => {
+    if (isSearchActive) return rawStories;
+    return [...rawStories].sort((a, b) => {
+      const ta = a.publishedDate ? new Date(a.publishedDate).getTime() : 0;
+      const tb = b.publishedDate ? new Date(b.publishedDate).getTime() : 0;
+      return tb - ta;
+    });
+  }, [rawStories, isSearchActive]);
 
   const headerHeight = 96;
 

@@ -101,7 +101,8 @@ def _normalize(article: dict[str, Any], marktr_category: str) -> dict[str, Any]:
         "description": (article.get("description") or article.get("summary") or "").strip(),
         "link": article.get("link") or article.get("url") or "",
         "mediaUrl": article.get("image") or article.get("image_url") or article.get("media_url"),
-        "publishedDate": article.get("published_at")
+        "publishedDate": article.get("published_date")
+        or article.get("published_at")
         or article.get("publishedAt")
         or article.get("pub_date")
         or "",

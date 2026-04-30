@@ -32,7 +32,7 @@ def _expected_token() -> Optional[str]:
 def _require_admin(token: Optional[str]) -> None:
     expected = _expected_token()
     if not expected:
-        log.error("Admin route hit but no ADMIN_TOKEN/SESSION_SECRET configured")
+        log.info("Admin route hit but no ADMIN_TOKEN/SESSION_SECRET configured")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Admin endpoints are disabled (no admin token configured)",

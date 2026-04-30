@@ -60,7 +60,7 @@ async def fetch_story_tweets(story: dict[str, Any], max_results: int = MAX_RESUL
     """Search for recent tweets related to the story. Returns [] on any failure."""
     api_key = _get_key()
     if not api_key:
-        log.debug("XAPI_KEY not set — skipping tweet fetch")
+        log.info("XAPI_KEY not set — skipping tweet fetch")
         return []
 
     query = _build_query(story)
@@ -82,19 +82,23 @@ async def fetch_story_tweets(story: dict[str, Any], max_results: int = MAX_RESUL
             )
 
         if resp.status_code == 401:
-            log.warning("XAPI: 401 Unauthorized — check XAPI_KEY")
+            #log.info("XAPI: 401 Unauthorized — check XAPI_KEY")
+            log.info("XAPI: 401 Unauthorized — check XAPI_KEY")
             return []
         if resp.status_code == 422:
-            log.warning("XAPI: 422 Unprocessable — bad query '%s'", search_query[:80])
+            #log.info("XAPI: 422 Unprocessable — bad query '%s'", search_query[:80])
+            log.info("XAPI: 422 Unprocessable — bad query '%s'", search_query[:80])
             return []
         if resp.status_code != 200:
-            log.warning("XAPI: unexpected %d for query '%s': %s", resp.status_code, search_query[:60], resp.text[:200])
+            #log.info("XAPI: unexpected %d for query '%s': %s", resp.status_code, search_query[:60], resp.text[:200])
+            log.info("XAPI: unexpected %d for query '%s'", resp.status_code, search_query[:60])
             return []
 
         data = resp.json()
         raw_tweets = data.get("tweets", [])
         if not raw_tweets:
-            log.debug("XAPI: 0 tweets for query '%s'", search_query[:60])
+            #log.debug("XAPI: 0 tweets for query '%s'", search_query[:60])
+            log.info("XAPI: 0 tweets for query '%s'", search_query[:60])
             return []
 
         results: list[dict[str, Any]] = []
@@ -115,11 +119,15 @@ async def fetch_story_tweets(story: dict[str, Any], max_results: int = MAX_RESUL
             })
 
         results.sort(key=lambda t: t["likes"] + t["retweets"], reverse=True)
-        return results[:max_results]
+        trimmed = results[:max_results]
+        #log.info("XAPI: %d tweet(s) for query '%s'", len(trimmed), search_query[:60])
+        return trimmed
 
     except httpx.TimeoutException:
-        log.warning("XAPI: timeout for query '%s'", search_query[:60])
+        #log.info("XAPI: timeout for query '%s'", search_query[:60])
+        log.info("XAPI: timeout for query '%s'", search_query[:60])
         return []
     except Exception as exc:  # noqa: BLE001
-        log.warning("XAPI: unexpected error for query '%s': %s", search_query[:60], exc)
+        #log.info("XAPI: unexpected error for query '%s': %s", search_query[:60], exc)
+        log.info("XAPI: unexpected error for query '%s': %s", search_query[:60], exc)
         return []

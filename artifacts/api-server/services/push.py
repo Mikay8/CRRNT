@@ -72,4 +72,4 @@ async def send_push(title: str, body: str, data: dict[str, Any] | None = None) -
             result = resp.json()
             log.info("Push sent to %d device(s): %s", len(tokens), result)
     except Exception as exc:  # noqa: BLE001
-        log.warning("Push notification failed: %s", exc)
+        log.info("Push notification failed: %s", exc)

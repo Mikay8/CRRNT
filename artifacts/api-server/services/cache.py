@@ -27,7 +27,7 @@ def init() -> None:
     if _db_url:
         log.info("Replit DB cache enabled")
     else:
-        log.warning("REPLIT_DB_URL not set — using in-memory cache only")
+        log.info("REPLIT_DB_URL not set — using in-memory cache only")
 
 
 def _encoded_key(key: str) -> str:
@@ -41,7 +41,7 @@ def get(key: str) -> Optional[Any]:
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        log.warning("Failed to JSON-decode cached value for %s", key)
+        log.info("Failed to JSON-decode cached value for %s", key)
         return None
 
 
@@ -55,7 +55,7 @@ def delete(key: str) -> None:
         try:
             httpx.delete(f"{_db_url}/{_encoded_key(key)}", timeout=10.0)
         except httpx.HTTPError as exc:
-            log.warning("Replit DB delete failed for %s: %s", key, exc)
+            log.info("Replit DB delete failed for %s: %s", key, exc)
     with _lock:
         _memory.pop(key, None)
 
@@ -69,7 +69,7 @@ def _get_raw(key: str) -> Optional[str]:
             resp.raise_for_status()
             return resp.text
         except httpx.HTTPError as exc:
-            log.warning("Replit DB get failed for %s: %s", key, exc)
+            log.info("Replit DB get failed for %s: %s", key, exc)
     with _lock:
         return _memory.get(key)
 
@@ -85,7 +85,7 @@ def _set_raw(key: str, raw: str) -> None:
             )
             resp.raise_for_status()
         except httpx.HTTPError as exc:
-            log.warning("Replit DB set failed for %s: %s", key, exc)
+            log.info("Replit DB set failed for %s: %s", key, exc)
     with _lock:
         _memory[key] = raw
 
@@ -110,6 +110,6 @@ def list_keys(prefix: str = "") -> list[str]:
             from urllib.parse import unquote
             return [unquote(k) for k in text.splitlines() if k]
         except httpx.HTTPError as exc:
-            log.warning("Replit DB list failed for prefix %s: %s", prefix, exc)
+            log.info("Replit DB list failed for prefix %s: %s", prefix, exc)
     with _lock:
         return [k for k in _memory.keys() if k.startswith(prefix)]

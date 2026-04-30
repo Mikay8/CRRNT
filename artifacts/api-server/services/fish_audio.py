@@ -88,7 +88,7 @@ async def synthesize_story(story: dict[str, Any]) -> dict[str, Any]:
             resp.raise_for_status()
             audio_bytes = resp.content
     except Exception as exc:  # noqa: BLE001
-        log.warning("Fish Audio synthesis failed for %s: %s", article_id, exc)
+        log.info("Fish Audio synthesis failed for %s: %s", article_id, exc)
         return story
 
     audio_b64 = base64.b64encode(audio_bytes).decode("ascii")

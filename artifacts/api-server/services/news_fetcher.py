@@ -70,7 +70,7 @@ async def fetch_category(
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(f"{NEWSMESH_BASE}/trending", params=params)
         if resp.status_code >= 400:
-            log.error(
+            log.info(
                 "NewsMesh /trending %s -> %s: %s",
                 marktr_category,
                 resp.status_code,
@@ -82,7 +82,9 @@ async def fetch_category(
         payload = resp.json()
 
     raw_articles = payload.get("articles") or payload.get("data") or []
-    return [_normalize(a, marktr_category) for a in raw_articles if a]
+    normalized = [_normalize(a, marktr_category) for a in raw_articles if a]
+    log.info("NewsMesh: %d article(s) fetched for category '%s'", len(normalized), marktr_category)
+    return normalized
 
 
 def _normalize(article: dict[str, Any], marktr_category: str) -> dict[str, Any]:
@@ -137,7 +139,8 @@ async def fetch_all_categories(per_category: int = 10) -> list[dict[str, Any]]:
         try:
             results.append(await fetch_category(cat, limit=per_category))
         except Exception as exc:  # noqa: BLE001
-            log.exception("Failed to fetch category %s: %s", cat, exc)
+            #log.exception("Failed to fetch category %s: %s", cat, exc)
+            log.info("Failed to fetch category %s: %s", cat, exc)
             results.append([])
 
     flattened: list[dict[str, Any]] = []
@@ -149,6 +152,7 @@ async def fetch_all_categories(per_category: int = 10) -> list[dict[str, Any]]:
                 continue
             seen.add(aid)
             flattened.append(art)
+    log.info("NewsMesh: all categories complete — %d unique articles total", len(flattened))
     return flattened
 
 

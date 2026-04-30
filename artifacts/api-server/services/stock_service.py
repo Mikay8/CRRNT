@@ -53,7 +53,7 @@ def _fetch_sync(ticker: str, rng: str) -> Optional[dict[str, Any]]:
         t = yf.Ticker(ticker)
         hist = t.history(period=rng, interval=interval, auto_adjust=False)
     except Exception as exc:  # noqa: BLE001
-        log.warning("yfinance.history failed for %s: %s", ticker, exc)
+        log.info("yfinance.history failed for %s: %s", ticker, exc)
         return None
 
     if hist is None or hist.empty:

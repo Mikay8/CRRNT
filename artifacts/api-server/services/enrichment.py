@@ -107,6 +107,7 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
 
     try:
         client = _get_client()
+        log.info("Claude pass 1: enriching '%s'", title[:70])
         msg = await client.messages.create(
             model=MODEL,
             max_tokens=600,
@@ -118,7 +119,7 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
         )
         parsed = _parse_json(text)
     except Exception as exc:  # noqa: BLE001
-        log.warning("Claude enrichment failed for %s: %s", title[:60], exc)
+        log.info("Claude enrichment failed for %s: %s", title[:60], exc)
         parsed = {}
 
     ticker = parsed.get("ticker")
@@ -174,6 +175,12 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     story.setdefault("peopleSay", None)
     story.setdefault("sentiment", None)
     story.setdefault("tweets", [])
+    log.info(
+        "Claude pass 1 done: '%s' → ticker=%s category=%s",
+        title[:60],
+        ticker or "none",
+        story.get("category", category),
+    )
     return story
 
 
@@ -198,6 +205,7 @@ async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]
 
     try:
         client = _get_client()
+        log.info("Claude pass 2: sentiment for '%s' (%d tweet(s))", title[:60], len(tweets))
         msg = await client.messages.create(
             model=MODEL,
             max_tokens=200,
@@ -209,7 +217,7 @@ async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]
         )
         parsed = _parse_json(text)
     except Exception as exc:  # noqa: BLE001
-        log.warning("Tweet sentiment failed for %s: %s", title[:60], exc)
+        log.info("Tweet sentiment failed for %s: %s", title[:60], exc)
         parsed = {}
 
     relevant = parsed.get("relevant", True)

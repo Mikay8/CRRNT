@@ -101,7 +101,7 @@ async def run_ingestion() -> dict[str, Any]:
                 if aid:
                     cache.set(article_key(aid), story)
         else:
-            log.warning("Ingestion produced 0 stories — preserving existing cache if present")
+            log.info("Ingestion produced 0 stories — preserving existing cache if present")
 
         status = {
             "date": today,
@@ -117,7 +117,7 @@ async def run_ingestion() -> dict[str, Any]:
         try:
             cleanup_old_cache()
         except Exception as exc:  # noqa: BLE001
-            log.warning("Cache cleanup after ingestion failed: %s", exc)
+            log.info("Cache cleanup after ingestion failed: %s", exc)
 
         try:
             await push.send_push(
@@ -125,7 +125,7 @@ async def run_ingestion() -> dict[str, Any]:
                 f"{len(enriched)} fresh stories are ready for you.",
             )
         except Exception as exc:  # noqa: BLE001
-            log.warning("Push notification after ingestion failed: %s", exc)
+            log.info("Push notification after ingestion failed: %s", exc)
 
         return status
 

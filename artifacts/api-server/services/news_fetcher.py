@@ -97,6 +97,13 @@ def _normalize(article: dict[str, Any], marktr_category: str) -> dict[str, Any]:
         or article.get("url")
         or ""
     )
+    def _normalize_list(value: Any) -> list[str]:
+        if isinstance(value, list):
+            return [str(item) for item in value if isinstance(item, str)]
+        if isinstance(value, str):
+            return [value]
+        return []
+
     return {
         "articleId": str(article_id),
         "title": (article.get("title") or "").strip(),
@@ -110,6 +117,9 @@ def _normalize(article: dict[str, Any], marktr_category: str) -> dict[str, Any]:
         or "",
         "source": _extract_source(article),
         "category": marktr_category,
+        "topics": _normalize_list(article.get("topics")),
+        "people": _normalize_list(article.get("people")),
+        "authors": _normalize_list(article.get("author") or article.get("authors")),
     }
 
 

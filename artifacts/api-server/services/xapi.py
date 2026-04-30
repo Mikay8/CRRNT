@@ -39,9 +39,19 @@ def _build_query(story: dict[str, Any]) -> str:
     ticker = story.get("ticker")
     if ticker:
         parts.append(f"${ticker}")
+
     company = story.get("companyName")
     if company and len(company) > 2:
         parts.append(f'"{company}"')
+
+    topics = story.get("topics") or []
+    people = story.get("people") or []
+    if topics and people:
+        first_topic = topics[0].strip()
+        first_person = people[0].strip()
+        if first_topic and first_person:
+            parts.append(f'"{first_topic}" "{first_person}"')
+
     if not parts:
         # Extract keywords from title + insight for richer, topic-aware queries
         text = " ".join(filter(None, [story.get("title", ""), story.get("insight", "")]))
@@ -52,6 +62,7 @@ def _build_query(story: dict[str, Any]) -> str:
         seen: set[str] = set()
         unique = [w for w in words if not (w.lower() in seen or seen.add(w.lower()))]  # type: ignore[func-returns-value]
         parts = [f'"{w}"' for w in unique[:4]]
+
     query = " OR ".join(parts[:3]) if len(parts) > 1 else (parts[0] if parts else story.get("title", "")[:60])
     return query
 

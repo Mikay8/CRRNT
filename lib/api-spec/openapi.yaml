@@ -334,22 +334,22 @@ components:
           type: string
         insight:
           type: string
-          description: One-line financial insight written by Claude
-        explanation:
+          description: One-line insight written by Claude
+        walletImpact:
           type: string
-          description: Plain-language financial explanation written by Claude
-        everydayImpact:
+          description: How this news affects everyday finances (prices, jobs, wages)
+        lifeImpact:
           type: string
-          description: How this news affects regular people (consumers, workers, families)
+          description: How this news directly affects the reader's life
         storySummary:
           type: string
           description: AI-generated summary of the core news story
-        tweetSummary:
+        peopleSay:
           type: string
-          description: AI-generated summary of tweet sentiment
+          description: AI-generated summary of what people are saying on social media
         sentiment:
           type: string
-          enum: [bullish, bearish, mixed, neutral]
+          enum: [concerned, hopeful, angry, divided, unbothered, mixed]
           description: Overall social media sentiment
         tweets:
           type: array
@@ -364,7 +364,7 @@ components:
         - source
         - category
         - insight
-        - explanation
+        - walletImpact
     StoriesResponse:
       type: object
       properties:

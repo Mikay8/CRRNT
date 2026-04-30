@@ -64,22 +64,20 @@ export const ListStoriesResponse = zod.object({
       companyName: zod.string().optional(),
       insight: zod
         .string()
-        .describe("One-line financial insight written by Claude"),
-      explanation: zod
+        .describe("One-line insight written by Claude"),
+      walletImpact: zod
         .string()
-        .describe("Plain-language financial explanation written by Claude"),
-      everydayImpact: zod
-        .string()
-        .optional()
-        .describe(
-          "How this news affects regular people (consumers, workers, families)",
-        ),
-      tweetSummary: zod
+        .describe("How this news affects everyday finances (prices, jobs, wages)"),
+      lifeImpact: zod
         .string()
         .optional()
-        .describe("AI-generated summary of tweet sentiment"),
+        .describe("How this news directly affects the reader's life"),
+      peopleSay: zod
+        .string()
+        .optional()
+        .describe("AI-generated summary of what people are saying on social media"),
       sentiment: zod
-        .enum(["bullish", "bearish", "mixed", "neutral"])
+        .enum(["concerned", "hopeful", "angry", "divided", "unbothered", "mixed"])
         .optional()
         .describe("Overall social media sentiment"),
       tweets: zod
@@ -224,22 +222,20 @@ export const SearchStoriesResponse = zod.object({
       companyName: zod.string().optional(),
       insight: zod
         .string()
-        .describe("One-line financial insight written by Claude"),
-      explanation: zod
+        .describe("One-line insight written by Claude"),
+      walletImpact: zod
         .string()
-        .describe("Plain-language financial explanation written by Claude"),
-      everydayImpact: zod
-        .string()
-        .optional()
-        .describe(
-          "How this news affects regular people (consumers, workers, families)",
-        ),
-      tweetSummary: zod
+        .describe("How this news affects everyday finances (prices, jobs, wages)"),
+      lifeImpact: zod
         .string()
         .optional()
-        .describe("AI-generated summary of tweet sentiment"),
+        .describe("How this news directly affects the reader's life"),
+      peopleSay: zod
+        .string()
+        .optional()
+        .describe("AI-generated summary of what people are saying on social media"),
       sentiment: zod
-        .enum(["bullish", "bearish", "mixed", "neutral"])
+        .enum(["concerned", "hopeful", "angry", "divided", "unbothered", "mixed"])
         .optional()
         .describe("Overall social media sentiment"),
       tweets: zod

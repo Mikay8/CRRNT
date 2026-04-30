@@ -21,16 +21,16 @@ export interface Story {
   /** Primary stock ticker mentioned or implied (null if none) */
   ticker?: string;
   companyName?: string;
-  /** One-line financial insight written by Claude */
+  /** One-line insight written by Claude */
   insight: string;
-  /** Plain-language financial explanation written by Claude */
-  explanation: string;
-  /** How this news affects regular people (consumers, workers, families) */
-  everydayImpact?: string;
+  /** How this news affects everyday finances (prices, jobs, wages) */
+  walletImpact: string;
+  /** How this news directly affects the reader's life */
+  lifeImpact?: string;
   /** AI-generated summary of the core news story */
   storySummary?: string;
-  /** AI-generated summary of tweet sentiment */
-  tweetSummary?: string;
+  /** AI-generated summary of what people are saying on social media */
+  peopleSay?: string;
   /** Overall social media sentiment */
   sentiment?: StorySentiment;
   /** Top tweets related to this story */

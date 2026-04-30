@@ -39,33 +39,43 @@ const RANGE_TABS: { label: string; value: StockRange; hint: string }[] = [
 ];
 
 const SENTIMENT_CONFIG = {
-  bullish: {
-    label: "Bullish",
+  concerned: {
+    label: "Concerned",
+    color: "#FF9500",
+    icon: "alert-circle" as const,
+  },
+  hopeful: {
+    label: "Hopeful",
     color: palette.positive,
     icon: "trending-up" as const,
   },
-  bearish: {
-    label: "Bearish",
+  angry: {
+    label: "Angry",
     color: palette.negative,
-    icon: "trending-down" as const,
+    icon: "flame" as const,
   },
-  mixed: { label: "Mixed", color: "#FFB347", icon: "swap-horizontal" as const },
-  neutral: {
-    label: "Neutral",
+  divided: {
+    label: "Divided",
+    color: "#FFB347",
+    icon: "swap-horizontal" as const,
+  },
+  unbothered: {
+    label: "Unbothered",
     color: palette.textMuted,
     icon: "remove" as const,
   },
+  mixed: { label: "Mixed", color: "#8B5CF6", icon: "shuffle" as const },
 } as const;
 
 function buildSpeechText(story: Story): string {
   const parts: string[] = [];
   parts.push(story.title + ".");
-  if (story.everydayImpact) {
-    parts.push("Here's how it affects you. " + story.everydayImpact);
+  if ((story as any).lifeImpact) {
+    parts.push("Here's how it affects you. " + (story as any).lifeImpact);
   }
-  parts.push("How does it stocks? " + story.insight + ". " + story.explanation);
-  if (story.tweetSummary) {
-    parts.push("What people are saying. " + story.tweetSummary);
+  parts.push("Wallet impact. " + story.insight + ". " + (story as any).walletImpact);
+  if ((story as any).peopleSay) {
+    parts.push("What people are saying. " + (story as any).peopleSay);
   }
   return parts.join(" ");
 }
@@ -186,12 +196,12 @@ export default function StoryDetailScreen() {
 
   const activeTab = RANGE_TABS.find((t) => t.value === stockRange)!;
   const tweets: Tweet[] = (story as any).tweets ?? [];
-  const tweetSummary: string | null = (story as any).tweetSummary ?? null;
+  const peopleSay: string | null = (story as any).peopleSay ?? null;
   const sentimentKey = ((story as any).sentiment ??
-    "neutral") as keyof typeof SENTIMENT_CONFIG;
+    "mixed") as keyof typeof SENTIMENT_CONFIG;
   const sentimentCfg =
-    SENTIMENT_CONFIG[sentimentKey] ?? SENTIMENT_CONFIG.neutral;
-  const hasSocialData = tweetSummary || tweets.length > 0;
+    SENTIMENT_CONFIG[sentimentKey] ?? SENTIMENT_CONFIG.mixed;
+  const hasSocialData = peopleSay || tweets.length > 0;
 
   return (
     <ScrollView
@@ -260,7 +270,7 @@ export default function StoryDetailScreen() {
           <Text style={styles.insight}>{story.storySummary ?? story.insight}</Text>
         </View>
         {/* ── How does it affect me? ───────────────────────────────── */}
-        {story.everydayImpact ? (
+        {(story as any).lifeImpact ? (
           <View style={[styles.insightCard, styles.impactCard]}>
             <View style={styles.sectionHeader}>
               <Ionicons name="people" size={16} color="#7B68EE" />
@@ -268,16 +278,16 @@ export default function StoryDetailScreen() {
                 How does it affect me?
               </Text>
             </View>
-            <Text style={styles.impactText}>{story.everydayImpact}</Text>
+            <Text style={styles.impactText}>{(story as any).lifeImpact}</Text>
           </View>
         ) : null}
-        {/* ── How does it affect stocks? ──────────────────────────────────── */}
+        {/* ── Wallet impact ──────────────────────────────────────────── */}
         <View style={styles.insightCard}>
           <View style={styles.sectionHeader}>
             <Ionicons name="sparkles" size={16} color={palette.accent} />
-            <Text style={styles.sectionLabel}>How does it affect stocks?</Text>
+            <Text style={styles.sectionLabel}>Wallet impact</Text>
           </View>
-          <Text style={styles.impactText}>{story.explanation}</Text>
+          <Text style={styles.impactText}>{(story as any).walletImpact}</Text>
         </View>
         {/* ── Stock chart ──────────────────────────────────────────── */}
         {ticker ? (
@@ -425,8 +435,8 @@ export default function StoryDetailScreen() {
               </View>
             </View>
 
-            {tweetSummary ? (
-              <Text style={styles.tweetSummary}>{tweetSummary}</Text>
+            {peopleSay ? (
+              <Text style={styles.peopleSay}>{peopleSay}</Text>
             ) : null}
 
             {tweets.length > 0 ? (
@@ -714,7 +724,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   sentimentLabel: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  tweetSummary: {
+  peopleSay: {
     fontFamily: "Inter_400Regular",
     fontSize: 14,
     lineHeight: 21,

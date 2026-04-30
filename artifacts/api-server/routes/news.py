@@ -73,7 +73,7 @@ async def search_stories(
             s.get("description"),
             s.get("storySummary"),
             s.get("insight"),
-            s.get("explanation"),
+            s.get("walletImpact"),
             s.get("source"),
             s.get("ticker"),
             s.get("companyName"),

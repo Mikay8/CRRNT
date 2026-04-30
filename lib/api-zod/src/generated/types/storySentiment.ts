@@ -13,8 +13,10 @@ export type StorySentiment =
   (typeof StorySentiment)[keyof typeof StorySentiment];
 
 export const StorySentiment = {
-  bullish: "bullish",
-  bearish: "bearish",
+  concerned: "concerned",
+  hopeful: "hopeful",
+  angry: "angry",
+  divided: "divided",
+  unbothered: "unbothered",
   mixed: "mixed",
-  neutral: "neutral",
 } as const;

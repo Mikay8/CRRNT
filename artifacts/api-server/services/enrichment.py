@@ -1,10 +1,10 @@
 """Claude-powered enrichment for news stories.
 
 Pass 1 — Claude extracts per story:
-  ticker, companyName, insight, explanation, everydayImpact, category
+  ticker, companyName, insight, walletImpact, lifeImpact, category
 
 Pass 2 — For stories with tweets from GetXAPI:
-  tweetSummary, sentiment  (via a second, lightweight Claude call)
+  peopleSay, sentiment  (via a second, lightweight Claude call)
 """
 from __future__ import annotations
 
@@ -37,43 +37,54 @@ def _get_client() -> AsyncAnthropic:
 
 
 SYSTEM_PROMPT = (
-    "You are an editor for CRRNT — an app that keeps young adults informed about "
-    "trending stories in pop culture, tech, government, sports, business, and "
-    "science. For each story, identify the most relevant publicly traded stock "
-    "ticker (US exchanges only, e.g. AAPL, NKE, DIS, TSLA, META). If there is no "
-    "clearly related stock, return null for ticker.\n\n"
-    "Write a single-sentence INSIGHT (under 110 characters) — punchy, modern, "
-    "and useful. Then write an EXPLANATION (2-3 sentences, max 320 characters) "
-    "in plain language explaining why this story matters and how it could tie "
-    "back to markets or stocks. Avoid jargon. Speak like a smart friend, not a "
-    "finance textbook.\n\n"
-    "Write EVERYDAYIMPACT (2-3 sentences, max 350 characters): how this news "
-    "concretely affects regular people — consumers, workers, families, or "
-    "communities. Think prices, jobs, products, lifestyle changes. Make it "
-    "personal and relatable. Start with 'You' or 'If you' when possible. "
-    "Avoid finance jargon entirely.\n\n"
-    "Write STORYSUMMARY (3-5 sentences, max 600 characters): a concise summary "
-    "of the core news story in plain language. This should read like a quick "
-    "headline summary and avoid the financial take.\n\n"
-    "CATEGORY REFINEMENT: When the input category is 'celebrity', you must also "
-    "classify the story. Set 'category' to 'celebrity' if the story is primarily "
-    "about a specific famous person's life, relationships, fashion, or personal "
-    "drama. Set 'category' to 'entertainment' if the story is primarily about a "
-    "movie, TV show, music release, concert, streaming platform, or media "
-    "franchise. For all other input categories, omit the 'category' field.\n\n"
+    "You are an editor for CRRNT — an app that helps young adults understand "
+    "what's really going on in the world and what it means for their actual life. "
+    "CRRNT covers pop culture, tech, government, sports, business, and science.\n\n"
+    "Your job is not to explain markets. Your job is to make the news feel "
+    "personally relevant — like a smart, culturally aware friend breaking it "
+    "down over text.\n\n"
+    "Write STORYSUMMARY (3-5 sentences, max 600 characters): a plain language "
+    "summary of what actually happened. No financial angle. No jargon. Just "
+    "the story, clearly told.\n\n"
+    "Write LIFEIIMPACT (2-3 sentences, max 350 characters): the most important "
+    "thing — how does this directly affect the reader's life. Their rent, job, "
+    "groceries, career, relationships, mental load, or future. Be specific and "
+    "concrete. Start with 'You' or 'If you' when possible. This is the heart "
+    "of CRRNT — make it hit.\n\n"
+    "Write WALLETIMPACT (2-3 sentences, max 320 characters): the financial "
+    "ripple effect on everyday people — prices, costs, wages, job market, "
+    "spending power. Not stocks or investing. Think: will this make something "
+    "cost more? Will it affect hiring? Speak like a friend, not an economist.\n\n"
+    "Write INSIGHT (1 sentence, under 110 characters): a punchy, memorable "
+    "one-liner that captures why this story matters to a young adult right now. "
+    "Hook them in. Make it feel urgent and real.\n\n"
+    "TICKER: Optionally identify the most relevant publicly traded US stock "
+    "ticker if one is clearly central to the story (e.g. AAPL, TSLA, META). "
+    "This is secondary context — not the focus. Return null if not clearly relevant.\n\n"
+    "CATEGORY REFINEMENT: When the input category is 'celebrity', classify "
+    "further. Set 'category' to 'celebrity' if the story is about a famous "
+    "person's life, relationships, or personal drama. Set 'category' to "
+    "'entertainment' if the story is about a movie, show, music release, "
+    "streaming platform, or media franchise. Omit 'category' for all others.\n\n"
     "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
-    "with keys: ticker (string|null), companyName (string|null), "
-    "insight (string), explanation (string), everydayImpact (string), storySummary (string), "
+    "with keys: storySummary (string), lifeImpact (string), walletImpact (string), "
+    "insight (string), ticker (string|null), companyName (string|null), "
     "category (string, optional)."
 )
 
 SENTIMENT_SYSTEM_PROMPT = (
-    "You analyze social media sentiment about news stories. Given a set of "
-    "real tweets, write a brief, casual sentiment summary and classify the "
-    "overall mood. Be honest — if tweets are negative, say so.\n\n"
+    "You analyze social media sentiment about news stories for CRRNT — an app "
+    "for young adults who want to understand what the world actually thinks "
+    "about what's happening.\n\n"
+    "Given a set of real posts from Twitter and Reddit, write a casual, honest "
+    "sentiment summary that captures the vibe of real people — not Wall Street, "
+    "not pundits. How are everyday people actually feeling about this story? "
+    "Angry? Worried? Hopeful? Cynical? Unbothered?\n\n"
+    "Be direct. If people are scared, say scared. If they're laughing it off, "
+    "say that. Avoid corporate tone entirely.\n\n"
     "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
-    "with keys: sentiment ('bullish'|'bearish'|'mixed'|'neutral'), "
-    "tweetSummary (string, 2-3 sentences, max 280 characters, casual tone)."
+    "with keys: sentiment ('concerned'|'hopeful'|'angry'|'divided'|'unbothered'|'mixed'), "
+    "peopleSay (string, 2-3 sentences, max 280 characters, casual conversational tone)."
 )
 
 
@@ -126,19 +137,19 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     if not insight:
         insight = _fallback_insight(category, title)
 
-    explanation = (parsed.get("explanation") or "").strip()
-    if not explanation:
-        explanation = (
-            "We couldn't generate a fresh financial take on this story right now, "
-            "but it's still worth keeping an eye on — markets often react to "
-            "headlines like this in the days that follow."
+    wallet_impact = (parsed.get("walletImpact") or "").strip()
+    if not wallet_impact:
+        wallet_impact = (
+            "This story may ripple through everyday finances — "
+            "from prices at the checkout to hiring in the industry. "
+            "Keep an eye on how it develops."
         )
 
-    everyday_impact = (parsed.get("everydayImpact") or "").strip()
-    if not everyday_impact:
-        everyday_impact = (
-            "This story may have ripple effects that touch everyday life — "
-            "from prices at the checkout to job opportunities in the industry. "
+    life_impact = (parsed.get("lifeImpact") or "").strip()
+    if not life_impact:
+        life_impact = (
+            "This story may have real effects on everyday life — "
+            "from your job to your wallet to your community. "
             "Keep an eye on how it develops."
         )
 
@@ -154,11 +165,11 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     story["ticker"] = ticker
     story["companyName"] = company_name
     story["insight"] = insight
-    story["explanation"] = explanation
-    story["everydayImpact"] = everyday_impact
+    story["walletImpact"] = wallet_impact
+    story["lifeImpact"] = life_impact
     story["storySummary"] = story_summary
     # Tweet fields — populated in Pass 2 if tweets are found
-    story.setdefault("tweetSummary", None)
+    story.setdefault("peopleSay", None)
     story.setdefault("sentiment", None)
     story.setdefault("tweets", [])
     return story
@@ -199,8 +210,8 @@ async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]
         log.warning("Tweet sentiment failed for %s: %s", title[:60], exc)
         parsed = {}
 
-    story["sentiment"] = parsed.get("sentiment") or "neutral"
-    story["tweetSummary"] = (parsed.get("tweetSummary") or "").strip() or None
+    story["sentiment"] = parsed.get("sentiment") or "mixed"
+    story["peopleSay"] = (parsed.get("peopleSay") or "").strip() or None
     story["tweets"] = tweets
     return story
 
@@ -237,7 +248,7 @@ async def enrich_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Run both enrichment passes for all stories."""
     from services import xapi  # avoid circular at module level
 
-    # Pass 1: Claude enrichment (ticker, insight, explanation, everydayImpact)
+    # Pass 1: Claude enrichment (ticker, insight, walletImpact, lifeImpact)
     sem1 = asyncio.Semaphore(MAX_CONCURRENCY)
 
     async def _bounded_enrich(story: dict[str, Any]) -> dict[str, Any]:

@@ -84,7 +84,7 @@ async def get_config(
 
 class ConfigUpdate(BaseModel):
     perCategory: int
-    selectedCategories: list[str]
+    selectedCategories: Optional[list[str]] = None
 
 
 @router.post("/admin/config")
@@ -93,8 +93,11 @@ async def set_config(
     x_admin_token: Optional[str] = Header(default=None),
 ) -> dict:
     _require_admin(x_admin_token)
-    updated = config_service.set_config({"perCategory": body.perCategory})
-    log.info("Admin: config updated — perCategory=%d", updated["perCategory"])
+    updates = {"perCategory": body.perCategory}
+    if body.selectedCategories is not None:
+        updates["selectedCategories"] = body.selectedCategories
+    updated = config_service.set_config(updates)
+    log.info("Admin: config updated — perCategory=%d, categories=%s", updated["perCategory"], updated.get("selectedCategories"))
     return updated
 
 

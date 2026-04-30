@@ -28,6 +28,12 @@ export default function MiniAudioBar() {
   const [scrubProgress, setScrubProgress] = useState<number | null>(null);
   const trackWidthRef = useRef(0);
 
+  // Refs so PanResponder callbacks (created once) always see fresh values
+  const durationMsRef = useRef(durationMs);
+  const seekToRef = useRef(seekTo);
+  useEffect(() => { durationMsRef.current = durationMs; }, [durationMs]);
+  useEffect(() => { seekToRef.current = seekTo; }, [seekTo]);
+
   const isInTabs = segments[0] === "(tabs)";
   const isOnStory = segments[0] === "story";
   const shouldShow = isBarVisible && !!story && !isOnStory;
@@ -43,6 +49,8 @@ export default function MiniAudioBar() {
 
   const clamp = (v: number) => Math.max(0, Math.min(1, v));
 
+  const setScrubProgressRef = useRef(setScrubProgress);
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -50,21 +58,21 @@ export default function MiniAudioBar() {
       onPanResponderGrant: (evt) => {
         if (trackWidthRef.current === 0) return;
         const ratio = clamp(evt.nativeEvent.locationX / trackWidthRef.current);
-        setScrubProgress(ratio);
+        setScrubProgressRef.current(ratio);
       },
       onPanResponderMove: (evt) => {
         if (trackWidthRef.current === 0) return;
         const ratio = clamp(evt.nativeEvent.locationX / trackWidthRef.current);
-        setScrubProgress(ratio);
+        setScrubProgressRef.current(ratio);
       },
       onPanResponderRelease: (evt) => {
         if (trackWidthRef.current === 0) return;
         const ratio = clamp(evt.nativeEvent.locationX / trackWidthRef.current);
-        setScrubProgress(null);
-        seekTo(ratio * durationMs);
+        seekToRef.current(ratio * durationMsRef.current);
+        setScrubProgressRef.current(null);
       },
       onPanResponderTerminate: () => {
-        setScrubProgress(null);
+        setScrubProgressRef.current(null);
       },
     })
   ).current;

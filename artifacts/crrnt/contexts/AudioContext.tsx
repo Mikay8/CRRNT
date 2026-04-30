@@ -142,7 +142,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (!soundRef.current) return;
     const status = await soundRef.current.getStatusAsync();
     if (!status.isLoaded) return;
-    await soundRef.current.setPositionAsync(Math.max(0, Math.min(ms, status.durationMillis ?? 0)));
+    const clamped = Math.max(0, Math.min(ms, status.durationMillis ?? 0));
+    setPositionMs(clamped); // update immediately so UI reflects target before playback catches up
+    await soundRef.current.setPositionAsync(clamped);
   }, []);
 
   const dismiss = useCallback(async () => {

@@ -76,10 +76,12 @@ SENTIMENT_SYSTEM_PROMPT = (
     "You analyze social media sentiment about news stories for CRRNT — an app "
     "for young adults who want to understand what the world actually thinks "
     "about what's happening.\n\n"
-    "Given a set of real posts from Twitter and Reddit, first decide if the "
-    "tweets are actually relevant to the story. Set relevant to false if the "
-    "tweets are spam, bot activity, unrelated to the story, or mostly scam "
-    "promotions. If relevant is false, skip the other fields.\n\n"
+    "Given a news story and a set of real posts from Twitter, decide if the "
+    "tweets are relevant. Tweets are relevant if they discuss the people, "
+    "companies, topics, or events mentioned in the story — even if they don't "
+    "reference the exact headline. Only set relevant to false if the tweets are "
+    "pure spam, crypto scams, bot activity, or have absolutely nothing to do "
+    "with the story's subject matter.\n\n"
     "If relevant is true: write a casual, honest sentiment summary that captures "
     "the vibe of real people — not Wall Street, not pundits. How are everyday "
     "people actually feeling? Angry? Worried? Hopeful? Cynical? Unbothered? "
@@ -191,14 +193,16 @@ async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]
 
     title = story.get("title", "")
     ticker = story.get("ticker", "")
+    summary = story.get("storySummary") or story.get("description") or ""
     tweets_text = "\n".join(
         f"- @{t.get('authorName', '?')}: {t.get('text', '')} [♥{t.get('likes', 0)} 🔁{t.get('retweets', 0)}]"
-        for t in tweets[:5]
+        for t in tweets[:8]
     )
 
     user_prompt = (
         f"Article: {title}\n"
-        f"Ticker: {ticker or 'N/A'}\n\n"
+        f"Ticker: {ticker or 'N/A'}\n"
+        f"Summary: {summary[:300]}\n\n"
         f"Tweets:\n{tweets_text}\n\n"
         "Reply with JSON only."
     )
@@ -208,7 +212,7 @@ async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]
         log.info("Claude pass 2: sentiment for '%s' (%d tweet(s))", title[:60], len(tweets))
         msg = await client.messages.create(
             model=MODEL,
-            max_tokens=200,
+            max_tokens=300,
             system=SENTIMENT_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
         )
@@ -223,7 +227,7 @@ async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]
     relevant = parsed.get("relevant", True)
     if not relevant:
         story["sentiment"] = None
-        story["peopleSay"] = "Not much buzz around this topic."
+        story["peopleSay"] = None
         story["tweets"] = []
         return story
 

@@ -98,6 +98,16 @@ async def synthesize_story(story: dict[str, Any]) -> dict[str, Any]:
     return story
 
 
+def attach_audio_url(story: dict[str, Any]) -> dict[str, Any]:
+    article_id = story.get("articleId")
+    if not article_id:
+        return story
+
+    if cache.get(audio_cache_key(article_id)):
+        story["audioUrl"] = f"/api/news/{article_id}/audio"
+    return story
+
+
 async def synthesize_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Run TTS for all stories with bounded concurrency. No-ops when API key is absent."""
     api_key = os.environ.get("FISH_AUDIO_API_KEY")

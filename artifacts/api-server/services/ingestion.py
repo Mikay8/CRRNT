@@ -11,7 +11,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
-from services import cache, config as config_service, enrichment, news_fetcher, push
+from services import cache, config as config_service, enrichment, fish_audio, news_fetcher, push
 
 ALL_CATEGORIES = news_fetcher.ALL_CATEGORIES
 
@@ -178,7 +178,7 @@ def get_latest_payload(max_lookback_days: int = NEWS_RETENTION_DAYS) -> Optional
                     continue
                 if aid:
                     seen_ids.add(aid)
-                all_stories.append(story)
+                all_stories.append(fish_audio.attach_audio_url(story))
 
     if not all_stories:
         return None
@@ -196,7 +196,8 @@ def get_latest_payload(max_lookback_days: int = NEWS_RETENTION_DAYS) -> Optional
 
 
 def get_article(article_id: str) -> Optional[dict[str, Any]]:
-    return cache.get(article_key(article_id))
+    story = cache.get(article_key(article_id))
+    return fish_audio.attach_audio_url(story) if story else None
 
 
 def cleanup_old_cache() -> dict[str, int]:

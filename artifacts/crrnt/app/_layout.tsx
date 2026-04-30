@@ -122,7 +122,7 @@ export default function RootLayout() {
       <View style={launchStyles.container}>
         <StatusBar style="light" />
         <Image
-          source={require("../assets/images/icon.png")}
+          source={require("../assets/images/splash-logo.png")}
           style={launchStyles.logo}
           resizeMode="contain"
         />
@@ -184,7 +184,7 @@ const launchStyles = StyleSheet.create({
     justifyContent: "center",
   },
   logo: {
-    width: 220,
-    height: 220,
+    width: 240,
+    height: 76,
   },
 });

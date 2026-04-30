@@ -14,7 +14,8 @@ import { useAudio } from "@/contexts/AudioContext";
 import palette from "@/constants/colors";
 
 const TAB_BAR_HEIGHT = 49;
-const TRACK_HEIGHT = 14;
+const TRACK_HEIGHT = 28; // tall touch target; visual rail is still 2px
+
 
 export default function MiniAudioBar() {
   const { story, isPlaying, positionMs, durationMs, isBarVisible, togglePlayPause, seekTo, dismiss } =
@@ -26,6 +27,7 @@ export default function MiniAudioBar() {
 
   const [scrubProgress, setScrubProgress] = useState<number | null>(null);
   const trackWidthRef = useRef(0);
+  const scrubRef = useRef<number | null>(null);
 
   const durationMsRef = useRef(durationMs);
   const seekToRef = useRef(seekTo);
@@ -52,19 +54,25 @@ export default function MiniAudioBar() {
     .minDistance(0)
     .onBegin((e) => {
       if (trackWidthRef.current === 0) return;
-      setScrubProgress(clamp(e.x / trackWidthRef.current));
+      const p = clamp(e.x / trackWidthRef.current);
+      scrubRef.current = p;
+      setScrubProgress(p);
     })
     .onUpdate((e) => {
       if (trackWidthRef.current === 0) return;
-      setScrubProgress(clamp(e.x / trackWidthRef.current));
+      const p = clamp(e.x / trackWidthRef.current);
+      scrubRef.current = p;
+      setScrubProgress(p);
     })
-    .onEnd((e) => {
-      if (trackWidthRef.current === 0 || durationMsRef.current <= 0) return;
-      const ratio = clamp(e.x / trackWidthRef.current);
-      seekToRef.current(ratio * durationMsRef.current).catch(() => undefined);
+    .onEnd(() => {
+      const p = scrubRef.current;
+      if (p === null || durationMsRef.current <= 0) return;
+      seekToRef.current(p * durationMsRef.current).catch(() => undefined);
+      scrubRef.current = null;
       setScrubProgress(null);
     })
     .onFinalize(() => {
+      scrubRef.current = null;
       setScrubProgress(null);
     });
 
@@ -183,19 +191,19 @@ const styles = StyleSheet.create({
   },
   progressThumb: {
     position: "absolute",
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     backgroundColor: palette.accent,
-    marginLeft: -5,
-    top: (TRACK_HEIGHT - 10) / 2,
+    marginLeft: -6,
+    top: (TRACK_HEIGHT - 12) / 2,
   },
   progressThumbActive: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    marginLeft: -7,
-    top: (TRACK_HEIGHT - 14) / 2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginLeft: -8,
+    top: (TRACK_HEIGHT - 16) / 2,
   },
   inner: {
     flexDirection: "row",

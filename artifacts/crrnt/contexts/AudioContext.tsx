@@ -46,8 +46,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const isSpeechRef = useRef(false);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const _unload = useCallback(async () => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
     isSpeechRef.current = false;
     Speech.stop();
     if (soundRef.current) {
@@ -78,17 +83,30 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           { shouldPlay: true },
           (status) => {
             if (!status.isLoaded) return;
-            setPositionMs(status.positionMillis ?? 0);
-            setDurationMs(status.durationMillis ?? 0);
             if (status.didJustFinish) {
               setIsPlaying(false);
               setPositionMs(0);
+              if (progressIntervalRef.current) {
+                clearInterval(progressIntervalRef.current);
+                progressIntervalRef.current = null;
+              }
               soundRef.current?.unloadAsync().catch(() => undefined);
               soundRef.current = null;
             }
           },
         );
+        // Poll position/duration every 200ms — more reliable than relying solely on
+        // the status callback which may fire late or skip frames on some devices.
+        sound.setProgressUpdateIntervalAsync(200).catch(() => undefined);
         soundRef.current = sound;
+        progressIntervalRef.current = setInterval(async () => {
+          const s = soundRef.current;
+          if (!s) return;
+          const status = await s.getStatusAsync();
+          if (!status.isLoaded) return;
+          setPositionMs(status.positionMillis ?? 0);
+          if (status.durationMillis) setDurationMs(status.durationMillis);
+        }, 200);
       } else {
         // expo-speech fallback — no progress tracking available
         isSpeechRef.current = true;

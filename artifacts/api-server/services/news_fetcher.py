@@ -122,8 +122,8 @@ def _extract_source(article: dict[str, Any]) -> str:
     return article.get("publisher") or ""
 
 
-async def fetch_all_categories(per_category: int = 10) -> list[dict[str, Any]]:
-    """Fetch articles for every Marktr category sequentially.
+async def fetch_all_categories(categories: list[str], per_category: int = 10) -> list[dict[str, Any]]:
+    """Fetch articles for the specified Marktr categories sequentially.
 
     NewsMesh enforces a strict per-second rate limit, so we space out
     requests with a small delay rather than firing them in parallel.
@@ -133,7 +133,7 @@ async def fetch_all_categories(per_category: int = 10) -> list[dict[str, Any]]:
     import asyncio
 
     results: list[list[dict[str, Any]]] = []
-    for idx, cat in enumerate(ALL_CATEGORIES):
+    for idx, cat in enumerate(categories):
         if idx > 0:
             await asyncio.sleep(1.5)
         try:

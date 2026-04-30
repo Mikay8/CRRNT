@@ -84,6 +84,7 @@ async def get_config(
 
 class ConfigUpdate(BaseModel):
     perCategory: int
+    selectedCategories: list[str]
 
 
 @router.post("/admin/config")
@@ -388,6 +389,17 @@ input[type=number]{background:var(--hi);border:1px solid var(--border);border-ra
           oninput="document.getElementById('slider').value=this.value">
       </div>
     </div>
+    <div class="col" style="margin-top:16px">
+      <label>Categories to fetch</label>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" id="cat-celebrity" checked> Celebrity</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" id="cat-tech" checked> Tech</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" id="cat-government" checked> Government</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" id="cat-sports" checked> Sports</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" id="cat-business" checked> Business</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" id="cat-science" checked> Science</label>
+      </div>
+    </div>
     <div style="margin-top:16px">
       <button class="btn btn-g" onclick="saveConfig()">Save Configuration</button>
     </div>
@@ -423,6 +435,7 @@ async function loadStatus(){
     const parts=[];
     if(d.storyCount)parts.push(d.storyCount+' stories');
     if(d.perCategory)parts.push(d.perCategory+' per category');
+    if(d.selectedCategories)parts.push(d.selectedCategories.length+' categories');
     if(d.finishedAt)parts.push('Finished '+new Date(d.finishedAt).toLocaleString());
     if(d.message)parts.push('Error: '+d.message);
     document.getElementById('status-meta').textContent=parts.join(' · ');
@@ -446,6 +459,13 @@ async function loadConfig(){
     const d=await r.json();
     document.getElementById('slider').value=d.perCategory;
     document.getElementById('num').value=d.perCategory;
+    const cats=d.selectedCategories||[];
+    document.getElementById('cat-celebrity').checked=cats.includes('celebrity');
+    document.getElementById('cat-tech').checked=cats.includes('tech');
+    document.getElementById('cat-government').checked=cats.includes('government');
+    document.getElementById('cat-sports').checked=cats.includes('sports');
+    document.getElementById('cat-business').checked=cats.includes('business');
+    document.getElementById('cat-science').checked=cats.includes('science');
   }catch(e){}
 }
 
@@ -464,8 +484,9 @@ async function triggerRefresh(){
 async function saveConfig(){
   const n=parseInt(document.getElementById('num').value)||10;
   const val=Math.max(1,Math.min(25,n));
+  const cats=['celebrity','tech','government','sports','business','science'].filter(c=>document.getElementById('cat-'+c).checked);
   try{
-    const r=await fetch('/api/admin/config',{method:'POST',headers:H,body:JSON.stringify({perCategory:val})});
+    const r=await fetch('/api/admin/config',{method:'POST',headers:H,body:JSON.stringify({perCategory:val,selectedCategories:cats})});
     if(r.ok)toast('Configuration saved!');
     else toast('Failed to save: '+r.status,false);
   }catch(e){toast('Request failed',false);}

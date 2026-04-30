@@ -13,6 +13,8 @@ from typing import Any, Optional
 
 from services import cache, config as config_service, enrichment, news_fetcher, push
 
+ALL_CATEGORIES = news_fetcher.ALL_CATEGORIES
+
 log = logging.getLogger("marktr.ingestion")
 
 _DEFAULT_PER_CATEGORY = 10
@@ -68,19 +70,21 @@ async def run_ingestion() -> dict[str, Any]:
 
         cfg = config_service.get_config()
         per_category = int(cfg.get("perCategory", _DEFAULT_PER_CATEGORY))
+        selected_categories = cfg.get("selectedCategories", ALL_CATEGORIES)
 
         status: dict[str, Any] = {
             "date": today,
             "state": "running",
             "storyCount": 0,
             "perCategory": per_category,
+            "selectedCategories": selected_categories,
             "startedAt": datetime.utcnow().isoformat() + "Z",
         }
         _set_status(status)
 
     try:
         log.info("Ingestion starting for %s (perCategory=%d)", today, per_category)
-        raw = await news_fetcher.fetch_all_categories(per_category=per_category)
+        raw = await news_fetcher.fetch_all_categories(selected_categories, per_category=per_category)
         log.info("Fetched %d raw articles", len(raw))
 
         enriched = await enrichment.enrich_all(raw) if raw else []
@@ -108,6 +112,7 @@ async def run_ingestion() -> dict[str, Any]:
             "state": "success" if enriched else "empty",
             "storyCount": len(enriched),
             "perCategory": per_category,
+            "selectedCategories": selected_categories,
             "startedAt": status["startedAt"],
             "finishedAt": datetime.utcnow().isoformat() + "Z",
         }
@@ -135,6 +140,8 @@ async def run_ingestion() -> dict[str, Any]:
             "date": _today(),
             "state": "error",
             "storyCount": 0,
+            "perCategory": per_category,
+            "selectedCategories": selected_categories,
             "startedAt": status.get("startedAt") if isinstance(status, dict) else None,
             "finishedAt": datetime.utcnow().isoformat() + "Z",
             "message": str(exc),

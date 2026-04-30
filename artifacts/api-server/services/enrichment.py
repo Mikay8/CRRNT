@@ -76,14 +76,16 @@ SENTIMENT_SYSTEM_PROMPT = (
     "You analyze social media sentiment about news stories for CRRNT — an app "
     "for young adults who want to understand what the world actually thinks "
     "about what's happening.\n\n"
-    "Given a set of real posts from Twitter and Reddit, write a casual, honest "
-    "sentiment summary that captures the vibe of real people — not Wall Street, "
-    "not pundits. How are everyday people actually feeling about this story? "
-    "Angry? Worried? Hopeful? Cynical? Unbothered?\n\n"
-    "Be direct. If people are scared, say scared. If they're laughing it off, "
-    "say that. Avoid corporate tone entirely.\n\n"
+    "Given a set of real posts from Twitter and Reddit, first decide if the "
+    "tweets are actually relevant to the story. Set relevant to false if the "
+    "tweets are spam, bot activity, unrelated to the story, or mostly scam "
+    "promotions. If relevant is false, skip the other fields.\n\n"
+    "If relevant is true: write a casual, honest sentiment summary that captures "
+    "the vibe of real people — not Wall Street, not pundits. How are everyday "
+    "people actually feeling? Angry? Worried? Hopeful? Cynical? Unbothered? "
+    "Be direct. Avoid corporate tone entirely.\n\n"
     "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
-    "with keys: sentiment ('concerned'|'hopeful'|'angry'|'divided'|'unbothered'|'mixed'), "
+    "with keys: relevant (boolean), sentiment ('concerned'|'hopeful'|'angry'|'divided'|'unbothered'|'mixed'), "
     "peopleSay (string, 2-3 sentences, max 280 characters, casual conversational tone)."
 )
 
@@ -210,6 +212,13 @@ async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]
         log.warning("Tweet sentiment failed for %s: %s", title[:60], exc)
         parsed = {}
 
+    relevant = parsed.get("relevant", True)
+    if not relevant:
+        story["sentiment"] = None
+        story["peopleSay"] = "Not much buzz around this topic."
+        story["tweets"] = []
+        return story
+
     story["sentiment"] = parsed.get("sentiment") or "mixed"
     story["peopleSay"] = (parsed.get("peopleSay") or "").strip() or None
     story["tweets"] = tweets
@@ -261,8 +270,6 @@ async def enrich_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sem2 = asyncio.Semaphore(MAX_CONCURRENCY_TWEETS)
 
     async def _bounded_tweets(story: dict[str, Any]) -> dict[str, Any]:
-        if not story.get("ticker"):
-            return story
         async with sem2:
             tweets = await xapi.fetch_story_tweets(story)
             if tweets:

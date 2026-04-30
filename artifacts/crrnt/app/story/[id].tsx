@@ -411,29 +411,31 @@ export default function StoryDetailScreen() {
               </Text>
             </View>
 
-            {/* Sentiment badge */}
-            <View style={styles.sentimentRow}>
-              <View
-                style={[
-                  styles.sentimentBadge,
-                  {
-                    backgroundColor: sentimentCfg.color + "22",
-                    borderColor: sentimentCfg.color + "55",
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={sentimentCfg.icon}
-                  size={13}
-                  color={sentimentCfg.color}
-                />
-                <Text
-                  style={[styles.sentimentLabel, { color: sentimentCfg.color }]}
+            {/* Sentiment badge — hidden when tweets were irrelevant/scammy */}
+            {(story as any).sentiment ? (
+              <View style={styles.sentimentRow}>
+                <View
+                  style={[
+                    styles.sentimentBadge,
+                    {
+                      backgroundColor: sentimentCfg.color + "22",
+                      borderColor: sentimentCfg.color + "55",
+                    },
+                  ]}
                 >
-                  {sentimentCfg.label}
-                </Text>
+                  <Ionicons
+                    name={sentimentCfg.icon}
+                    size={13}
+                    color={sentimentCfg.color}
+                  />
+                  <Text
+                    style={[styles.sentimentLabel, { color: sentimentCfg.color }]}
+                  >
+                    {sentimentCfg.label}
+                  </Text>
+                </View>
               </View>
-            </View>
+            ) : null}
 
             {peopleSay ? (
               <Text style={styles.peopleSay}>{peopleSay}</Text>

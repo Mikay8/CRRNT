@@ -43,13 +43,16 @@ def _build_query(story: dict[str, Any]) -> str:
     if company and len(company) > 2:
         parts.append(f'"{company}"')
     if not parts:
-        title = story.get("title", "")
+        # Extract keywords from title + insight for richer, topic-aware queries
+        text = " ".join(filter(None, [story.get("title", ""), story.get("insight", "")]))
         words = [
-            w for w in re.sub(r"[^a-zA-Z\s]", "", title).split()
+            w for w in re.sub(r"[^a-zA-Z\s]", "", text).split()
             if w.lower() not in _STOP_WORDS and len(w) > 3
         ]
-        parts = [f'"{w}"' for w in words[:3]]
-    query = " OR ".join(parts[:2]) if len(parts) > 1 else (parts[0] if parts else story.get("title", "")[:60])
+        seen: set[str] = set()
+        unique = [w for w in words if not (w.lower() in seen or seen.add(w.lower()))]  # type: ignore[func-returns-value]
+        parts = [f'"{w}"' for w in unique[:4]]
+    query = " OR ".join(parts[:3]) if len(parts) > 1 else (parts[0] if parts else story.get("title", "")[:60])
     return query
 
 

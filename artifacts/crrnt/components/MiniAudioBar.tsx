@@ -1,6 +1,5 @@
 import {
   Animated,
-  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -10,11 +9,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useSegments } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useEffect, useRef, useState } from "react";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useAudio } from "@/contexts/AudioContext";
 import palette from "@/constants/colors";
 
 const TAB_BAR_HEIGHT = 49;
-const TRACK_HEIGHT = 14; // taller hit area, visually thinner bar inside
+const TRACK_HEIGHT = 14;
 
 export default function MiniAudioBar() {
   const { story, isPlaying, positionMs, durationMs, isBarVisible, togglePlayPause, seekTo, dismiss } =
@@ -24,11 +24,9 @@ export default function MiniAudioBar() {
   const segments = useSegments();
   const slideAnim = useRef(new Animated.Value(120)).current;
 
-  // While scrubbing we show a local preview progress instead of positionMs
   const [scrubProgress, setScrubProgress] = useState<number | null>(null);
   const trackWidthRef = useRef(0);
 
-  // Refs so PanResponder callbacks (created once) always see fresh values
   const durationMsRef = useRef(durationMs);
   const seekToRef = useRef(seekTo);
   useEffect(() => { durationMsRef.current = durationMs; }, [durationMs]);
@@ -49,33 +47,26 @@ export default function MiniAudioBar() {
 
   const clamp = (v: number) => Math.max(0, Math.min(1, v));
 
-  const setScrubProgressRef = useRef(setScrubProgress);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => {
-        if (trackWidthRef.current === 0) return;
-        const ratio = clamp(evt.nativeEvent.locationX / trackWidthRef.current);
-        setScrubProgressRef.current(ratio);
-      },
-      onPanResponderMove: (evt) => {
-        if (trackWidthRef.current === 0) return;
-        const ratio = clamp(evt.nativeEvent.locationX / trackWidthRef.current);
-        setScrubProgressRef.current(ratio);
-      },
-      onPanResponderRelease: (evt) => {
-        if (trackWidthRef.current === 0) return;
-        const ratio = clamp(evt.nativeEvent.locationX / trackWidthRef.current);
-        seekToRef.current(ratio * durationMsRef.current);
-        setScrubProgressRef.current(null);
-      },
-      onPanResponderTerminate: () => {
-        setScrubProgressRef.current(null);
-      },
+  const seekGesture = Gesture.Pan()
+    .runOnJS(true)
+    .minDistance(0)
+    .onBegin((e) => {
+      if (trackWidthRef.current === 0) return;
+      setScrubProgress(clamp(e.x / trackWidthRef.current));
     })
-  ).current;
+    .onUpdate((e) => {
+      if (trackWidthRef.current === 0) return;
+      setScrubProgress(clamp(e.x / trackWidthRef.current));
+    })
+    .onEnd((e) => {
+      if (trackWidthRef.current === 0 || durationMsRef.current <= 0) return;
+      const ratio = clamp(e.x / trackWidthRef.current);
+      seekToRef.current(ratio * durationMsRef.current).catch(() => undefined);
+      setScrubProgress(null);
+    })
+    .onFinalize(() => {
+      setScrubProgress(null);
+    });
 
   if (!story && !isBarVisible) return null;
 
@@ -96,21 +87,22 @@ export default function MiniAudioBar() {
       ]}
     >
       {/* Scrubable progress track */}
-      <View
-        style={styles.progressTrack}
-        onLayout={(e) => { trackWidthRef.current = e.nativeEvent.layout.width; }}
-        {...panResponder.panHandlers}
-      >
-        <View style={styles.progressRail} />
-        <View style={[styles.progressFill, { width: `${Math.min(displayProgress * 100, 100)}%` }]} />
+      <GestureDetector gesture={seekGesture}>
         <View
-          style={[
-            styles.progressThumb,
-            { left: `${Math.min(displayProgress * 100, 100)}%` as any },
-            scrubProgress !== null && styles.progressThumbActive,
-          ]}
-        />
-      </View>
+          style={styles.progressTrack}
+          onLayout={(e) => { trackWidthRef.current = e.nativeEvent.layout.width; }}
+        >
+          <View style={styles.progressRail} />
+          <View style={[styles.progressFill, { width: `${Math.min(displayProgress * 100, 100)}%` }]} />
+          <View
+            style={[
+              styles.progressThumb,
+              { left: `${Math.min(displayProgress * 100, 100)}%` as any },
+              scrubProgress !== null && styles.progressThumbActive,
+            ]}
+          />
+        </View>
+      </GestureDetector>
 
       {/* Main row — tapping navigates to story */}
       <Pressable

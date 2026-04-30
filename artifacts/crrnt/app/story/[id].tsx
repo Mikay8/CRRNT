@@ -12,9 +12,8 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import * as Speech from "expo-speech";
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   useGetStockHistory,
   useGetStory,
@@ -22,6 +21,7 @@ import {
   type Tweet,
 } from "@workspace/api-client-react";
 import palette from "@/constants/colors";
+import { useAudio } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import CategoryBadge from "@/components/CategoryBadge";
 import PriceChart from "@/components/PriceChart";
@@ -67,26 +67,13 @@ const SENTIMENT_CONFIG = {
   mixed: { label: "Mixed", color: "#8B5CF6", icon: "shuffle" as const },
 } as const;
 
-function buildSpeechText(story: Story): string {
-  const parts: string[] = [];
-  parts.push(story.title + ".");
-  if ((story as any).lifeImpact) {
-    parts.push("Here's how it affects you. " + (story as any).lifeImpact);
-  }
-  parts.push("Wallet impact. " + story.insight + ". " + (story as any).walletImpact);
-  if ((story as any).peopleSay) {
-    parts.push("What people are saying. " + (story as any).peopleSay);
-  }
-  return parts.join(" ");
-}
-
 export default function StoryDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { saved } = useSavedStories();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
-  const [isPlaying, setIsPlaying] = useState(false);
+  const { story: audioStory, isPlaying, playStory, togglePlayPause } = useAudio();
 
   const localFallback = saved.find((s) => s.articleId === id) ?? null;
 
@@ -106,12 +93,8 @@ export default function StoryDetailScreen() {
     { query: { enabled: !!ticker, staleTime: 5 * 60 * 1000 } as any },
   );
 
-  // Stop speech when screen unmounts
-  useEffect(() => {
-    return () => {
-      Speech.stop();
-    };
-  }, []);
+  const isThisStoryActive = !!story && audioStory?.articleId === story.articleId;
+  const isThisStoryPlaying = isThisStoryActive && isPlaying;
 
   const screenWidth = Dimensions.get("window").width;
   const hPad = Math.max(16, insets.left + 4);
@@ -165,32 +148,12 @@ export default function StoryDetailScreen() {
   };
 
   const toggleAudio = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
-      () => undefined,
-    );
-
-    try {
-      if (isPlaying) {
-        await Speech.stop();
-        setIsPlaying(false);
-        return;
-      }
-
-      await Speech.stop();
-      const text = buildSpeechText(story);
-      Speech.speak(text, {
-        language: "en-US",
-        rate: 0.9,
-        pitch: 1.0,
-        volume: 1.0,
-        onDone: () => setIsPlaying(false),
-        onError: () => setIsPlaying(false),
-        onStopped: () => setIsPlaying(false),
-      });
-      setIsPlaying(true);
-    } catch (error) {
-      console.warn("Speech playback error:", error);
-      setIsPlaying(false);
+    if (!story) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    if (isThisStoryActive) {
+      await togglePlayPause();
+    } else {
+      await playStory(story);
     }
   };
 
@@ -235,15 +198,15 @@ export default function StoryDetailScreen() {
               onPress={toggleAudio}
               style={({ pressed }) => [
                 styles.audioBtn,
-                isPlaying && styles.audioBtnActive,
+                isThisStoryPlaying && styles.audioBtnActive,
                 { opacity: pressed ? 0.7 : 1 },
               ]}
-              accessibilityLabel={isPlaying ? "Stop audio" : "Listen to story"}
+              accessibilityLabel={isThisStoryPlaying ? "Pause audio" : "Listen to story"}
             >
               <Ionicons
-                name={isPlaying ? "stop" : "volume-high"}
+                name={isThisStoryPlaying ? "pause" : "volume-high"}
                 size={16}
-                color={isPlaying ? palette.bg : palette.accent}
+                color={isThisStoryPlaying ? palette.bg : palette.accent}
               />
             </Pressable>
             <SaveButton story={story} size={26} />

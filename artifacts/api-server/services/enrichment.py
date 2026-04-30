@@ -277,4 +277,9 @@ async def enrich_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return story
 
     enriched = await asyncio.gather(*[_bounded_tweets(s) for s in enriched])
+
+    # Pass 3: Fish Audio TTS synthesis (no-ops when FISH_AUDIO_API_KEY is unset)
+    from services import fish_audio  # avoid circular at module level
+    enriched = await fish_audio.synthesize_all(list(enriched))
+
     return list(enriched)

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 
 from services import ingestion
 
@@ -45,6 +47,19 @@ async def list_stories(
         "isStale": bool(payload.get("isStale", False)),
         "asOfDate": payload.get("asOfDate", payload.get("date", "")),
     }
+
+
+@router.get("/news/{article_id}/audio")
+async def get_story_audio(article_id: str) -> Response:
+    from services import cache as cache_svc
+    audio_b64 = cache_svc.get(f"audio:{article_id}")
+    if not audio_b64 or not isinstance(audio_b64, str):
+        raise HTTPException(status_code=404, detail="Audio not available for this story")
+    try:
+        audio_bytes = base64.b64decode(audio_b64)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Audio data corrupted")
+    return Response(content=audio_bytes, media_type="audio/mpeg")
 
 
 @router.get("/news/{article_id}")

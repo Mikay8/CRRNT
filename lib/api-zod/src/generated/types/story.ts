@@ -35,4 +35,6 @@ export interface Story {
   sentiment?: StorySentiment;
   /** Top tweets related to this story */
   tweets?: Tweet[];
+  /** Relative path to pre-generated Fish Audio MP3 (e.g. /api/news/{id}/audio) */
+  audioUrl?: string;
 }

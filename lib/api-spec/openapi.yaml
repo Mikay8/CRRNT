@@ -356,6 +356,9 @@ components:
           items:
             $ref: "#/components/schemas/Tweet"
           description: Top tweets related to this story
+        audioUrl:
+          type: string
+          description: Relative path to pre-generated Fish Audio MP3 (e.g. /api/news/{id}/audio)
       required:
         - articleId
         - title

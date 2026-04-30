@@ -23,7 +23,9 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { setBaseUrl } from "@workspace/api-client-react";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import MiniAudioBar from "@/components/MiniAudioBar";
 import palette from "@/constants/colors";
+import { AudioProvider } from "@/contexts/AudioContext";
 import { SavedStoriesProvider } from "@/contexts/SavedStoriesContext";
 
 SplashScreen.preventAutoHideAsync();
@@ -135,33 +137,36 @@ export default function RootLayout() {
           <ErrorBoundary>
             <QueryClientProvider client={queryClient}>
               <SavedStoriesProvider>
-                <StatusBar style="light" />
-                <Stack
-                  screenOptions={{
-                    headerStyle: { backgroundColor: palette.bg },
-                    headerTintColor: palette.text,
-                    headerTitleStyle: {
-                      fontFamily: "Inter_700Bold",
-                      color: palette.text,
-                    },
-                    contentStyle: { backgroundColor: palette.bg },
-                  }}
-                >
-                  <Stack.Screen
-                    name="(tabs)"
-                    options={{ headerShown: false }}
-                  />
-                  <Stack.Screen
-                    name="story/[id]"
-                    options={{
-                      title: "",
-                      headerBackTitle: "Back",
-                      headerTransparent: true,
-                      presentation: "card",
+                <AudioProvider>
+                  <StatusBar style="light" />
+                  <Stack
+                    screenOptions={{
+                      headerStyle: { backgroundColor: palette.bg },
+                      headerTintColor: palette.text,
+                      headerTitleStyle: {
+                        fontFamily: "Inter_700Bold",
+                        color: palette.text,
+                      },
+                      contentStyle: { backgroundColor: palette.bg },
                     }}
-                  />
-                  <Stack.Screen name="+not-found" options={{ title: "Not found" }} />
-                </Stack>
+                  >
+                    <Stack.Screen
+                      name="(tabs)"
+                      options={{ headerShown: false }}
+                    />
+                    <Stack.Screen
+                      name="story/[id]"
+                      options={{
+                        title: "",
+                        headerBackTitle: "Back",
+                        headerTransparent: true,
+                        presentation: "card",
+                      }}
+                    />
+                    <Stack.Screen name="+not-found" options={{ title: "Not found" }} />
+                  </Stack>
+                  <MiniAudioBar />
+                </AudioProvider>
               </SavedStoriesProvider>
             </QueryClientProvider>
           </ErrorBoundary>

@@ -33,12 +33,12 @@ def build_audio_text(story: dict[str, Any]) -> str:
         parts.append(title + ".")
     life_impact = (story.get("lifeImpact") or "").strip()
     if life_impact:
-        parts.append("(break) Here's how it affects you. " + life_impact)
+        parts.append("(break) Here's how it affects you? " + life_impact)
     insight = (story.get("insight") or "").strip()
     wallet_impact = (story.get("walletImpact") or "").strip()
     wallet_line = " ".join(filter(None, [insight, wallet_impact]))
     if wallet_line:
-        parts.append("(break) Wallet impact. " + wallet_line)
+        parts.append("(break) How does this affect your wallet? " + wallet_line)
     people_say = (story.get("peopleSay") or "").strip()
     if people_say:
         parts.append("(break) What people are saying. " + people_say)

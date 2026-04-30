@@ -18,6 +18,7 @@ interface AudioContextType {
   isBarVisible: boolean;
   playStory: (story: Story) => Promise<void>;
   togglePlayPause: () => Promise<void>;
+  seekTo: (ms: number) => Promise<void>;
   dismiss: () => Promise<void>;
 }
 
@@ -137,6 +138,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const seekTo = useCallback(async (ms: number) => {
+    if (!soundRef.current) return;
+    const status = await soundRef.current.getStatusAsync();
+    if (!status.isLoaded) return;
+    await soundRef.current.setPositionAsync(Math.max(0, Math.min(ms, status.durationMillis ?? 0)));
+  }, []);
+
   const dismiss = useCallback(async () => {
     await _unload();
     setIsBarVisible(false);
@@ -156,6 +164,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         isBarVisible,
         playStory,
         togglePlayPause,
+        seekTo,
         dismiss,
       }}
     >

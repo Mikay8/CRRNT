@@ -1,5 +1,6 @@
 import {
   Animated,
+  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -8,25 +9,27 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useSegments } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAudio } from "@/contexts/AudioContext";
 import palette from "@/constants/colors";
 
-// Default RN tab bar height (safe area is added separately)
 const TAB_BAR_HEIGHT = 49;
+const TRACK_HEIGHT = 14; // taller hit area, visually thinner bar inside
 
 export default function MiniAudioBar() {
-  const { story, isPlaying, positionMs, durationMs, isBarVisible, togglePlayPause, dismiss } =
+  const { story, isPlaying, positionMs, durationMs, isBarVisible, togglePlayPause, seekTo, dismiss } =
     useAudio();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const segments = useSegments();
   const slideAnim = useRef(new Animated.Value(120)).current;
 
+  // While scrubbing we show a local preview progress instead of positionMs
+  const [scrubProgress, setScrubProgress] = useState<number | null>(null);
+  const trackWidthRef = useRef(0);
+
   const isInTabs = segments[0] === "(tabs)";
   const isOnStory = segments[0] === "story";
-
-  // Hide bar on story detail (it has its own full controls)
   const shouldShow = isBarVisible && !!story && !isOnStory;
 
   useEffect(() => {
@@ -38,10 +41,39 @@ export default function MiniAudioBar() {
     }).start();
   }, [shouldShow, slideAnim]);
 
-  // Keep mounted so the slide-out animation can play
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        if (trackWidthRef.current === 0) return;
+        const ratio = clamp(evt.nativeEvent.locationX / trackWidthRef.current);
+        setScrubProgress(ratio);
+      },
+      onPanResponderMove: (evt) => {
+        if (trackWidthRef.current === 0) return;
+        const ratio = clamp(evt.nativeEvent.locationX / trackWidthRef.current);
+        setScrubProgress(ratio);
+      },
+      onPanResponderRelease: (evt) => {
+        if (trackWidthRef.current === 0) return;
+        const ratio = clamp(evt.nativeEvent.locationX / trackWidthRef.current);
+        setScrubProgress(null);
+        seekTo(ratio * durationMs);
+      },
+      onPanResponderTerminate: () => {
+        setScrubProgress(null);
+      },
+    })
+  ).current;
+
   if (!story && !isBarVisible) return null;
 
-  const progress = durationMs > 0 ? positionMs / durationMs : 0;
+  const liveProgress = durationMs > 0 ? positionMs / durationMs : 0;
+  const displayProgress = scrubProgress !== null ? scrubProgress : liveProgress;
+  const displayMs = scrubProgress !== null ? scrubProgress * durationMs : positionMs;
   const bottomOffset = insets.bottom + (isInTabs ? TAB_BAR_HEIGHT : 0);
 
   const handleBarPress = () => {
@@ -55,9 +87,21 @@ export default function MiniAudioBar() {
         { bottom: bottomOffset, transform: [{ translateY: slideAnim }] },
       ]}
     >
-      {/* Progress track along the top edge */}
-      <View style={styles.progressTrack} pointerEvents="none">
-        <View style={[styles.progressFill, { width: `${Math.min(progress * 100, 100)}%` }]} />
+      {/* Scrubable progress track */}
+      <View
+        style={styles.progressTrack}
+        onLayout={(e) => { trackWidthRef.current = e.nativeEvent.layout.width; }}
+        {...panResponder.panHandlers}
+      >
+        <View style={styles.progressRail} />
+        <View style={[styles.progressFill, { width: `${Math.min(displayProgress * 100, 100)}%` }]} />
+        <View
+          style={[
+            styles.progressThumb,
+            { left: `${Math.min(displayProgress * 100, 100)}%` as any },
+            scrubProgress !== null && styles.progressThumbActive,
+          ]}
+        />
       </View>
 
       {/* Main row — tapping navigates to story */}
@@ -65,32 +109,25 @@ export default function MiniAudioBar() {
         onPress={handleBarPress}
         style={({ pressed }) => [styles.inner, { opacity: pressed ? 0.85 : 1 }]}
       >
-        {/* Story title + time */}
         <View style={styles.info}>
           <Text style={styles.title} numberOfLines={1}>
             {story?.title ?? ""}
           </Text>
           {durationMs > 0 ? (
             <Text style={styles.time}>
-              {formatMs(positionMs)} / {formatMs(durationMs)}
+              {formatMs(displayMs)} / {formatMs(durationMs)}
             </Text>
           ) : null}
         </View>
 
-        {/* Play / Pause */}
         <Pressable
           onPress={togglePlayPause}
           hitSlop={12}
           style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.6 : 1 }]}
         >
-          <Ionicons
-            name={isPlaying ? "pause" : "play"}
-            size={22}
-            color={palette.text}
-          />
+          <Ionicons name={isPlaying ? "pause" : "play"} size={22} color={palette.text} />
         </Pressable>
 
-        {/* Dismiss */}
         <Pressable
           onPress={dismiss}
           hitSlop={12}
@@ -114,6 +151,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 12,
     right: 12,
+    paddingBottom: 4,
     borderRadius: 16,
     backgroundColor: palette.surface,
     borderWidth: 1,
@@ -126,19 +164,45 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   progressTrack: {
+    height: TRACK_HEIGHT,
+    width: "100%",
+    justifyContent: "center",
+  },
+  progressRail: {
+    position: "absolute",
+    left: 0,
+    right: 0,
     height: 2,
     backgroundColor: palette.border,
-    width: "100%",
   },
   progressFill: {
-    height: "100%",
+    position: "absolute",
+    left: 0,
+    height: 2,
     backgroundColor: palette.accent,
+  },
+  progressThumb: {
+    position: "absolute",
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: palette.accent,
+    marginLeft: -5,
+    top: (TRACK_HEIGHT - 10) / 2,
+  },
+  progressThumbActive: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginLeft: -7,
+    top: (TRACK_HEIGHT - 14) / 2,
   },
   inner: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingBottom: 12,
+    paddingTop: 4,
     gap: 10,
   },
   info: {

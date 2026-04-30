@@ -68,16 +68,16 @@ async def fetch_category(
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(f"{NEWSMESH_BASE}/trending", params=params)
+        resp = await client.get(f"{NEWSMESH_BASE}/latest", params=params)
         if resp.status_code >= 400:
             log.info(
-                "NewsMesh /trending %s -> %s: %s",
+                "NewsMesh /latest %s -> %s: %s",
                 marktr_category,
                 resp.status_code,
                 resp.text[:300],
             )
             raise NewsmeshError(
-                f"NewsMesh /trending failed ({resp.status_code})"
+                f"NewsMesh /latest failed ({resp.status_code})"
             )
         payload = resp.json()
 

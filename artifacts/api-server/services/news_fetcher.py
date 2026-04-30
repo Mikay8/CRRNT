@@ -14,6 +14,7 @@ focused) or 'entertainment' (movie/show/event-focused) based on content.
 
 Free tier: 25 requests/day, max 10 articles per request, 24h freshness delay.
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,7 +36,14 @@ CATEGORY_MAP: dict[str, str] = {
     "science": "science",
 }
 
-ALL_CATEGORIES: list[str] = ["celebrity", "tech", "government", "sports", "business", "science"]
+ALL_CATEGORIES: list[str] = [
+    "celebrity",
+    "tech",
+    "government",
+    "sports",
+    "business",
+    "science",
+]
 
 
 class NewsmeshError(RuntimeError):
@@ -76,14 +84,16 @@ async def fetch_category(
                 resp.status_code,
                 resp.text[:300],
             )
-            raise NewsmeshError(
-                f"NewsMesh /latest failed ({resp.status_code})"
-            )
+            raise NewsmeshError(f"NewsMesh /latest failed ({resp.status_code})")
         payload = resp.json()
 
     raw_articles = payload.get("articles") or payload.get("data") or []
     normalized = [_normalize(a, marktr_category) for a in raw_articles if a]
-    log.info("NewsMesh: %d article(s) fetched for category '%s'", len(normalized), marktr_category)
+    log.info(
+        "NewsMesh: %d article(s) fetched for category '%s'",
+        len(normalized),
+        marktr_category,
+    )
     return normalized
 
 
@@ -107,9 +117,13 @@ def _normalize(article: dict[str, Any], marktr_category: str) -> dict[str, Any]:
     return {
         "articleId": str(article_id),
         "title": (article.get("title") or "").strip(),
-        "description": (article.get("description") or article.get("summary") or "").strip(),
+        "description": (
+            article.get("description") or article.get("summary") or ""
+        ).strip(),
         "link": article.get("link") or article.get("url") or "",
-        "mediaUrl": article.get("image") or article.get("image_url") or article.get("media_url"),
+        "mediaUrl": article.get("image")
+        or article.get("image_url")
+        or article.get("media_url"),
         "publishedDate": article.get("published_date")
         or article.get("published_at")
         or article.get("publishedAt")
@@ -132,7 +146,9 @@ def _extract_source(article: dict[str, Any]) -> str:
     return article.get("publisher") or ""
 
 
-async def fetch_all_categories(categories: list[str], per_category: int = 10) -> list[dict[str, Any]]:
+async def fetch_all_categories(
+    categories: list[str], per_category: int = 10
+) -> list[dict[str, Any]]:
     """Fetch articles for the specified Marktr categories sequentially.
 
     NewsMesh enforces a strict per-second rate limit, so we space out
@@ -149,7 +165,7 @@ async def fetch_all_categories(categories: list[str], per_category: int = 10) ->
         try:
             results.append(await fetch_category(cat, limit=per_category))
         except Exception as exc:  # noqa: BLE001
-            #log.exception("Failed to fetch category %s: %s", cat, exc)
+            # log.exception("Failed to fetch category %s: %s", cat, exc)
             log.info("Failed to fetch category %s: %s", cat, exc)
             results.append([])
 
@@ -162,7 +178,9 @@ async def fetch_all_categories(categories: list[str], per_category: int = 10) ->
                 continue
             seen.add(aid)
             flattened.append(art)
-    log.info("NewsMesh: all categories complete — %d unique articles total", len(flattened))
+    log.info(
+        "NewsMesh: all categories complete — %d unique articles total", len(flattened)
+    )
     return flattened
 
 

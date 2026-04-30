@@ -14,23 +14,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routes import admin, health, news, stocks
-from services import cache, ingestion, scheduler
+from services import cache, ingestion, log_buffer, scheduler
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 log = logging.getLogger("marktr")
+log.addHandler(log_buffer.handler)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     log.info("Marktr API starting up")
     cache.init()
-
-    # Kick off ingestion in the background if today's batch is missing,
-    # so the app is usable on first launch without waiting for 8 AM.
-    await ingestion.ensure_today_ingested(background=True)
 
     # Start the daily 8 AM ingestion job.
     scheduler.start()

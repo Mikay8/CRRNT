@@ -16,7 +16,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from services import config as config_service, ingestion, push
+from services import config as config_service, ingestion, log_buffer, push
 
 log = logging.getLogger("marktr.admin")
 
@@ -220,6 +220,14 @@ async def register_push_token(body: PushTokenBody) -> dict:
     return {"ok": True}
 
 
+@router.get("/admin/logs")
+async def get_api_logs(
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict:
+    _require_admin(x_admin_token)
+    return log_buffer.get_logs()
+
+
 # ── HTML portal ───────────────────────────────────────────────────────────────
 
 @router.get("/admin/portal", response_class=HTMLResponse)
@@ -294,6 +302,20 @@ input[type=number]{background:var(--hi);border:1px solid var(--border);border-ra
 .item-meta{font-size:11px;color:var(--muted);margin-top:2px}
 .btn-xs{padding:5px 10px;font-size:12px;border-radius:6px}
 .empty{color:var(--muted);font-size:13px;padding:18px;text-align:center}
+.log-section{border-bottom:1px solid var(--border)}
+.log-section:last-child{border-bottom:none}
+.log-header{display:flex;align-items:center;gap:8px;padding:11px 4px;cursor:pointer;user-select:none;font-size:14px;font-weight:600}
+.log-header:hover{color:var(--accent)}
+.log-badge-count{margin-left:auto;font-size:11px;color:var(--muted);background:var(--hi);padding:2px 8px;border-radius:10px;font-weight:500}
+.log-chevron{font-size:10px;color:var(--dim);width:12px;text-align:center}
+.log-body{padding-bottom:6px}
+.log-entry{display:flex;gap:8px;padding:4px 8px;font-size:12px;font-family:'SF Mono',ui-monospace,monospace;border-radius:4px;margin-bottom:1px;line-height:1.5}
+.log-ts{color:var(--dim);min-width:62px;flex-shrink:0}
+.log-lv{min-width:48px;flex-shrink:0;font-weight:700}
+.log-msg{color:var(--text);flex:1;word-break:break-all}
+.log-info .log-lv{color:var(--muted)}
+.log-warning .log-lv{color:var(--warn)}
+.log-error .log-lv,.log-critical .log-lv{color:var(--neg)}
 </style>
 </head>
 <body>
@@ -326,6 +348,15 @@ input[type=number]{background:var(--hi);border:1px solid var(--border);border-ra
       <div class="stat"><div class="sv" id="s-stocks">—</div><div class="sl">Stock Caches</div></div>
       <div class="stat"><div class="sv" id="s-tokens">—</div><div class="sl">Push Tokens</div></div>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>API Logs</h2>
+    <div class="row" style="margin-bottom:14px">
+      <button class="btn btn-s btn-xs" onclick="loadLogs()">Refresh</button>
+      <span style="font-size:11px;color:var(--dim);margin-left:auto" id="logs-updated"></span>
+    </div>
+    <div id="logs-container"><div class="empty">Loading…</div></div>
   </div>
 
   <div class="card">
@@ -479,6 +510,52 @@ async function deleteStory(articleId){
   }catch(e){toast('Request failed',false);}
 }
 
+const LOG_SOURCES={
+  'marktr.xapi':       'X / Twitter',
+  'marktr.newsmesh':   'News (NewsMesh)',
+  'marktr.stock':      'Stock API',
+  'marktr.enrichment': 'AI Enrichment',
+  'marktr.fish_audio': 'Fish Audio',
+  'marktr.push':       'Push Notifications',
+  'marktr.ingestion':  'Ingestion',
+  'marktr.scheduler':  'Scheduler',
+  'marktr.cache':      'Cache',
+  'marktr.admin':      'Admin',
+};
+
+function toggleLog(key){
+  const body=document.getElementById('lb-'+key);
+  const chev=document.getElementById('lc-'+key);
+  const open=body.style.display!=='none';
+  body.style.display=open?'none':'block';
+  chev.textContent=open?'▶':'▼';
+}
+
+async function loadLogs(){
+  try{
+    const r=await fetch('/api/admin/logs',{headers:H});
+    const d=await r.json();
+    const container=document.getElementById('logs-container');
+    container.innerHTML=Object.entries(LOG_SOURCES).map(([key,label])=>{
+      const logs=d[key]||[];
+      const entries=logs.length===0
+        ?'<div class="empty" style="padding:10px 8px">No recent logs.</div>'
+        :logs.map(l=>`<div class="log-entry log-${l.level.toLowerCase()}"><span class="log-ts">${esc(l.ts)}</span><span class="log-lv">${esc(l.level)}</span><span class="log-msg">${esc(l.msg)}</span></div>`).join('');
+      return `<div class="log-section">
+        <div class="log-header" onclick="toggleLog('${key}')">
+          <span>${esc(label)}</span>
+          <span class="log-badge-count">${logs.length}</span>
+          <span class="log-chevron" id="lc-${key}">▶</span>
+        </div>
+        <div class="log-body" id="lb-${key}" style="display:none">
+          <div class="list" style="max-height:220px">${entries}</div>
+        </div>
+      </div>`;
+    }).join('');
+    document.getElementById('logs-updated').textContent='Updated '+new Date().toLocaleTimeString();
+  }catch(e){}
+}
+
 async function loadStockCaches(){
   const el=document.getElementById('stock-list');
   el.innerHTML='<div class="empty">Loading…</div>';
@@ -506,9 +583,10 @@ async function deleteStock(key){
   }catch(e){toast('Request failed',false);}
 }
 
-loadStatus();loadStats();loadConfig();loadStories();loadStockCaches();
+loadStatus();loadStats();loadConfig();loadStories();loadStockCaches();loadLogs();
 setInterval(loadStatus,10000);
 setInterval(loadStats,30000);
+setInterval(loadLogs,15000);
 </script>
 </body>
 </html>"""

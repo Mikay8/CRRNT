@@ -31,6 +31,9 @@ def build_audio_text(story: dict[str, Any]) -> str:
     title = (story.get("title") or "").strip()
     if title:
         parts.append(title + ".")
+    story_summary = (story.get("storySummary") or "").strip()
+    if story_summary:
+        parts.append("(break) " + story_summary)
     life_impact = (story.get("lifeImpact") or "").strip()
     if life_impact:
         parts.append("(break) Here's how it affects you? " + life_impact)

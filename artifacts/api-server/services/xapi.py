@@ -50,15 +50,15 @@ def _build_queries(story: dict[str, Any]) -> list[str]:
     if company and len(company) > 2:
         queries.append(f'"{company}"')
 
-    for person in people[:1]:
-        p = person.strip()
-        if p:
-            queries.append(f'"{p}"')
+    person = people[0].strip() if people else None
+    topic = next((t.strip() for t in topics if len(t.strip()) > 3), None)
 
-    for topic in topics[:1]:
-        t = topic.strip()
-        if len(t) > 3:
-            queries.append(f'"{t}"')
+    if person and topic:
+        queries.append(f'"{person}" "{topic}"')
+    elif person:
+        queries.append(f'"{person}"')
+    elif topic:
+        queries.append(f'"{topic}"')
 
     # Fallback: keywords from title + insight
     if not queries:

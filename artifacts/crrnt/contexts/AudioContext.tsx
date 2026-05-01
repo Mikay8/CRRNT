@@ -46,20 +46,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const isSpeechRef = useRef(false);
-  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Tracks elapsed-time simulation for expo-speech (no native position API)
-  const speechTimerRef = useRef<{ startTime: number; offsetMs: number } | null>(null);
+  // Speech-only: elapsed-time simulation (expo-speech has no position API)
+  const speechTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const speechOffsetRef = useRef<{ startTime: number; offsetMs: number } | null>(null);
 
-  const _clearInterval = () => {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
+  const _stopSpeechTimer = () => {
+    if (speechTimerRef.current) {
+      clearInterval(speechTimerRef.current);
+      speechTimerRef.current = null;
     }
+    speechOffsetRef.current = null;
   };
 
   const _unload = useCallback(async () => {
-    _clearInterval();
-    speechTimerRef.current = null;
+    _stopSpeechTimer();
     isSpeechRef.current = false;
     Speech.stop();
     if (soundRef.current) {
@@ -88,53 +88,48 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         const { sound } = await Audio.Sound.createAsync(
           { uri: fullUrl },
           { shouldPlay: true },
-          (status) => {
-            if (!status.isLoaded) return;
-            if (status.didJustFinish) {
-              setIsPlaying(false);
-              setPositionMs(0);
-              _clearInterval();
-              soundRef.current?.unloadAsync().catch(() => undefined);
-              soundRef.current = null;
-            }
-          },
         );
-        sound.setProgressUpdateIntervalAsync(200).catch(() => undefined);
-        soundRef.current = sound;
 
-        // Poll every 200ms — reliable cross-device source of truth for position/duration
-        progressIntervalRef.current = setInterval(async () => {
-          const s = soundRef.current;
-          if (!s) return;
-          const status = await s.getStatusAsync();
+        // setOnPlaybackStatusUpdate is the native engine callback — reliable on both
+        // iOS/Android and web, unlike a JS setInterval polling getStatusAsync.
+        sound.setOnPlaybackStatusUpdate((status) => {
           if (!status.isLoaded) return;
           setPositionMs(status.positionMillis ?? 0);
           if (status.durationMillis) setDurationMs(status.durationMillis);
-        }, 200);
+          if (status.didJustFinish) {
+            setIsPlaying(false);
+            setPositionMs(0);
+            soundRef.current?.unloadAsync().catch(() => undefined);
+            soundRef.current = null;
+          }
+        });
+
+        // Fire the callback every 200ms during playback for smooth progress
+        sound.setProgressUpdateIntervalAsync(200).catch(() => undefined);
+        soundRef.current = sound;
       } else {
         // expo-speech fallback: simulate progress with elapsed time
         isSpeechRef.current = true;
         const text = buildSpeechText(newStory);
-        // ~2.3 words/sec at rate 0.9 (~138 wpm)
+        // ~2.3 words/sec at rate 0.9 (≈138 wpm)
         const estimatedMs = Math.max(Math.round((text.split(/\s+/).length / 2.3) * 1000), 5000);
         setDurationMs(estimatedMs);
-        speechTimerRef.current = { startTime: Date.now(), offsetMs: 0 };
+        speechOffsetRef.current = { startTime: Date.now(), offsetMs: 0 };
 
-        progressIntervalRef.current = setInterval(() => {
-          const timer = speechTimerRef.current;
-          if (!timer || !isSpeechRef.current) {
-            _clearInterval();
+        speechTimerRef.current = setInterval(() => {
+          const offset = speechOffsetRef.current;
+          if (!offset || !isSpeechRef.current) {
+            _stopSpeechTimer();
             return;
           }
-          const elapsed = Date.now() - timer.startTime + timer.offsetMs;
+          const elapsed = Date.now() - offset.startTime + offset.offsetMs;
           setPositionMs(Math.min(elapsed, estimatedMs));
         }, 200);
 
-        const _onSpeechEnd = () => {
+        const onEnd = () => {
           setIsPlaying(false);
           isSpeechRef.current = false;
-          speechTimerRef.current = null;
-          _clearInterval();
+          _stopSpeechTimer();
         };
 
         Speech.speak(text, {
@@ -142,9 +137,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           rate: 0.9,
           pitch: 1.0,
           volume: 1.0,
-          onDone: _onSpeechEnd,
-          onError: _onSpeechEnd,
-          onStopped: _onSpeechEnd,
+          onDone: onEnd,
+          onError: onEnd,
+          onStopped: onEnd,
         });
       }
     },
@@ -153,12 +148,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const togglePlayPause = useCallback(async () => {
     if (isSpeechRef.current) {
-      // expo-speech has no pause — stop and clear timer
       Speech.stop();
       setIsPlaying(false);
       isSpeechRef.current = false;
-      speechTimerRef.current = null;
-      _clearInterval();
+      _stopSpeechTimer();
       return;
     }
 
@@ -176,23 +169,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const seekTo = useCallback(async (ms: number) => {
-    // Speech path: update simulated timer offset so progress continues from new position
+    // Speech: update the simulation offset so progress continues from new position
     if (isSpeechRef.current) {
-      if (speechTimerRef.current) {
-        speechTimerRef.current = { startTime: Date.now(), offsetMs: ms };
+      if (speechOffsetRef.current) {
+        speechOffsetRef.current = { startTime: Date.now(), offsetMs: ms };
       }
       setPositionMs(ms);
       return;
     }
 
     if (!soundRef.current) return;
-    // Update UI immediately so the bar doesn't snap back while the async seek completes
+    // Optimistic update so the bar doesn't snap back while the native seek completes
     setPositionMs(ms);
-    const status = await soundRef.current.getStatusAsync();
-    if (!status.isLoaded) return;
-    const clamped = Math.max(0, Math.min(ms, status.durationMillis ?? ms));
-    if (clamped !== ms) setPositionMs(clamped);
-    await soundRef.current.setPositionAsync(clamped);
+    setIsPlaying(true);
+    // setStatusAsync atomically seeks AND resumes playback — more reliable on native
+    // than calling setPositionAsync (which can leave audio paused on some devices).
+    await soundRef.current
+      .setStatusAsync({ positionMillis: ms, shouldPlay: true })
+      .catch(() => undefined);
   }, []);
 
   const dismiss = useCallback(async () => {

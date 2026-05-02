@@ -169,16 +169,18 @@ async def delete_story(
     article = ingestion.cache.get(key)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
-    article_date = (article.get("date") or article.get("publishedAt", ""))[:10]
-    if article_date:
-        news_batch = ingestion.cache.get(ingestion.news_key(article_date))
-        if news_batch and "stories" in news_batch:
-            news_batch["stories"] = [
-                s for s in news_batch["stories"]
-                if str(s.get("articleId", "")) != str(article_id)
-            ]
+    for batch_key in ingestion.cache.list_keys("news:"):
+        news_batch = ingestion.cache.get(batch_key)
+        if not news_batch or "stories" not in news_batch:
+            continue
+        original_len = len(news_batch["stories"])
+        news_batch["stories"] = [
+            s for s in news_batch["stories"]
+            if str(s.get("articleId", "")) != str(article_id)
+        ]
+        if len(news_batch["stories"]) != original_len:
             news_batch["totalCount"] = len(news_batch["stories"])
-            ingestion.cache.set(ingestion.news_key(article_date), news_batch)
+            ingestion.cache.set(batch_key, news_batch)
     ingestion.cache.delete(key)
     log.info("Admin: deleted article %s", article_id)
     return {"ok": True, "articleId": article_id}

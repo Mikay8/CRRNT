@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "CRRNT",
-    "slug": "marktr",
+    "slug": "crrnt",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -15,13 +15,17 @@
     },
     "ios": {
       "supportsTablet": false,
+      "bundleIdentifier": "com.crrnt.app",
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
-        ]
+        ],
+        "NSMicrophoneUsageDescription": "CRRNT uses the microphone for audio recording."
       }
     },
-    "android": {},
+    "android": {
+      "package": "com.crrnt.app"
+    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },

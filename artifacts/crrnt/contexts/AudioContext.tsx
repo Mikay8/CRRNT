@@ -179,12 +179,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         _setAudioMode(true);
         player.replace({ uri: fullUrl });
         player.play();
+        // Register this player as the lock-screen "Now Playing" source so the
+        // system media controls (lock screen, Control Center) reflect CRRNT audio.
         try {
-          (player as any).nowPlayingInfo = {
+          player.setActiveForLockScreen(true, {
             title: newStory.title,
             artist: "CRRNT",
-            artworkUri: (newStory as any).mediaUrl ?? undefined,
-          };
+            artworkUrl: (newStory as any).mediaUrl ?? undefined,
+          });
         } catch {}
       } else {
         // expo-speech fallback — configure audio session first so iOS plays
@@ -252,6 +254,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const dismiss = useCallback(async () => {
     _stopSpeech();
     player.pause();
+    try { player.clearLockScreenControls(); } catch {}
     _setAudioMode(false);
     setIsBarVisible(false);
     setStory(null);

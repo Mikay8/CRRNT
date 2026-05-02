@@ -14,7 +14,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
 import { useRef, useState } from "react";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   useGetStockHistory,
   useGetStory,
@@ -107,33 +106,33 @@ export default function StoryDetailScreen() {
   const displayProgress = scrubProgress !== null ? scrubProgress : liveProgress;
   const displayMs = scrubProgress !== null ? scrubProgress * durationMs : positionMs;
 
-  const seekGesture = Gesture.Pan()
-    .runOnJS(true)
-    .minDistance(0)
-    .onBegin((e) => {
-      if (!isThisStoryActive || audioTrackWidthRef.current === 0) return;
-      const p = clamp(e.x / audioTrackWidthRef.current);
-      scrubRef.current = p;
-      setScrubProgress(p);
-    })
-    .onUpdate((e) => {
-      if (!isThisStoryActive || audioTrackWidthRef.current === 0) return;
-      const p = clamp(e.x / audioTrackWidthRef.current);
-      scrubRef.current = p;
-      setScrubProgress(p);
-    })
-    .onEnd(() => {
-      const p = scrubRef.current;
-      if (p !== null && durationMs > 0) {
-        seekTo(p * durationMs).catch(() => undefined);
-      }
-      scrubRef.current = null;
-      setScrubProgress(null);
-    })
-    .onFinalize(() => {
-      scrubRef.current = null;
-      setScrubProgress(null);
-    });
+  // Native responder handlers — these work correctly inside ScrollView on iOS.
+  // GestureDetector/Gesture.Pan() loses to ScrollView on iOS so we use the RN
+  // responder protocol directly instead.
+  const onTrackGrant = (e: { nativeEvent: { locationX: number } }) => {
+    if (audioTrackWidthRef.current === 0) return;
+    const p = clamp(e.nativeEvent.locationX / audioTrackWidthRef.current);
+    scrubRef.current = p;
+    setScrubProgress(p);
+  };
+  const onTrackMove = (e: { nativeEvent: { locationX: number } }) => {
+    if (audioTrackWidthRef.current === 0) return;
+    const p = clamp(e.nativeEvent.locationX / audioTrackWidthRef.current);
+    scrubRef.current = p;
+    setScrubProgress(p);
+  };
+  const onTrackRelease = () => {
+    const p = scrubRef.current;
+    if (p !== null && durationMs > 0) {
+      seekTo(p * durationMs).catch(() => undefined);
+    }
+    scrubRef.current = null;
+    setScrubProgress(null);
+  };
+  const onTrackTerminate = () => {
+    scrubRef.current = null;
+    setScrubProgress(null);
+  };
 
   const screenWidth = Dimensions.get("window").width;
   const hPad = Math.max(16, insets.left + 4);
@@ -251,28 +250,32 @@ export default function StoryDetailScreen() {
               color={palette.bg}
             />
           </Pressable>
-          <GestureDetector gesture={seekGesture}>
+          <View
+            style={styles.audioTrack}
+            onLayout={(e) => {
+              const w = e.nativeEvent.layout.width;
+              audioTrackWidthRef.current = w;
+              setAudioTrackWidth(w);
+            }}
+            onStartShouldSetResponder={() => isThisStoryActive}
+            onMoveShouldSetResponder={() => isThisStoryActive}
+            onResponderGrant={onTrackGrant}
+            onResponderMove={onTrackMove}
+            onResponderRelease={onTrackRelease}
+            onResponderTerminate={onTrackTerminate}
+          >
+            <View style={styles.audioRail} />
             <View
-              style={styles.audioTrack}
-              onLayout={(e) => {
-                const w = e.nativeEvent.layout.width;
-                audioTrackWidthRef.current = w;
-                setAudioTrackWidth(w);
-              }}
-            >
-              <View style={styles.audioRail} />
-              <View
-                style={[
-                  styles.audioFill,
-                  {
-                    width: audioTrackWidth > 0
-                      ? Math.min(displayProgress * audioTrackWidth, audioTrackWidth)
-                      : 0,
-                  },
-                ]}
-              />
-            </View>
-          </GestureDetector>
+              style={[
+                styles.audioFill,
+                {
+                  width: audioTrackWidth > 0
+                    ? Math.min(displayProgress * audioTrackWidth, audioTrackWidth)
+                    : 0,
+                },
+              ]}
+            />
+          </View>
           {isThisStoryActive ? (
             <Text style={styles.audioTime}>
               {formatMs(displayMs)} / {durationMs > 0 ? formatMs(durationMs) : "--:--"}

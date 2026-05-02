@@ -274,6 +274,12 @@ def _fallback_insight(category: str, title: str) -> str:
     return f"A fresh {category} headline worth watching: {topic}"
 
 
+def _is_buzzfeed_quiz(story: dict[str, Any]) -> bool:
+    source = (story.get("source") or "").strip().lower()
+    title = (story.get("title") or "").strip().lower()
+    return "buzzfeed" in source and "quiz" in title
+
+
 async def enrich_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Run both enrichment passes for all stories."""
     from services import xapi  # avoid circular at module level
@@ -287,10 +293,14 @@ async def enrich_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     enriched = await asyncio.gather(*[_bounded_enrich(s) for s in stories])
 
-    # Pass 2: Tweet fetch + sentiment (only for stories with tickers)
+    # Pass 2: Tweet fetch + sentiment — skip BuzzFeed quizzes
     sem2 = asyncio.Semaphore(MAX_CONCURRENCY_TWEETS)
 
     async def _bounded_tweets(story: dict[str, Any]) -> dict[str, Any]:
+        if _is_buzzfeed_quiz(story):
+            return story
+        if not story.get("people"):
+            return story
         async with sem2:
             tweets = await xapi.fetch_story_tweets(story)
             if tweets:
@@ -299,8 +309,10 @@ async def enrich_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     enriched = await asyncio.gather(*[_bounded_tweets(s) for s in enriched])
 
-    # Pass 3: Fish Audio TTS synthesis (no-ops when FISH_AUDIO_API_KEY is unset)
+    # Pass 3: Fish Audio TTS — skip BuzzFeed quizzes
     from services import fish_audio  # avoid circular at module level
-    enriched = await fish_audio.synthesize_all(list(enriched))
+    non_quiz = [s for s in enriched if not _is_buzzfeed_quiz(s)]
+    quiz_stories = [s for s in enriched if _is_buzzfeed_quiz(s)]
+    synthesized = await fish_audio.synthesize_all(non_quiz)
 
-    return list(enriched)
+    return list(synthesized) + quiz_stories

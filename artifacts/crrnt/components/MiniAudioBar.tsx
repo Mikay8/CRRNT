@@ -93,6 +93,7 @@ export default function MiniAudioBar() {
   const [trackWidth, setTrackWidth] = useState(0);
   const trackWidthRef = useRef(0);
   const scrubRef = useRef<number | null>(null);
+  const seekHoldRef = useRef<number | null>(null);
   const durationMsRef = useRef(durationMs);
   const seekToRef = useRef(seekTo);
 
@@ -132,6 +133,7 @@ export default function MiniAudioBar() {
     .onEnd(() => {
       const p = scrubRef.current;
       if (p !== null && durationMsRef.current > 0) {
+        seekHoldRef.current = p;
         seekToRef.current(p * durationMsRef.current).catch(() => undefined);
       }
       scrubRef.current = null;
@@ -145,8 +147,24 @@ export default function MiniAudioBar() {
   if (!story && !isBarVisible) return null;
 
   const liveProgress = durationMs > 0 ? positionMs / durationMs : 0;
-  const displayProgress = scrubProgress !== null ? scrubProgress : liveProgress;
-  const displayMs = scrubProgress !== null ? scrubProgress * durationMs : positionMs;
+
+  // Clear the seek hold once positionMs has caught up within 1.5 s of the target.
+  if (seekHoldRef.current !== null && durationMs > 0) {
+    const targetMs = seekHoldRef.current * durationMs;
+    if (Math.abs(positionMs - targetMs) < 1500) {
+      seekHoldRef.current = null;
+    }
+  }
+
+  const heldProgress = seekHoldRef.current;
+  const displayProgress =
+    scrubProgress !== null ? scrubProgress : heldProgress !== null ? heldProgress : liveProgress;
+  const displayMs =
+    scrubProgress !== null
+      ? scrubProgress * durationMs
+      : heldProgress !== null
+        ? heldProgress * durationMs
+        : positionMs;
   const bottomOffset = insets.bottom + (isInTabs ? TAB_BAR_HEIGHT : 0);
 
   const categoryMeta = getCategoryMeta(story?.category ?? null);

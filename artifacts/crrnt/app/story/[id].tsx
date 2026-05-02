@@ -4,6 +4,7 @@ import {
   Image,
   Linking,
   PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -78,6 +79,9 @@ export default function StoryDetailScreen() {
   const audioTrackWidthRef = useRef(0);
   const [scrubProgress, setScrubProgress] = useState<number | null>(null);
   const scrubRef = useRef<number | null>(null);
+  // Holds the seek target (0-1) after release until positionMs catches up,
+  // preventing the progress bar from snapping back to the stale position.
+  const seekHoldRef = useRef<number | null>(null);
   const { story: audioStory, isPlaying, positionMs, durationMs, playStory, togglePlayPause, seekTo } = useAudio();
 
   const localFallback = saved.find((s) => s.articleId === id) ?? null;
@@ -104,8 +108,25 @@ export default function StoryDetailScreen() {
   // Derived display values (use scrub position while dragging)
   const clamp = (v: number) => Math.max(0, Math.min(1, v));
   const liveProgress = isThisStoryActive && durationMs > 0 ? positionMs / durationMs : 0;
-  const displayProgress = scrubProgress !== null ? scrubProgress : liveProgress;
-  const displayMs = scrubProgress !== null ? scrubProgress * durationMs : positionMs;
+
+  // Clear the seek hold once positionMs has caught up to within 1.5 s of target.
+  // This prevents the bar from snapping back to a stale position after release.
+  if (seekHoldRef.current !== null && durationMs > 0) {
+    const targetMs = seekHoldRef.current * durationMs;
+    if (Math.abs(positionMs - targetMs) < 1500) {
+      seekHoldRef.current = null;
+    }
+  }
+
+  const heldProgress = seekHoldRef.current;
+  const displayProgress =
+    scrubProgress !== null ? scrubProgress : heldProgress !== null ? heldProgress : liveProgress;
+  const displayMs =
+    scrubProgress !== null
+      ? scrubProgress * durationMs
+      : heldProgress !== null
+        ? heldProgress * durationMs
+        : positionMs;
 
   // Live refs so PanResponder callbacks (created once) always see current values.
   const isThisStoryActiveRef = useRef(false);
@@ -137,6 +158,10 @@ export default function StoryDetailScreen() {
       onPanResponderRelease: () => {
         const p = scrubRef.current;
         if (p !== null && durationMsRef.current > 0) {
+          // Pin the display at the seek target until positionMs catches up.
+          // Without this, the bar snaps back for 1-2 render ticks while the
+          // audio engine processes the seek asynchronously.
+          seekHoldRef.current = p;
           seekToRef.current(p * durationMsRef.current).catch(() => undefined);
         }
         scrubRef.current = null;
@@ -274,6 +299,24 @@ export default function StoryDetailScreen() {
             }}
             {...audioPanResponder.panHandlers}
           >
+            {/* Web-only tap-to-seek overlay. PanResponder only handles touch events,
+                not the mouse events that browsers/Playwright send. This Pressable
+                fills the track and handles mouse clicks on web without affecting
+                native iOS (where PanResponder handles everything via touch). */}
+            {Platform.OS === "web" && isThisStoryActive && (
+              <Pressable
+                style={StyleSheet.absoluteFill}
+                onPress={(e) => {
+                  if (audioTrackWidthRef.current === 0) return;
+                  const p = Math.max(
+                    0,
+                    Math.min(1, e.nativeEvent.locationX / audioTrackWidthRef.current),
+                  );
+                  seekHoldRef.current = p;
+                  seekTo(p * durationMs).catch(() => undefined);
+                }}
+              />
+            )}
             <View style={styles.audioRail} />
             <View
               style={[

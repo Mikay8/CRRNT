@@ -74,6 +74,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // Closure-safe refs for toggle
   const speechPlayingRef = useRef(false);
   const speechPositionMsRef = useRef(0);
+  // Generation counter: incremented each time we stop speech so that any
+  // pending onDone/onStopped callback from a previous Speech.speak() knows
+  // it's stale and should not reset position or cancel the new timer.
+  const speechGenRef = useRef(0);
 
   // updateInterval goes in useAudioPlayer options — useAudioPlayerStatus takes only one arg
   const player = useAudioPlayer(null, { updateInterval: 200 });
@@ -103,6 +107,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const isPlaying = isAudioMode ? (audioStatus.playing ?? false) : speechPlaying;
 
   const _stopSpeech = useCallback(() => {
+    // Bump generation BEFORE Speech.stop() so any pending onDone/onStopped
+    // callback from the outgoing speech sees a stale gen and bails out.
+    speechGenRef.current += 1;
     if (speechTimerRef.current) {
       clearInterval(speechTimerRef.current);
       speechTimerRef.current = null;
@@ -119,6 +126,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         speechTimerRef.current = null;
       }
 
+      // Capture the generation for this session. Any onEnd that fires with a
+      // different (newer) gen is stale — from a Speech.stop() we already issued —
+      // and must not reset position or kill our new timer.
+      const myGen = speechGenRef.current;
+
       speechOffsetRef.current = { startTime: Date.now(), offsetMs: fromMs };
 
       speechTimerRef.current = setInterval(() => {
@@ -134,6 +146,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       }, 200);
 
       const onEnd = () => {
+        // Ignore callbacks belonging to a previous (stopped) speech session.
+        if (speechGenRef.current !== myGen) return;
         _setSpeechPlaying(false);
         if (speechTimerRef.current) {
           clearInterval(speechTimerRef.current);

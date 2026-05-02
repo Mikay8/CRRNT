@@ -31,13 +31,7 @@
         }
       ],
       "expo-font",
-      "expo-web-browser",
-      [
-        "expo-audio",
-        {
-          "microphonePermission": false
-        }
-      ]
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

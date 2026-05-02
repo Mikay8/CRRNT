@@ -3,7 +3,6 @@ import {
   Dimensions,
   Image,
   Linking,
-  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -128,51 +127,14 @@ export default function StoryDetailScreen() {
         ? heldProgress * durationMs
         : positionMs;
 
-  // Live refs so PanResponder callbacks (created once) always see current values.
+  // Live refs so responder callbacks always see current values even if the
+  // React Compiler memoises the lambda between renders.
   const isThisStoryActiveRef = useRef(false);
   isThisStoryActiveRef.current = isThisStoryActive;
   const durationMsRef = useRef(0);
   durationMsRef.current = durationMs;
   const seekToRef = useRef(seekTo);
   seekToRef.current = seekTo;
-
-  // PanResponder works cross-platform: inside ScrollView on native iOS and on web.
-  // Raw responder props (onStartShouldSetResponder etc.) don't propagate through
-  // the browser's native scroll container on web.
-  const audioPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => isThisStoryActiveRef.current,
-      onMoveShouldSetPanResponder: () => isThisStoryActiveRef.current,
-      onPanResponderGrant: (evt) => {
-        if (audioTrackWidthRef.current === 0) return;
-        const p = clamp(evt.nativeEvent.locationX / audioTrackWidthRef.current);
-        scrubRef.current = p;
-        setScrubProgress(p);
-      },
-      onPanResponderMove: (evt) => {
-        if (audioTrackWidthRef.current === 0) return;
-        const p = clamp(evt.nativeEvent.locationX / audioTrackWidthRef.current);
-        scrubRef.current = p;
-        setScrubProgress(p);
-      },
-      onPanResponderRelease: () => {
-        const p = scrubRef.current;
-        if (p !== null && durationMsRef.current > 0) {
-          // Pin the display at the seek target until positionMs catches up.
-          // Without this, the bar snaps back for 1-2 render ticks while the
-          // audio engine processes the seek asynchronously.
-          seekHoldRef.current = p;
-          seekToRef.current(p * durationMsRef.current).catch(() => undefined);
-        }
-        scrubRef.current = null;
-        setScrubProgress(null);
-      },
-      onPanResponderTerminate: () => {
-        scrubRef.current = null;
-        setScrubProgress(null);
-      },
-    })
-  ).current;
 
   const screenWidth = Dimensions.get("window").width;
   const hPad = Math.max(16, insets.left + 4);
@@ -291,32 +253,56 @@ export default function StoryDetailScreen() {
             />
           </Pressable>
           <View
-            style={styles.audioTrack}
+            accessible={isThisStoryActive}
+            accessibilityLabel="Seek bar"
+            accessibilityRole="adjustable"
+            style={[
+              styles.audioTrack,
+              // cursor:pointer is CSS-only (web). It makes the seek bar
+              // identifiable as interactive for automated tests and users.
+              Platform.OS === "web" && isThisStoryActive
+                ? ({ cursor: "pointer" } as object)
+                : undefined,
+            ]}
             onLayout={(e) => {
               const w = e.nativeEvent.layout.width;
               audioTrackWidthRef.current = w;
               setAudioTrackWidth(w);
             }}
-            {...audioPanResponder.panHandlers}
+            // Capture-phase: fires before ScrollView's bubble-phase on iOS,
+            // preventing the scroll view from stealing touch gestures on the
+            // progress bar. Bubble-phase is a reliable fallback on web.
+            onStartShouldSetResponderCapture={() => isThisStoryActiveRef.current}
+            onMoveShouldSetResponderCapture={() => isThisStoryActiveRef.current}
+            onStartShouldSetResponder={() => isThisStoryActiveRef.current}
+            onMoveShouldSetResponder={() => isThisStoryActiveRef.current}
+            onResponderTerminationRequest={() => false}
+            onResponderGrant={(evt) => {
+              if (audioTrackWidthRef.current === 0) return;
+              const p = clamp(evt.nativeEvent.locationX / audioTrackWidthRef.current);
+              scrubRef.current = p;
+              setScrubProgress(p);
+            }}
+            onResponderMove={(evt) => {
+              if (audioTrackWidthRef.current === 0) return;
+              const p = clamp(evt.nativeEvent.locationX / audioTrackWidthRef.current);
+              scrubRef.current = p;
+              setScrubProgress(p);
+            }}
+            onResponderRelease={() => {
+              const p = scrubRef.current;
+              if (p !== null && durationMsRef.current > 0) {
+                seekHoldRef.current = p;
+                seekToRef.current(p * durationMsRef.current).catch(() => undefined);
+              }
+              scrubRef.current = null;
+              setScrubProgress(null);
+            }}
+            onResponderTerminate={() => {
+              scrubRef.current = null;
+              setScrubProgress(null);
+            }}
           >
-            {/* Web-only tap-to-seek overlay. PanResponder only handles touch events,
-                not the mouse events that browsers/Playwright send. This Pressable
-                fills the track and handles mouse clicks on web without affecting
-                native iOS (where PanResponder handles everything via touch). */}
-            {Platform.OS === "web" && isThisStoryActive && (
-              <Pressable
-                style={StyleSheet.absoluteFill}
-                onPress={(e) => {
-                  if (audioTrackWidthRef.current === 0) return;
-                  const p = Math.max(
-                    0,
-                    Math.min(1, e.nativeEvent.locationX / audioTrackWidthRef.current),
-                  );
-                  seekHoldRef.current = p;
-                  seekTo(p * durationMs).catch(() => undefined);
-                }}
-              />
-            )}
             <View style={styles.audioRail} />
             <View
               style={[

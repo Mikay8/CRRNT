@@ -1,6 +1,5 @@
 import {
   useAudioPlayer,
-  useAudioPlayerStatus,
   setAudioModeAsync,
 } from "expo-audio";
 import * as Speech from "expo-speech";
@@ -10,6 +9,7 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
 } from "react";
@@ -79,9 +79,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // it's stale and should not reset position or cancel the new timer.
   const speechGenRef = useRef(0);
 
-  // updateInterval goes in useAudioPlayer options — useAudioPlayerStatus takes only one arg
   const player = useAudioPlayer(null, { updateInterval: 200 });
-  const audioStatus = useAudioPlayerStatus(player);
+
+  // expo-audio v1.1.1 has a confirmed iOS bug (GitHub #37653): the internal time
+  // observer that drives useAudioPlayerStatus only fires while the player is
+  // actively playing. After a seek or pause, currentTime freezes at the old value.
+  // Fix: bypass the subscription entirely and poll the player object directly —
+  // direct property access always reflects truth regardless of observer state.
+  const [audioPositionMs, setAudioPositionMs] = useState(0);
+  const [audioDurationMs, setAudioDurationMs] = useState(0);
+  const [audioIsPlaying, setAudioIsPlaying] = useState(false);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setAudioPositionMs(Math.round((player.currentTime ?? 0) * 1000));
+      setAudioDurationMs(Math.round((player.duration ?? 0) * 1000));
+      setAudioIsPlaying(player.playing ?? false);
+    }, 200);
+    return () => clearInterval(timer);
+  }, [player]);
 
   const _setAudioMode = (val: boolean) => {
     isAudioModeRef.current = val;
@@ -98,13 +113,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setSpeechPositionMs(val);
   };
 
-  const positionMs = isAudioMode
-    ? Math.round((audioStatus.currentTime ?? 0) * 1000)
-    : speechPositionMs;
-  const durationMs = isAudioMode
-    ? Math.round((audioStatus.duration ?? 0) * 1000)
-    : speechDurationMs;
-  const isPlaying = isAudioMode ? (audioStatus.playing ?? false) : speechPlaying;
+  const positionMs = isAudioMode ? audioPositionMs : speechPositionMs;
+  const durationMs = isAudioMode ? audioDurationMs : speechDurationMs;
+  const isPlaying = isAudioMode ? audioIsPlaying : speechPlaying;
 
   const _stopSpeech = useCallback(() => {
     // Bump generation BEFORE Speech.stop() so any pending onDone/onStopped

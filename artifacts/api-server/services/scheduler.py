@@ -19,7 +19,7 @@ def start() -> None:
         return
     _scheduler = AsyncIOScheduler(timezone="America/New_York")
     _scheduler.add_job(
-        ingestion.run_ingestion,
+        ingestion.run_trending_ingestion,
         CronTrigger(hour=8, minute=0),
         id="daily_ingestion",
         replace_existing=True,
@@ -27,7 +27,7 @@ def start() -> None:
         max_instances=1,
     )
     _scheduler.start()
-    log.info("Scheduler started — daily ingestion at 08:00 America/New_York")
+    log.info("Scheduler started — daily trending ingestion at 08:00 America/New_York")
 
 
 def shutdown() -> None:

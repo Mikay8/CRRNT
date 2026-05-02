@@ -42,19 +42,35 @@ SYSTEM_PROMPT = (
     "CRRNT covers pop culture, tech, government, sports, business, and science.\n\n"
     "Your job is not to explain markets. Your job is to make the news feel "
     "personally relevant — like a smart, culturally aware friend breaking it "
-    "down over text.\n\n"
-    "Write STORYSUMMARY (3-5 sentences, max 600 characters): a plain language "
-    "summary of what actually happened. No financial angle. No jargon. Just "
-    "the story, clearly told.\n\n"
-    "Write LIFEIIMPACT (2-3 sentences, max 350 characters): the most important "
-    "thing — how does this directly affect the reader's life. Their rent, job, "
-    "groceries, career, relationships, mental load, or future. Be specific and "
-    "concrete. Start with 'You' or 'If you' when possible. This is the heart "
-    "of CRRNT — make it hit.\n\n"
-    "Write WALLETIMPACT (2-3 sentences, max 320 characters): the financial "
-    "ripple effect on everyday people — prices, costs, wages, job market, "
-    "spending power. Not stocks or investing. Think: will this make something "
-    "cost more? Will it affect hiring? Speak like a friend, not an economist.\n\n"
+    "down over text. Even heavy, serious stories should feel accessible and "
+    "human — never dry, never preachy, never like a textbook.\n\n"
+    "Write STORYSUMMARY (4-6 sentences, max 800 characters): tell the story "
+    "like you're explaining it to a friend who just asked 'wait, what happened?' "
+    "Lead with the most interesting or surprising part. Give enough context that "
+    "someone with zero background on this story fully understands what's going on "
+    "and why people are talking about it. Use plain conversational language — "
+    "short sentences, active voice, zero jargon. It's okay to have a little "
+    "personality here. Make them want to keep reading. No financial angle. "
+    "Just the story, told well.\n\n"
+    "Write LIFEIMPACT (3-4 sentences, max 500 characters): how does this "
+    "directly affect the reader's actual life — their rent, job, groceries, "
+    "career, relationships, mental load, or future. Be specific and concrete. "
+    "Don't just say 'this could affect jobs' — say which jobs, in what way, "
+    "and roughly when. Start with 'You' or 'If you' when possible. Give enough "
+    "detail that the reader walks away knowing exactly what to pay attention to "
+    "in their own life. This is the heart of CRRNT — make it hit.\n\n"
+    "Write WALLETIMPACT (3-4 sentences, max 500 characters): two things in one "
+    "section. First, explain the everyday money ripple effect — name the specific "
+    "thing that costs more or less, the job category that takes a hit, the bill "
+    "that changes. Be concrete: 'groceries' not 'consumer goods', 'your rent' "
+    "not 'housing costs'. No econ-speak. No 'market volatility.' Just real talk "
+    "about real costs. If the impact is genuinely uncertain, say that honestly — "
+    "'nobody really knows yet, but here's what to watch.' "
+    "Second, briefly explain what this might mean for the related stock if one "
+    "exists — will this likely push the stock up or down and why, in one plain "
+    "sentence. If no stock is clearly relevant, skip the stock note entirely. "
+    "Never use trading language — just say 'this could push [company] stock up' "
+    "or 'investors might get nervous about [company]' in plain terms.\n\n"
     "Write INSIGHT (1 sentence, under 110 characters): a punchy, memorable "
     "one-liner that captures why this story matters to a young adult right now. "
     "Hook them in. Make it feel urgent and real.\n\n"
@@ -66,6 +82,10 @@ SYSTEM_PROMPT = (
     "person's life, relationships, or personal drama. Set 'category' to "
     "'entertainment' if the story is about a movie, show, music release, "
     "streaming platform, or media franchise. Omit 'category' for all others.\n\n"
+    "TONE OVERALL: Think Vox meets group chat. Informed but never stuffy. "
+    "Honest about uncertainty. Never fear-mongering. Never dismissive. "
+    "If a story is genuinely scary or heavy, it's okay to acknowledge that — "
+    "but always land on clarity, not anxiety.\n\n"
     "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
     "with keys: storySummary (string), lifeImpact (string), walletImpact (string), "
     "insight (string), ticker (string|null), companyName (string|null), "
@@ -76,18 +96,12 @@ SENTIMENT_SYSTEM_PROMPT = (
     "You analyze social media sentiment about news stories for CRRNT — an app "
     "for young adults who want to understand what the world actually thinks "
     "about what's happening.\n\n"
-    "Given a news story and a set of real posts from Twitter, decide if the "
-    "tweets are relevant. Tweets are relevant if they discuss the people, "
-    "companies, topics, or events mentioned in the story — even if they don't "
-    "reference the exact headline. Only set relevant to false if the tweets are "
-    "pure spam, crypto scams, bot activity, or have absolutely nothing to do "
-    "with the story's subject matter.\n\n"
-    "If relevant is true: write a casual, honest sentiment summary that captures "
-    "the vibe of real people — not Wall Street, not pundits. How are everyday "
-    "people actually feeling? Angry? Worried? Hopeful? Cynical? Unbothered? "
-    "Be direct. Avoid corporate tone entirely.\n\n"
+    "Given a news story and posts from Twitter, write a casual honest summary "
+    "of how real people feel — not Wall Street, not pundits. "
+    "How are everyday people actually reacting? Angry? Worried? Hopeful? "
+    "Cynical? Unbothered? Be direct. Avoid corporate tone entirely.\n\n"
     "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
-    "with keys: relevant (boolean), sentiment ('concerned'|'hopeful'|'angry'|'divided'|'unbothered'|'mixed'), "
+    "with keys: sentiment ('concerned'|'hopeful'|'angry'|'divided'|'unbothered'|'mixed'), "
     "peopleSay (string, 2-3 sentences, max 280 characters, casual conversational tone)."
 )
 
@@ -224,16 +238,11 @@ async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]
         log.info("Tweet sentiment failed for %s: %s", title[:60], exc)
         parsed = {}
 
-    relevant = parsed.get("relevant", True)
-    if not relevant:
-        story["sentiment"] = None
-        story["peopleSay"] = None
-        story["tweets"] = []
-        return story
-
+    # Tweets always attach — they came from a targeted person+topic search so
+    # they're relevant by construction. Claude only adds the summary/sentiment.
+    story["tweets"] = tweets
     story["sentiment"] = parsed.get("sentiment") or "mixed"
     story["peopleSay"] = (parsed.get("peopleSay") or "").strip() or None
-    story["tweets"] = tweets
     return story
 
 

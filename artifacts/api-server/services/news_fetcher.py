@@ -45,6 +45,21 @@ ALL_CATEGORIES: list[str] = [
     "science",
 ]
 
+# Maps category names returned by /v1/trending to our internal categories.
+# Unmapped values fall back to "government" (catch-all for general news).
+TRENDING_CATEGORY_MAP: dict[str, str] = {
+    "politics": "government",
+    "technology": "tech",
+    "entertainment": "celebrity",  # enrichment refines to celebrity/entertainment
+    "sports": "sports",
+    "business": "business",
+    "science": "science",
+    "health": "science",
+    "world": "government",
+    "national": "government",
+    "general": "government",
+}
+
 
 class NewsmeshError(RuntimeError):
     pass
@@ -184,4 +199,45 @@ async def fetch_all_categories(
     return flattened
 
 
-__all__ = ["fetch_category", "fetch_all_categories", "ALL_CATEGORIES", "NewsmeshError"]
+async def fetch_trending(limit: int = 25) -> list[dict[str, Any]]:
+    """Fetch trending articles from NewsMesh /v1/trending.
+
+    The trending endpoint returns articles across all categories without a
+    category filter.  Each article's 'category' field is mapped from the
+    external name (e.g. 'politics') to our internal name (e.g. 'government')
+    via TRENDING_CATEGORY_MAP before normalization.
+    """
+    api_key = os.environ.get("NEWSMESH_API_KEY")
+    if not api_key:
+        raise NewsmeshError("NEWSMESH_API_KEY is not set")
+
+    params = {
+        "apiKey": api_key,
+        "limit": min(limit, 25),
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(f"{NEWSMESH_BASE}/trending", params=params)
+        if resp.status_code >= 400:
+            log.info(
+                "NewsMesh /trending -> %s: %s",
+                resp.status_code,
+                resp.text[:300],
+            )
+            raise NewsmeshError(f"NewsMesh /trending failed ({resp.status_code})")
+        payload = resp.json()
+
+    raw_articles = payload.get("data") or payload.get("articles") or []
+    normalized = []
+    for a in raw_articles:
+        if not a:
+            continue
+        external_cat = (a.get("category") or "").strip().lower()
+        internal_cat = TRENDING_CATEGORY_MAP.get(external_cat, "government")
+        normalized.append(_normalize(a, internal_cat))
+
+    log.info("NewsMesh: %d trending article(s) fetched", len(normalized))
+    return normalized
+
+
+__all__ = ["fetch_category", "fetch_all_categories", "fetch_trending", "ALL_CATEGORIES", "TRENDING_CATEGORY_MAP", "NewsmeshError"]

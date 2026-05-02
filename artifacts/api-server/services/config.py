@@ -13,6 +13,7 @@ CONFIG_KEY = "config:ingestion"
 _DEFAULTS: dict = {
     "perCategory": 10,
     "selectedCategories": ["celebrity", "tech", "government", "sports", "business", "science"],
+    "trendingLimit": 10,
 }
 
 
@@ -27,6 +28,8 @@ def set_config(updates: dict) -> dict:
     # Clamp perCategory to valid range
     if "perCategory" in merged:
         merged["perCategory"] = max(1, min(25, int(merged["perCategory"])))
+    if "trendingLimit" in merged:
+        merged["trendingLimit"] = max(1, min(25, int(merged["trendingLimit"])))
     # Validate selectedCategories
     if "selectedCategories" in merged:
         valid_cats = ["celebrity", "tech", "government", "sports", "business", "science"]

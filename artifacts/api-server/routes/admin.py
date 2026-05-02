@@ -85,6 +85,7 @@ async def get_config(
 class ConfigUpdate(BaseModel):
     perCategory: int
     selectedCategories: Optional[list[str]] = None
+    trendingLimit: Optional[int] = None
 
 
 @router.post("/admin/config")
@@ -93,12 +94,39 @@ async def set_config(
     x_admin_token: Optional[str] = Header(default=None),
 ) -> dict:
     _require_admin(x_admin_token)
-    updates = {"perCategory": body.perCategory}
+    updates: dict = {"perCategory": body.perCategory}
     if body.selectedCategories is not None:
         updates["selectedCategories"] = body.selectedCategories
+    if body.trendingLimit is not None:
+        updates["trendingLimit"] = body.trendingLimit
     updated = config_service.set_config(updates)
-    log.info("Admin: config updated — perCategory=%d, categories=%s", updated["perCategory"], updated.get("selectedCategories"))
+    log.info(
+        "Admin: config updated — perCategory=%d, trendingLimit=%d, categories=%s",
+        updated["perCategory"],
+        updated.get("trendingLimit", 25),
+        updated.get("selectedCategories"),
+    )
     return updated
+
+
+@router.get("/admin/trending-status")
+async def trending_status_endpoint(
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict:
+    _require_admin(x_admin_token)
+    return ingestion.get_trending_status()
+
+
+@router.post("/admin/refresh-trending")
+async def refresh_trending(
+    x_admin_token: Optional[str] = Header(default=None),
+) -> JSONResponse:
+    _require_admin(x_admin_token)
+    current = ingestion.get_trending_status()
+    if current.get("state") == "running":
+        return JSONResponse(status_code=409, content=current)
+    asyncio.create_task(ingestion.run_trending_ingestion())
+    return JSONResponse(status_code=202, content=ingestion.get_trending_status())
 
 
 @router.delete("/admin/stories")
@@ -339,8 +367,21 @@ input[type=number]{background:var(--hi);border:1px solid var(--border);border-ra
     </div>
     <div class="divider"></div>
     <div class="row">
-      <button class="btn btn-g" id="refresh-btn" onclick="triggerRefresh()">&#9654; Trigger Refresh Now</button>
+      <button class="btn btn-g" id="refresh-btn" onclick="triggerRefresh()">&#9654; Trigger Category Pull</button>
       <span class="meta" id="refresh-hint"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Trending Pull</h2>
+    <p class="meta" style="margin-bottom:14px;font-size:12px;color:var(--dim)">Fetches from /v1/trending — used by the daily cron job</p>
+    <div class="row" style="margin-bottom:14px">
+      <span class="badge b-idle" id="trending-badge">loading</span>
+      <span class="meta" id="trending-meta"></span>
+    </div>
+    <div class="divider"></div>
+    <div class="row">
+      <button class="btn btn-g" id="trending-btn" onclick="triggerTrending()">&#9654; Trigger Trending Pull</button>
     </div>
   </div>
 
@@ -384,7 +425,7 @@ input[type=number]{background:var(--hi);border:1px solid var(--border);border-ra
   <div class="card">
     <h2>Configuration</h2>
     <div class="col">
-      <label>Stories fetched per category (1 – 25)</label>
+      <label>Stories fetched per category pull (1 – 25)</label>
       <div class="row">
         <input type="range" min="1" max="25" value="10" id="slider"
           oninput="document.getElementById('num').value=this.value" style="flex:1">
@@ -393,7 +434,16 @@ input[type=number]{background:var(--hi);border:1px solid var(--border);border-ra
       </div>
     </div>
     <div class="col" style="margin-top:16px">
-      <label>Categories to fetch</label>
+      <label>Stories fetched per trending cron run (1 – 25)</label>
+      <div class="row">
+        <input type="range" min="1" max="25" value="25" id="trending-limit-slider"
+          oninput="document.getElementById('trending-limit-num').value=this.value" style="flex:1">
+        <input type="number" min="1" max="25" value="25" id="trending-limit-num"
+          oninput="document.getElementById('trending-limit-slider').value=this.value">
+      </div>
+    </div>
+    <div class="col" style="margin-top:16px">
+      <label>Categories to fetch (category pull)</label>
       <div class="row" style="flex-wrap:wrap;gap:8px">
         <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" id="cat-celebrity" checked> Celebrity</label>
         <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" id="cat-tech" checked> Tech</label>
@@ -462,6 +512,9 @@ async function loadConfig(){
     const d=await r.json();
     document.getElementById('slider').value=d.perCategory;
     document.getElementById('num').value=d.perCategory;
+    const tl=d.trendingLimit||25;
+    document.getElementById('trending-limit-slider').value=tl;
+    document.getElementById('trending-limit-num').value=tl;
     const cats=d.selectedCategories||[];
     document.getElementById('cat-celebrity').checked=cats.includes('celebrity');
     document.getElementById('cat-tech').checked=cats.includes('tech');
@@ -472,24 +525,53 @@ async function loadConfig(){
   }catch(e){}
 }
 
+async function loadTrendingStatus(){
+  try{
+    const r=await fetch('/api/admin/trending-status',{headers:H});
+    const d=await r.json();
+    const b=document.getElementById('trending-badge');
+    b.textContent=d.state;
+    b.className='badge b-'+d.state;
+    const parts=[];
+    if(d.storyCount)parts.push(d.storyCount+' stories');
+    if(d.trendingLimit)parts.push('limit '+d.trendingLimit);
+    if(d.finishedAt)parts.push('Finished '+new Date(d.finishedAt).toLocaleString());
+    if(d.message)parts.push('Error: '+d.message);
+    document.getElementById('trending-meta').textContent=parts.join(' · ');
+  }catch(e){}
+}
+
 async function triggerRefresh(){
   const btn=document.getElementById('refresh-btn');
   btn.disabled=true;btn.textContent='Starting…';
   try{
     const r=await fetch('/api/admin/refresh',{method:'POST',headers:H});
-    if(r.status===202)toast('Ingestion started! Takes a few minutes.');
+    if(r.status===202)toast('Category pull started! Takes a few minutes.');
     else if(r.status===409)toast('Already running — check status above.',false);
     else toast('Error: '+r.status,false);
   }catch(e){toast('Request failed',false);}
-  setTimeout(()=>{btn.disabled=false;btn.textContent='▶ Trigger Refresh Now';loadStatus();loadStats();},2500);
+  setTimeout(()=>{btn.disabled=false;btn.textContent='▶ Trigger Category Pull';loadStatus();loadStats();},2500);
+}
+
+async function triggerTrending(){
+  const btn=document.getElementById('trending-btn');
+  btn.disabled=true;btn.textContent='Starting…';
+  try{
+    const r=await fetch('/api/admin/refresh-trending',{method:'POST',headers:H});
+    if(r.status===202)toast('Trending pull started! Takes a few minutes.');
+    else if(r.status===409)toast('Trending pull already running.',false);
+    else toast('Error: '+r.status,false);
+  }catch(e){toast('Request failed',false);}
+  setTimeout(()=>{btn.disabled=false;btn.textContent='▶ Trigger Trending Pull';loadTrendingStatus();loadStats();},2500);
 }
 
 async function saveConfig(){
   const n=parseInt(document.getElementById('num').value)||10;
   const val=Math.max(1,Math.min(25,n));
+  const tl=Math.max(1,Math.min(25,parseInt(document.getElementById('trending-limit-num').value)||25));
   const cats=['celebrity','tech','government','sports','business','science'].filter(c=>document.getElementById('cat-'+c).checked);
   try{
-    const r=await fetch('/api/admin/config',{method:'POST',headers:H,body:JSON.stringify({perCategory:val,selectedCategories:cats})});
+    const r=await fetch('/api/admin/config',{method:'POST',headers:H,body:JSON.stringify({perCategory:val,trendingLimit:tl,selectedCategories:cats})});
     if(r.ok)toast('Configuration saved!');
     else toast('Failed to save: '+r.status,false);
   }catch(e){toast('Request failed',false);}
@@ -607,8 +689,9 @@ async function deleteStock(key){
   }catch(e){toast('Request failed',false);}
 }
 
-loadStatus();loadStats();loadConfig();loadStories();loadStockCaches();loadLogs();
+loadStatus();loadTrendingStatus();loadStats();loadConfig();loadStories();loadStockCaches();loadLogs();
 setInterval(loadStatus,10000);
+setInterval(loadTrendingStatus,10000);
 setInterval(loadStats,30000);
 setInterval(loadLogs,15000);
 </script>

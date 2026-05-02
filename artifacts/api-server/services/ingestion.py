@@ -18,10 +18,13 @@ ALL_CATEGORIES = news_fetcher.ALL_CATEGORIES
 log = logging.getLogger("marktr.ingestion")
 
 _DEFAULT_PER_CATEGORY = 10
+_DEFAULT_TRENDING_LIMIT = 25
 STATUS_KEY = "ingestion:status"
+TRENDING_STATUS_KEY = "ingestion:trending-status"
 NEWS_RETENTION_DAYS = 7
 ARTICLE_RETENTION_DAYS = 14
 _status_lock = asyncio.Lock()
+_trending_lock = asyncio.Lock()
 
 
 def _today() -> str:
@@ -42,6 +45,14 @@ def get_status() -> dict[str, Any]:
 
 def _set_status(status: dict[str, Any]) -> None:
     cache.set(STATUS_KEY, status)
+
+
+def get_trending_status() -> dict[str, Any]:
+    return cache.get(TRENDING_STATUS_KEY) or {"state": "idle"}
+
+
+def _set_trending_status(status: dict[str, Any]) -> None:
+    cache.set(TRENDING_STATUS_KEY, status)
 
 
 async def ensure_today_ingested(*, background: bool = True) -> None:
@@ -147,6 +158,92 @@ async def run_ingestion() -> dict[str, Any]:
             "message": str(exc),
         }
         _set_status(status)
+        return status
+
+
+async def run_trending_ingestion() -> dict[str, Any]:
+    """Fetch from /v1/trending, enrich, and merge into today's news cache."""
+    async with _trending_lock:
+        today = _today()
+        existing = get_trending_status()
+        if existing.get("state") == "running" and existing.get("date") == today:
+            return existing
+
+        cfg = config_service.get_config()
+        trending_limit = int(cfg.get("trendingLimit", _DEFAULT_TRENDING_LIMIT))
+
+        status: dict[str, Any] = {
+            "date": today,
+            "state": "running",
+            "storyCount": 0,
+            "trendingLimit": trending_limit,
+            "startedAt": datetime.utcnow().isoformat() + "Z",
+        }
+        _set_trending_status(status)
+
+    try:
+        log.info("Trending ingestion starting for %s (limit=%d)", today, trending_limit)
+        raw = await news_fetcher.fetch_trending(trending_limit)
+        log.info("Fetched %d trending articles", len(raw))
+
+        enriched = await enrichment.enrich_all(raw) if raw else []
+
+        if enriched:
+            existing_payload = cache.get(news_key(today)) or {}
+            existing_stories = existing_payload.get("stories", [])
+            existing_ids = {s.get("articleId") for s in existing_stories if s.get("articleId")}
+            new_stories = [s for s in enriched if s.get("articleId") not in existing_ids]
+            merged = existing_stories + new_stories
+            cache.set(news_key(today), {
+                "date": today,
+                "totalCount": len(merged),
+                "stories": merged,
+            })
+            for story in new_stories:
+                aid = story.get("articleId")
+                if aid:
+                    cache.set(article_key(aid), story)
+        else:
+            log.info("Trending ingestion produced 0 stories — preserving existing cache")
+
+        status = {
+            "date": today,
+            "state": "success" if enriched else "empty",
+            "storyCount": len(enriched),
+            "trendingLimit": trending_limit,
+            "startedAt": status["startedAt"],
+            "finishedAt": datetime.utcnow().isoformat() + "Z",
+        }
+        _set_trending_status(status)
+        log.info("Trending ingestion finished: %d stories", len(enriched))
+
+        try:
+            cleanup_old_cache()
+        except Exception as exc:  # noqa: BLE001
+            log.info("Cache cleanup after trending ingestion failed: %s", exc)
+
+        try:
+            await push.send_push(
+                "Updated News",
+                f"{len(enriched)} fresh stories are ready for you.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.info("Push notification after trending ingestion failed: %s", exc)
+
+        return status
+
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Trending ingestion failed: %s", exc)
+        status = {
+            "date": _today(),
+            "state": "error",
+            "storyCount": 0,
+            "trendingLimit": trending_limit,
+            "startedAt": status.get("startedAt") if isinstance(status, dict) else None,
+            "finishedAt": datetime.utcnow().isoformat() + "Z",
+            "message": str(exc),
+        }
+        _set_trending_status(status)
         return status
 
 

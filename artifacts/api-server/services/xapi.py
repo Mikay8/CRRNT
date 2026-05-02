@@ -36,19 +36,11 @@ def _get_key() -> Optional[str]:
 
 
 def _build_queries(story: dict[str, Any]) -> list[str]:
-    """Return a list of individual targeted search terms, one per entity."""
+    """Return a list of targeted search queries built from people + topics only."""
     queries: list[str] = []
 
-    ticker = story.get("ticker")
-    company = story.get("companyName")
     people = story.get("people") or []
     topics = story.get("topics") or []
-
-    if ticker:
-        queries.append(f"${ticker}")
-
-    if company and len(company) > 2:
-        queries.append(f'"{company}"')
 
     person = people[0].strip() if people else None
     topic = next((t.strip() for t in topics if len(t.strip()) > 3), None)

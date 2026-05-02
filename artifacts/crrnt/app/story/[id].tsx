@@ -73,6 +73,7 @@ export default function StoryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { saved } = useSavedStories();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
+  const [audioTrackWidth, setAudioTrackWidth] = useState(0);
   const { story: audioStory, isPlaying, positionMs, durationMs, playStory, togglePlayPause } = useAudio();
 
   const localFallback = saved.find((s) => s.articleId === id) ?? null;
@@ -214,16 +215,20 @@ export default function StoryDetailScreen() {
           </Pressable>
           <View
             style={styles.audioTrack}
+            onLayout={(e) => setAudioTrackWidth(e.nativeEvent.layout.width)}
           >
             <View style={styles.audioRail} />
             <View
               style={[
                 styles.audioFill,
                 {
-                  width: `${Math.min(
-                    (isThisStoryActive && durationMs > 0 ? positionMs / durationMs : 0) * 100,
-                    100,
-                  )}%` as any,
+                  width: audioTrackWidth > 0
+                    ? Math.min(
+                        (isThisStoryActive && durationMs > 0 ? positionMs / durationMs : 0) *
+                          audioTrackWidth,
+                        audioTrackWidth,
+                      )
+                    : 0,
                 },
               ]}
             />

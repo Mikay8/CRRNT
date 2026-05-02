@@ -41,9 +41,12 @@ function buildSpeechText(story: Story): string {
 
 async function configureAudioSession() {
   try {
+    // Field names confirmed from expo-audio v1.1.1 Audio.types.d.ts:
+    // playsInSilentMode (not playsInSilentModeIOS)
+    // shouldPlayInBackground (not staysActiveInBackground)
     await setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: true,
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
     });
   } catch {
     // Non-critical — continue without it
@@ -72,8 +75,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const speechPlayingRef = useRef(false);
   const speechPositionMsRef = useRef(0);
 
-  const player = useAudioPlayer(null);
-  const audioStatus = useAudioPlayerStatus(player, 200);
+  // updateInterval goes in useAudioPlayer options — useAudioPlayerStatus takes only one arg
+  const player = useAudioPlayer(null, { updateInterval: 200 });
+  const audioStatus = useAudioPlayerStatus(player);
 
   const _setAudioMode = (val: boolean) => {
     isAudioModeRef.current = val;
@@ -229,7 +233,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const seekTo = useCallback(
     async (ms: number) => {
       if (isAudioModeRef.current) {
-        player.seekTo(ms / 1000);
+        // seekTo is async — must await before play() so iOS doesn't fire play at old position
+        await player.seekTo(ms / 1000);
         player.play();
         return;
       }

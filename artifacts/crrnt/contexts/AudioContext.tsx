@@ -58,7 +58,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   // Single player instance — lives for the lifetime of the provider.
   // 200ms update interval keeps the scrubber smooth.
-  const player = useAudioPlayer(null, 200);
+  const player = useAudioPlayer(null);
   const audioStatus = useAudioPlayerStatus(player);
 
   const _setAudioMode = (val: boolean) => {

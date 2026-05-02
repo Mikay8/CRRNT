@@ -10,7 +10,6 @@ import React, {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useRef,
   useState,
 } from "react";
@@ -40,24 +39,39 @@ function buildSpeechText(story: Story): string {
   return parts.join(" ");
 }
 
+async function configureAudioSession() {
+  try {
+    await setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: true,
+    });
+  } catch {
+    // Non-critical — continue without it
+  }
+}
+
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [story, setStory] = useState<Story | null>(null);
   const [isBarVisible, setIsBarVisible] = useState(false);
 
-  // Which source is driving the exposed state
   const [isAudioMode, setIsAudioMode] = useState(false);
-  // Ref copy so callbacks never have a stale closure on this flag
   const isAudioModeRef = useRef(false);
 
-  // Speech-mode state (expo-speech has no native position API)
+  // Speech-mode state
   const [speechPositionMs, setSpeechPositionMs] = useState(0);
   const [speechDurationMs, setSpeechDurationMs] = useState(0);
   const [speechPlaying, setSpeechPlaying] = useState(false);
+
   const speechTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speechOffsetRef = useRef<{ startTime: number; offsetMs: number } | null>(null);
+  // Refs for pause/resume support
+  const speechTextRef = useRef<string>("");
+  const speechDurationMsRef = useRef<number>(0);
+  const speechPausedAtMsRef = useRef<number>(0);
+  // Closure-safe refs for toggle
+  const speechPlayingRef = useRef(false);
+  const speechPositionMsRef = useRef(0);
 
-  // Single player instance — lives for the lifetime of the provider.
-  // 200ms update interval keeps the scrubber smooth.
   const player = useAudioPlayer(null);
   const audioStatus = useAudioPlayerStatus(player, 200);
 
@@ -66,7 +80,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsAudioMode(val);
   };
 
-  // Derived values exposed to context consumers
+  const _setSpeechPlaying = (val: boolean) => {
+    speechPlayingRef.current = val;
+    setSpeechPlaying(val);
+  };
+
+  const _setSpeechPositionMs = (val: number) => {
+    speechPositionMsRef.current = val;
+    setSpeechPositionMs(val);
+  };
+
   const positionMs = isAudioMode
     ? Math.round((audioStatus.currentTime ?? 0) * 1000)
     : speechPositionMs;
@@ -75,13 +98,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     : speechDurationMs;
   const isPlaying = isAudioMode ? (audioStatus.playing ?? false) : speechPlaying;
 
-  // When audio finishes, reset position to 0
-  useEffect(() => {
-    if (audioStatus.didJustFinish) {
-      // player stays loaded — scrubber snaps back to start
-    }
-  }, [audioStatus.didJustFinish]);
-
   const _stopSpeech = useCallback(() => {
     if (speechTimerRef.current) {
       clearInterval(speechTimerRef.current);
@@ -89,8 +105,54 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
     speechOffsetRef.current = null;
     Speech.stop();
-    setSpeechPlaying(false);
+    _setSpeechPlaying(false);
   }, []);
+
+  const _startSpeechFrom = useCallback(
+    (text: string, fromMs: number, totalMs: number) => {
+      if (speechTimerRef.current) {
+        clearInterval(speechTimerRef.current);
+        speechTimerRef.current = null;
+      }
+
+      speechOffsetRef.current = { startTime: Date.now(), offsetMs: fromMs };
+
+      speechTimerRef.current = setInterval(() => {
+        const offset = speechOffsetRef.current;
+        if (!offset) {
+          clearInterval(speechTimerRef.current!);
+          speechTimerRef.current = null;
+          return;
+        }
+        _setSpeechPositionMs(
+          Math.min(Date.now() - offset.startTime + offset.offsetMs, totalMs),
+        );
+      }, 200);
+
+      const onEnd = () => {
+        _setSpeechPlaying(false);
+        if (speechTimerRef.current) {
+          clearInterval(speechTimerRef.current);
+          speechTimerRef.current = null;
+        }
+        speechOffsetRef.current = null;
+        speechPausedAtMsRef.current = 0;
+        _setSpeechPositionMs(0);
+      };
+
+      _setSpeechPlaying(true);
+      Speech.speak(text, {
+        language: "en-US",
+        rate: 0.9,
+        pitch: 1.0,
+        volume: 1.0,
+        onDone: onEnd,
+        onError: onEnd,
+        onStopped: onEnd,
+      });
+    },
+    [],
+  );
 
   const playStory = useCallback(
     async (newStory: Story) => {
@@ -100,25 +162,19 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
       setStory(newStory);
       setIsBarVisible(true);
-      setSpeechPositionMs(0);
+      _setSpeechPositionMs(0);
       setSpeechDurationMs(0);
-      setSpeechPlaying(false);
+      _setSpeechPlaying(false);
+      speechPausedAtMsRef.current = 0;
 
       const audioUrl = (newStory as any).audioUrl as string | undefined;
 
       if (audioUrl) {
         const fullUrl = `${getBaseUrl() ?? ""}${audioUrl}`;
-
-        await setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-        });
-
+        await configureAudioSession();
         _setAudioMode(true);
         player.replace({ uri: fullUrl });
         player.play();
-
-        // Populate lock screen Now Playing info (iOS + Android media session)
         try {
           (player as any).nowPlayingInfo = {
             title: newStory.title,
@@ -127,75 +183,65 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           };
         } catch {}
       } else {
-        // expo-speech fallback when no pre-generated audio exists
+        // expo-speech fallback — configure audio session first so iOS plays
+        // even when the device ringer switch is on silent
+        await configureAudioSession();
         _setAudioMode(false);
-        setSpeechPlaying(true);
 
         const text = buildSpeechText(newStory);
-        const estimatedMs = Math.max(
-          Math.round((text.split(/\s+/).length / 2.3) * 1000),
-          5000,
-        );
+        speechTextRef.current = text;
+
+        const wordCount = text.split(/\s+/).length;
+        const estimatedMs = Math.max(Math.round((wordCount / 2.3) * 1000), 5000);
         setSpeechDurationMs(estimatedMs);
-        speechOffsetRef.current = { startTime: Date.now(), offsetMs: 0 };
+        speechDurationMsRef.current = estimatedMs;
 
-        speechTimerRef.current = setInterval(() => {
-          const offset = speechOffsetRef.current;
-          if (!offset) {
-            clearInterval(speechTimerRef.current!);
-            speechTimerRef.current = null;
-            return;
-          }
-          setSpeechPositionMs(
-            Math.min(Date.now() - offset.startTime + offset.offsetMs, estimatedMs),
-          );
-        }, 200);
-
-        const onEnd = () => {
-          setSpeechPlaying(false);
-          _stopSpeech();
-        };
-        Speech.speak(text, {
-          language: "en-US",
-          rate: 0.9,
-          pitch: 1.0,
-          volume: 1.0,
-          onDone: onEnd,
-          onError: onEnd,
-          onStopped: onEnd,
-        });
+        _startSpeechFrom(text, 0, estimatedMs);
       }
     },
-    [player, _stopSpeech],
+    [player, _stopSpeech, _startSpeechFrom],
   );
 
   const togglePlayPause = useCallback(async () => {
-    if (!isAudioModeRef.current) {
-      _stopSpeech();
+    if (isAudioModeRef.current) {
+      if (player.playing) {
+        player.pause();
+      } else {
+        player.play();
+      }
       return;
     }
-    // player.playing is a live property on the AudioPlayer instance — always fresh
-    if (player.playing) {
-      player.pause();
+
+    // Speech mode — proper pause/resume
+    if (speechPlayingRef.current) {
+      // PAUSE: record current position then stop
+      speechPausedAtMsRef.current = speechPositionMsRef.current;
+      _stopSpeech();
     } else {
-      player.play();
+      // RESUME: re-speak from where we left off
+      const text = speechTextRef.current;
+      if (!text) return;
+      await configureAudioSession();
+      _startSpeechFrom(text, speechPausedAtMsRef.current, speechDurationMsRef.current);
     }
-  }, [player, _stopSpeech]);
+  }, [player, _stopSpeech, _startSpeechFrom]);
 
   const seekTo = useCallback(
     async (ms: number) => {
-      if (!isAudioModeRef.current) {
-        if (speechOffsetRef.current) {
-          speechOffsetRef.current = { startTime: Date.now(), offsetMs: ms };
-        }
-        setSpeechPositionMs(ms);
+      if (isAudioModeRef.current) {
+        player.seekTo(ms / 1000);
+        player.play();
         return;
       }
-      // expo-audio takes seconds, our interface uses ms
-      player.seekTo(ms / 1000);
-      player.play();
+      // Speech seek — restart from the new position
+      const text = speechTextRef.current;
+      if (!text) return;
+      _stopSpeech();
+      speechPausedAtMsRef.current = ms;
+      await configureAudioSession();
+      _startSpeechFrom(text, ms, speechDurationMsRef.current);
     },
-    [player],
+    [player, _stopSpeech, _startSpeechFrom],
   );
 
   const dismiss = useCallback(async () => {
@@ -204,9 +250,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     _setAudioMode(false);
     setIsBarVisible(false);
     setStory(null);
-    setSpeechPositionMs(0);
+    _setSpeechPositionMs(0);
     setSpeechDurationMs(0);
-    setSpeechPlaying(false);
+    _setSpeechPlaying(false);
+    speechPausedAtMsRef.current = 0;
+    speechTextRef.current = "";
   }, [player, _stopSpeech]);
 
   return (

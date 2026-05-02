@@ -1,5 +1,6 @@
 import {
   useAudioPlayer,
+  useAudioPlayerStatus,
   setAudioModeAsync,
 } from "expo-audio";
 import * as Speech from "expo-speech";
@@ -80,19 +81,41 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const speechGenRef = useRef(0);
 
   const player = useAudioPlayer(null, { updateInterval: 200 });
+  const audioStatus = useAudioPlayerStatus(player);
 
-  // expo-audio v1.1.1 has a confirmed iOS bug (GitHub #37653): the internal time
-  // observer that drives useAudioPlayerStatus only fires while the player is
-  // actively playing. After a seek or pause, currentTime freezes at the old value.
-  // Fix: bypass the subscription entirely and poll the player object directly —
-  // direct property access always reflects truth regardless of observer state.
+  // expo-audio v1.1.1 iOS bug (GitHub #37653): the periodic time observer that
+  // drives useAudioPlayerStatus stops firing after seek/pause, so currentTime
+  // freezes at its old value.
+  //
+  // Hybrid fix:
+  //   • duration  → use audioStatus.duration (set via the audio-LOAD event, not
+  //                 the periodic timer, so it fires correctly even in v1.1.1).
+  //                 Retain the last known-good value in state so it survives
+  //                 observer gaps.
+  //   • currentTime / playing → poll player directly at 200 ms with isFinite
+  //                 guards (NaN can appear on iOS during seek transitions).
   const [audioPositionMs, setAudioPositionMs] = useState(0);
   const [audioDurationMs, setAudioDurationMs] = useState(0);
   const [audioIsPlaying, setAudioIsPlaying] = useState(false);
+
+  // Capture duration from the status subscription — it comes via a load event
+  // that is NOT affected by the timer-observer bug, so it arrives reliably.
+  useEffect(() => {
+    const d = audioStatus.duration;
+    if (typeof d === "number" && isFinite(d) && d > 0) {
+      setAudioDurationMs(Math.round(d * 1000));
+    }
+  }, [audioStatus.duration]);
+
+  // Poll currentTime and playing directly — bypasses the stale observer.
+  // isFinite guards prevent NaN (which iOS can emit during seek transitions)
+  // from leaking into position state.
   useEffect(() => {
     const timer = setInterval(() => {
-      setAudioPositionMs(Math.round((player.currentTime ?? 0) * 1000));
-      setAudioDurationMs(Math.round((player.duration ?? 0) * 1000));
+      const t = player.currentTime;
+      if (typeof t === "number" && isFinite(t)) {
+        setAudioPositionMs(Math.round(t * 1000));
+      }
       setAudioIsPlaying(player.playing ?? false);
     }, 200);
     return () => clearInterval(timer);
@@ -159,6 +182,45 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       const onEnd = () => {
         // Ignore callbacks belonging to a previous (stopped) speech session.
         if (speechGenRef.current !== myGen) return;
+
+        const currentMs = speechPositionMsRef.current;
+        const remaining = totalMs - currentMs;
+
+        // Chrome's Web SpeechSynthesis API silently kills long utterances after
+        // ~15 s (onDone fires even though playback wasn't finished). On iOS
+        // AVSpeechSynthesizer doesn't have this bug, but the guard is harmless.
+        // If we're still far from the end, restart from the current position
+        // so playback continues uninterrupted — same gen, seamless continuation.
+        if (remaining > 5000) {
+          if (speechTimerRef.current) {
+            clearInterval(speechTimerRef.current);
+            speechTimerRef.current = null;
+          }
+          speechOffsetRef.current = { startTime: Date.now(), offsetMs: currentMs };
+          speechTimerRef.current = setInterval(() => {
+            const offset = speechOffsetRef.current;
+            if (!offset) {
+              clearInterval(speechTimerRef.current!);
+              speechTimerRef.current = null;
+              return;
+            }
+            _setSpeechPositionMs(
+              Math.min(Date.now() - offset.startTime + offset.offsetMs, totalMs),
+            );
+          }, 200);
+          Speech.speak(text, {
+            language: "en-US",
+            rate: 0.9,
+            pitch: 1.0,
+            volume: 1.0,
+            onDone: onEnd,
+            onError: onEnd,
+            onStopped: onEnd,
+          });
+          return;
+        }
+
+        // Natural end — tear down cleanly.
         _setSpeechPlaying(false);
         if (speechTimerRef.current) {
           clearInterval(speechTimerRef.current);

@@ -73,7 +73,7 @@ export default function StoryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { saved } = useSavedStories();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
-  const { story: audioStory, isPlaying, playStory, togglePlayPause } = useAudio();
+  const { story: audioStory, isPlaying, positionMs, durationMs, playStory, togglePlayPause } = useAudio();
 
   const localFallback = saved.find((s) => s.articleId === id) ?? null;
 
@@ -193,27 +193,47 @@ export default function StoryDetailScreen() {
         <View style={styles.metaRow}>
           <CategoryBadge category={story.category} size="md" />
           <View style={styles.actionButtons}>
-            {/* Audio play/stop button */}
-            <Pressable
-              onPress={toggleAudio}
-              style={({ pressed }) => [
-                styles.audioBtn,
-                isThisStoryPlaying && styles.audioBtnActive,
-                { opacity: pressed ? 0.7 : 1 },
-              ]}
-              accessibilityLabel={isThisStoryPlaying ? "Pause audio" : "Listen to story"}
-            >
-              <Ionicons
-                name={isThisStoryPlaying ? "pause" : "volume-high"}
-                size={16}
-                color={isThisStoryPlaying ? palette.bg : palette.accent}
-              />
-            </Pressable>
             <SaveButton story={story} size={26} />
           </View>
         </View>
 
         <Text style={styles.title}>{story.title}</Text>
+
+        {/* Audio player row */}
+        <View style={styles.audioRow}>
+          <Pressable
+            onPress={toggleAudio}
+            style={({ pressed }) => [styles.audioPlayBtn, { opacity: pressed ? 0.7 : 1 }]}
+            accessibilityLabel={isThisStoryPlaying ? "Pause audio" : "Play audio"}
+          >
+            <Ionicons
+              name={isThisStoryPlaying ? "pause" : "play"}
+              size={14}
+              color={palette.bg}
+            />
+          </Pressable>
+          <View
+            style={styles.audioTrack}
+          >
+            <View style={styles.audioRail} />
+            <View
+              style={[
+                styles.audioFill,
+                {
+                  width: `${Math.min(
+                    (isThisStoryActive && durationMs > 0 ? positionMs / durationMs : 0) * 100,
+                    100,
+                  )}%` as any,
+                },
+              ]}
+            />
+          </View>
+          {isThisStoryActive && durationMs > 0 ? (
+            <Text style={styles.audioTime}>
+              {formatMs(positionMs)} / {formatMs(durationMs)}
+            </Text>
+          ) : null}
+        </View>
 
         <Pressable
           onPress={openSource}
@@ -485,6 +505,12 @@ export default function StoryDetailScreen() {
   );
 }
 
+function formatMs(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, "0")}`;
+}
+
 function pctChange(start?: number, end?: number): string {
   if (!start || !end) return "0.00";
   return (((end - start) / start) * 100).toFixed(2);
@@ -527,19 +553,43 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   actionButtons: { flexDirection: "row", alignItems: "center", gap: 10 },
-  audioBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: palette.surface,
-    borderWidth: 1,
-    borderColor: palette.border,
+  audioRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  audioPlayBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: palette.accent,
     alignItems: "center",
     justifyContent: "center",
   },
-  audioBtnActive: {
+  audioTrack: {
+    flex: 1,
+    height: 28,
+    justifyContent: "center",
+  },
+  audioRail: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: palette.border,
+    borderRadius: 1,
+  },
+  audioFill: {
+    position: "absolute",
+    left: 0,
+    height: 2,
     backgroundColor: palette.accent,
-    borderColor: palette.accent,
+    borderRadius: 1,
+  },
+  audioTime: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    color: palette.textMuted,
   },
   title: {
     fontFamily: "Inter_700Bold",

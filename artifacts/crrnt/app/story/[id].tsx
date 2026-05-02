@@ -3,6 +3,7 @@ import {
   Dimensions,
   Image,
   Linking,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -106,33 +107,47 @@ export default function StoryDetailScreen() {
   const displayProgress = scrubProgress !== null ? scrubProgress : liveProgress;
   const displayMs = scrubProgress !== null ? scrubProgress * durationMs : positionMs;
 
-  // Native responder handlers — these work correctly inside ScrollView on iOS.
-  // GestureDetector/Gesture.Pan() loses to ScrollView on iOS so we use the RN
-  // responder protocol directly instead.
-  const onTrackGrant = (e: { nativeEvent: { locationX: number } }) => {
-    if (audioTrackWidthRef.current === 0) return;
-    const p = clamp(e.nativeEvent.locationX / audioTrackWidthRef.current);
-    scrubRef.current = p;
-    setScrubProgress(p);
-  };
-  const onTrackMove = (e: { nativeEvent: { locationX: number } }) => {
-    if (audioTrackWidthRef.current === 0) return;
-    const p = clamp(e.nativeEvent.locationX / audioTrackWidthRef.current);
-    scrubRef.current = p;
-    setScrubProgress(p);
-  };
-  const onTrackRelease = () => {
-    const p = scrubRef.current;
-    if (p !== null && durationMs > 0) {
-      seekTo(p * durationMs).catch(() => undefined);
-    }
-    scrubRef.current = null;
-    setScrubProgress(null);
-  };
-  const onTrackTerminate = () => {
-    scrubRef.current = null;
-    setScrubProgress(null);
-  };
+  // Live refs so PanResponder callbacks (created once) always see current values.
+  const isThisStoryActiveRef = useRef(false);
+  isThisStoryActiveRef.current = isThisStoryActive;
+  const durationMsRef = useRef(0);
+  durationMsRef.current = durationMs;
+  const seekToRef = useRef(seekTo);
+  seekToRef.current = seekTo;
+
+  // PanResponder works cross-platform: inside ScrollView on native iOS and on web.
+  // Raw responder props (onStartShouldSetResponder etc.) don't propagate through
+  // the browser's native scroll container on web.
+  const audioPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => isThisStoryActiveRef.current,
+      onMoveShouldSetPanResponder: () => isThisStoryActiveRef.current,
+      onPanResponderGrant: (evt) => {
+        if (audioTrackWidthRef.current === 0) return;
+        const p = clamp(evt.nativeEvent.locationX / audioTrackWidthRef.current);
+        scrubRef.current = p;
+        setScrubProgress(p);
+      },
+      onPanResponderMove: (evt) => {
+        if (audioTrackWidthRef.current === 0) return;
+        const p = clamp(evt.nativeEvent.locationX / audioTrackWidthRef.current);
+        scrubRef.current = p;
+        setScrubProgress(p);
+      },
+      onPanResponderRelease: () => {
+        const p = scrubRef.current;
+        if (p !== null && durationMsRef.current > 0) {
+          seekToRef.current(p * durationMsRef.current).catch(() => undefined);
+        }
+        scrubRef.current = null;
+        setScrubProgress(null);
+      },
+      onPanResponderTerminate: () => {
+        scrubRef.current = null;
+        setScrubProgress(null);
+      },
+    })
+  ).current;
 
   const screenWidth = Dimensions.get("window").width;
   const hPad = Math.max(16, insets.left + 4);
@@ -257,12 +272,7 @@ export default function StoryDetailScreen() {
               audioTrackWidthRef.current = w;
               setAudioTrackWidth(w);
             }}
-            onStartShouldSetResponder={() => isThisStoryActive}
-            onMoveShouldSetResponder={() => isThisStoryActive}
-            onResponderGrant={onTrackGrant}
-            onResponderMove={onTrackMove}
-            onResponderRelease={onTrackRelease}
-            onResponderTerminate={onTrackTerminate}
+            {...audioPanResponder.panHandlers}
           >
             <View style={styles.audioRail} />
             <View

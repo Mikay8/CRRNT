@@ -61,17 +61,22 @@ def delete(key: str) -> None:
 
 
 def _get_raw(key: str) -> Optional[str]:
+    with _lock:
+        if key in _memory:
+            return _memory[key]
     if _db_url:
         try:
             resp = httpx.get(f"{_db_url}/{_encoded_key(key)}", timeout=10.0)
             if resp.status_code == 404:
                 return None
             resp.raise_for_status()
-            return resp.text
+            val = resp.text
+            with _lock:
+                _memory[key] = val
+            return val
         except httpx.HTTPError as exc:
             log.info("Replit DB get failed for %s: %s", key, exc)
-    with _lock:
-        return _memory.get(key)
+    return None
 
 
 def _set_raw(key: str, raw: str) -> None:

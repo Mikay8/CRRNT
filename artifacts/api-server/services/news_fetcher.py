@@ -176,7 +176,7 @@ async def fetch_all_categories(
     results: list[list[dict[str, Any]]] = []
     for idx, cat in enumerate(categories):
         if idx > 0:
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(1.0)
         try:
             results.append(await fetch_category(cat, limit=per_category))
         except Exception as exc:  # noqa: BLE001

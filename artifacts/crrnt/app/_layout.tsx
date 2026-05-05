@@ -12,11 +12,12 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
+import { Image } from "expo-image";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { Image, Platform, StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -122,9 +123,9 @@ export default function RootLayout() {
       <View style={launchStyles.container}>
         <StatusBar style="light" />
         <Image
-          source={require("../assets/images/splash-logo.png")}
+          source={require("../assets/gif/crrnt-splash-navy.gif")}
           style={launchStyles.logo}
-          resizeMode="contain"
+          contentFit="contain"
         />
       </View>
     );
@@ -184,7 +185,7 @@ const launchStyles = StyleSheet.create({
     justifyContent: "center",
   },
   logo: {
-    width: 240,
-    height: 76,
+    width: "100%",
+    height: "100%",
   },
 });

@@ -18,14 +18,17 @@
       "bundleIdentifier": "com.crrnt.app",
       "infoPlist": {
         "UIBackgroundModes": [
-          "audio",
           "audio"
         ],
         "NSMicrophoneUsageDescription": "CRRNT uses the microphone for audio recording."
       }
     },
     "android": {
-      "package": "com.crrnt.app"
+      "package": "com.crrnt.app",
+      "permissions": [
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"

@@ -14,6 +14,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { updateNowPlayingInfo, registerRemoteControls } from "@/utils/nowPlaying";
 
 interface AudioContextType {
   story: Story | null;
@@ -56,6 +57,7 @@ async function configureAudioSession() {
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [story, setStory] = useState<Story | null>(null);
+  const storyRef = useRef<Story | null>(null);
   const [isBarVisible, setIsBarVisible] = useState(false);
 
   const [isAudioMode, setIsAudioMode] = useState(false);
@@ -120,6 +122,35 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }, 200);
     return () => clearInterval(timer);
   }, [player]);
+
+  // Register lock-screen remote control handlers once on mount.
+  useEffect(() => {
+    const cleanup = registerRemoteControls({
+      onPlay: () => player.play(),
+      onPause: () => player.pause(),
+      onSeek: (ms) => player.seekTo(ms / 1000),
+    });
+    return cleanup;
+  }, [player]);
+
+  // Keep lock-screen elapsed time in sync with actual playback position.
+  useEffect(() => {
+    if (!isAudioMode || !storyRef.current) return;
+    const s = storyRef.current;
+    updateNowPlayingInfo({
+      title: s.title,
+      artist: "CRRNT",
+      artworkUri: (s as any).mediaUrl ?? undefined,
+      positionMs: audioPositionMs,
+      durationMs: audioDurationMs,
+      isPlaying: audioIsPlaying,
+    });
+  }, [audioPositionMs, audioDurationMs, audioIsPlaying, isAudioMode]);
+
+  const _setStory = (s: Story | null) => {
+    storyRef.current = s;
+    setStory(s);
+  };
 
   const _setAudioMode = (val: boolean) => {
     isAudioModeRef.current = val;
@@ -251,7 +282,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       player.pause();
       _setAudioMode(false);
 
-      setStory(newStory);
+      _setStory(newStory);
       setIsBarVisible(true);
       _setSpeechPositionMs(0);
       setSpeechDurationMs(0);
@@ -275,6 +306,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             artworkUrl: (newStory as any).mediaUrl ?? undefined,
           });
         } catch {}
+        // Prime the lock screen with position=0 before the first status tick.
+        updateNowPlayingInfo({
+          title: newStory.title,
+          artist: "CRRNT",
+          artworkUri: (newStory as any).mediaUrl ?? undefined,
+          positionMs: 0,
+          durationMs: 0,
+          isPlaying: true,
+        });
       } else {
         // expo-speech fallback — configure audio session first so iOS plays
         // even when the device ringer switch is on silent
@@ -344,7 +384,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     try { player.clearLockScreenControls(); } catch {}
     _setAudioMode(false);
     setIsBarVisible(false);
-    setStory(null);
+    _setStory(null);
     _setSpeechPositionMs(0);
     setSpeechDurationMs(0);
     _setSpeechPlaying(false);

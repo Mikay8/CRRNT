@@ -3,6 +3,7 @@ import {
   Dimensions,
   Image,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,7 +14,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   useGetStockHistory,
   useGetStory,
@@ -73,7 +74,14 @@ export default function StoryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { saved } = useSavedStories();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
-  const { story: audioStory, isPlaying, positionMs, durationMs, playStory, togglePlayPause } = useAudio();
+  const [audioTrackWidth, setAudioTrackWidth] = useState(0);
+  const audioTrackWidthRef = useRef(0);
+  const [scrubProgress, setScrubProgress] = useState<number | null>(null);
+  const scrubRef = useRef<number | null>(null);
+  // Holds the seek target (0-1) after release until positionMs catches up,
+  // preventing the progress bar from snapping back to the stale position.
+  const seekHoldRef = useRef<number | null>(null);
+  const { story: audioStory, isPlaying, positionMs, durationMs, playStory, togglePlayPause, seekTo } = useAudio();
 
   const localFallback = saved.find((s) => s.articleId === id) ?? null;
 
@@ -95,6 +103,38 @@ export default function StoryDetailScreen() {
 
   const isThisStoryActive = !!story && audioStory?.articleId === story.articleId;
   const isThisStoryPlaying = isThisStoryActive && isPlaying;
+
+  // Derived display values (use scrub position while dragging)
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  const liveProgress = isThisStoryActive && durationMs > 0 ? positionMs / durationMs : 0;
+
+  // Clear the seek hold once positionMs has caught up to within 1.5 s of target.
+  // This prevents the bar from snapping back to a stale position after release.
+  if (seekHoldRef.current !== null && durationMs > 0) {
+    const targetMs = seekHoldRef.current * durationMs;
+    if (Math.abs(positionMs - targetMs) < 1500) {
+      seekHoldRef.current = null;
+    }
+  }
+
+  const heldProgress = seekHoldRef.current;
+  const displayProgress =
+    scrubProgress !== null ? scrubProgress : heldProgress !== null ? heldProgress : liveProgress;
+  const displayMs =
+    scrubProgress !== null
+      ? scrubProgress * durationMs
+      : heldProgress !== null
+        ? heldProgress * durationMs
+        : positionMs;
+
+  // Live refs so responder callbacks always see current values even if the
+  // React Compiler memoises the lambda between renders.
+  const isThisStoryActiveRef = useRef(false);
+  isThisStoryActiveRef.current = isThisStoryActive;
+  const durationMsRef = useRef(0);
+  durationMsRef.current = durationMs;
+  const seekToRef = useRef(seekTo);
+  seekToRef.current = seekTo;
 
   const screenWidth = Dimensions.get("window").width;
   const hPad = Math.max(16, insets.left + 4);
@@ -213,24 +253,71 @@ export default function StoryDetailScreen() {
             />
           </Pressable>
           <View
-            style={styles.audioTrack}
+            accessible={isThisStoryActive}
+            accessibilityLabel="Seek bar"
+            accessibilityRole="adjustable"
+            style={[
+              styles.audioTrack,
+              // cursor:pointer is CSS-only (web). It makes the seek bar
+              // identifiable as interactive for automated tests and users.
+              Platform.OS === "web" && isThisStoryActive
+                ? ({ cursor: "pointer" } as object)
+                : undefined,
+            ]}
+            onLayout={(e) => {
+              const w = e.nativeEvent.layout.width;
+              audioTrackWidthRef.current = w;
+              setAudioTrackWidth(w);
+            }}
+            // Capture-phase: fires before ScrollView's bubble-phase on iOS,
+            // preventing the scroll view from stealing touch gestures on the
+            // progress bar. Bubble-phase is a reliable fallback on web.
+            onStartShouldSetResponderCapture={() => isThisStoryActiveRef.current}
+            onMoveShouldSetResponderCapture={() => isThisStoryActiveRef.current}
+            onStartShouldSetResponder={() => isThisStoryActiveRef.current}
+            onMoveShouldSetResponder={() => isThisStoryActiveRef.current}
+            onResponderTerminationRequest={() => false}
+            onResponderGrant={(evt) => {
+              if (audioTrackWidthRef.current === 0) return;
+              const p = clamp(evt.nativeEvent.locationX / audioTrackWidthRef.current);
+              scrubRef.current = p;
+              setScrubProgress(p);
+            }}
+            onResponderMove={(evt) => {
+              if (audioTrackWidthRef.current === 0) return;
+              const p = clamp(evt.nativeEvent.locationX / audioTrackWidthRef.current);
+              scrubRef.current = p;
+              setScrubProgress(p);
+            }}
+            onResponderRelease={() => {
+              const p = scrubRef.current;
+              if (p !== null && durationMsRef.current > 0) {
+                seekHoldRef.current = p;
+                seekToRef.current(p * durationMsRef.current).catch(() => undefined);
+              }
+              scrubRef.current = null;
+              setScrubProgress(null);
+            }}
+            onResponderTerminate={() => {
+              scrubRef.current = null;
+              setScrubProgress(null);
+            }}
           >
             <View style={styles.audioRail} />
             <View
               style={[
                 styles.audioFill,
                 {
-                  width: `${Math.min(
-                    (isThisStoryActive && durationMs > 0 ? positionMs / durationMs : 0) * 100,
-                    100,
-                  )}%` as any,
+                  width: audioTrackWidth > 0
+                    ? Math.min(displayProgress * audioTrackWidth, audioTrackWidth)
+                    : 0,
                 },
               ]}
             />
           </View>
-          {isThisStoryActive && durationMs > 0 ? (
+          {isThisStoryActive ? (
             <Text style={styles.audioTime}>
-              {formatMs(positionMs)} / {formatMs(durationMs)}
+              {formatMs(displayMs)} / {durationMs > 0 ? formatMs(durationMs) : "--:--"}
             </Text>
           ) : null}
         </View>
@@ -506,6 +593,7 @@ export default function StoryDetailScreen() {
 }
 
 function formatMs(ms: number): string {
+  if (!isFinite(ms) || ms < 0) return "0:00";
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   return `${m}:${String(s % 60).padStart(2, "0")}`;

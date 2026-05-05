@@ -34,6 +34,8 @@ SplashScreen.preventAutoHideAsync();
 const apiDomain = process.env.EXPO_PUBLIC_DOMAIN;
 if (apiDomain) {
   setBaseUrl(`https://${apiDomain}`);
+} else if (process.env.EXPO_PUBLIC_API_BASE) {
+  setBaseUrl(process.env.EXPO_PUBLIC_API_BASE);
 } else if (Platform.OS === "web" && typeof window !== "undefined") {
   setBaseUrl(window.location.origin);
 }

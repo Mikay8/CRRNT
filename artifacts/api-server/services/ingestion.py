@@ -336,6 +336,43 @@ def cleanup_old_cache() -> dict[str, int]:
     return {"news": deleted_news, "articles": deleted_articles}
 
 
+def repair_news_batches() -> dict[str, int]:
+    """Prune story entries from news: batches whose article: key has been deleted.
+
+    When an article: key is removed directly (e.g. via the admin panel), the
+    full story object embedded inside the news: batch is left behind.
+    get_latest_payload() reads from those batches, so the story keeps appearing
+    in the feed even though it's been deleted.  This function fixes that by
+    walking every news: batch and dropping references to missing articles.
+    """
+    batches_updated = 0
+    stories_removed = 0
+
+    for batch_key in cache.list_keys("news:"):
+        batch = cache.get(batch_key)
+        if not batch or "stories" not in batch:
+            continue
+        original = batch["stories"]
+        kept = [
+            s for s in original
+            if cache.get(article_key(str(s.get("articleId", "")))) is not None
+        ]
+        removed = len(original) - len(kept)
+        if removed > 0:
+            batch["stories"] = kept
+            batch["totalCount"] = len(kept)
+            cache.set(batch_key, batch)
+            batches_updated += 1
+            stories_removed += removed
+
+    log.info(
+        "Batch repair: removed %d stale stories from %d batches",
+        stories_removed,
+        batches_updated,
+    )
+    return {"batchesUpdated": batches_updated, "storiesRemoved": stories_removed}
+
+
 def delete_all_stories() -> dict[str, int]:
     """Delete all story-related cache entries (news + articles). Config and tokens preserved."""
     deleted_news = 0

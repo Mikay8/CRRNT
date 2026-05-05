@@ -138,6 +138,16 @@ async def delete_stories(
     return {"deleted": result, "ok": True}
 
 
+@router.post("/admin/repair-batches")
+async def repair_batches(
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict:
+    """Remove story references from news batches whose article: key no longer exists."""
+    _require_admin(x_admin_token)
+    result = ingestion.repair_news_batches()
+    return {"ok": True, **result}
+
+
 @router.get("/admin/stories")
 async def list_stories(
     x_admin_token: Optional[str] = Header(default=None),
@@ -410,7 +420,10 @@ input[type=number]{background:var(--hi);border:1px solid var(--border);border-ra
     <h2>Cached Stories</h2>
     <div class="row" style="margin-bottom:14px">
       <span id="story-count" style="font-size:12px;color:var(--muted)">— stories</span>
-      <button class="btn btn-s btn-xs" onclick="loadStories()" style="margin-left:auto">Refresh</button>
+      <div class="row" style="margin-left:auto;gap:8px">
+        <button class="btn btn-s btn-xs" id="repair-btn" onclick="repairBatches()" title="Remove deleted stories from news batches so they stop appearing in the feed">&#128295; Repair Batches</button>
+        <button class="btn btn-s btn-xs" onclick="loadStories()">Refresh</button>
+      </div>
     </div>
     <div class="list" id="story-list"><div class="empty">Loading…</div></div>
   </div>
@@ -616,6 +629,23 @@ async function deleteStory(articleId){
     if(r.ok){toast('Story deleted.');loadStories();loadStats();}
     else{const d=await r.json().catch(()=>({}));toast('Failed: '+(d.detail||r.status),false);}
   }catch(e){toast('Request failed',false);}
+}
+
+async function repairBatches(){
+  const btn=document.getElementById('repair-btn');
+  btn.disabled=true;btn.textContent='Repairing…';
+  try{
+    const r=await fetch('/api/admin/repair-batches',{method:'POST',headers:H});
+    const d=await r.json();
+    if(r.ok){
+      const msg=d.storiesRemoved===0
+        ?'Batches are clean — no stale references found.'
+        :'Removed '+d.storiesRemoved+' stale '+(d.storiesRemoved===1?'story':'stories')+' from '+d.batchesUpdated+' '+(d.batchesUpdated===1?'batch':'batches')+'.';
+      toast(msg);
+      loadStories();loadStats();
+    }else toast('Repair failed: '+r.status,false);
+  }catch(e){toast('Request failed',false);}
+  btn.disabled=false;btn.textContent='🔧 Repair Batches';
 }
 
 const LOG_SOURCES={

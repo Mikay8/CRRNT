@@ -1,8 +1,13 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "jWeATstLuKdIIejUIOAV6"
 uri = "file://artifacts/marktr/assets/images/icon.png"
 type = "image"
 title = "marktr app icon"
+
+[[outputs]]
+id = "AHbgnUy25K-YJ1HevNZpn"
+uri = "file://artifacts/crrnt/README.md"
+type = "text"
+title = "CRRNT iOS Build & Development Guide"

@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAudio } from "@/contexts/AudioContext";
 import { getCategoryMeta } from "@/constants/categories";
 import palette from "@/constants/colors";
@@ -19,20 +18,24 @@ import type { Story } from "@workspace/api-client-react";
 interface QueueScreenProps {
   visible: boolean;
   onClose: () => void;
+  barBottom: number;
 }
 
 function QueueItem({
   story,
-  index,
+  onPlay,
   onRemove,
 }: {
   story: Story;
-  index: number;
+  onPlay: () => void;
   onRemove: () => void;
 }) {
   const catMeta = getCategoryMeta(story.category);
   return (
-    <View style={styles.queueItem}>
+    <Pressable
+      onPress={onPlay}
+      style={({ pressed }) => [styles.queueItem, { opacity: pressed ? 0.7 : 1 }]}
+    >
       {story.mediaUrl ? (
         <Image source={{ uri: story.mediaUrl }} style={styles.queueThumb} resizeMode="cover" />
       ) : (
@@ -45,19 +48,18 @@ function QueueItem({
         <Text style={styles.queueItemMeta}>{catMeta?.label ?? story.category}</Text>
       </View>
       <Pressable
-        onPress={onRemove}
+        onPress={(e) => { e.stopPropagation?.(); onRemove(); }}
         hitSlop={10}
         style={({ pressed }) => [styles.removeBtn, { opacity: pressed ? 0.4 : 1 }]}
       >
         <Ionicons name="close" size={18} color={palette.textDim} />
       </Pressable>
-    </View>
+    </Pressable>
   );
 }
 
-export default function QueueScreen({ visible, onClose }: QueueScreenProps) {
-  const { story, queue, removeFromQueue } = useAudio();
-  const insets = useSafeAreaInsets();
+export default function QueueScreen({ visible, onClose, barBottom }: QueueScreenProps) {
+  const { story, queue, removeFromQueue, playFromQueue, shuffleQueue } = useAudio();
   const slideAnim = useRef(new Animated.Value(700)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const [modalVisible, setModalVisible] = useState(false);
@@ -82,12 +84,12 @@ export default function QueueScreen({ visible, onClose }: QueueScreenProps) {
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 700,
-          duration: 280,
+          duration: 260,
           useNativeDriver: true,
         }),
         Animated.timing(backdropOpacity, {
           toValue: 0,
-          duration: 220,
+          duration: 200,
           useNativeDriver: true,
         }),
       ]).start(() => setModalVisible(false));
@@ -109,11 +111,11 @@ export default function QueueScreen({ visible, onClose }: QueueScreenProps) {
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
 
-      {/* Sheet */}
+      {/* Sheet — anchored at the mini bar's bottom edge, expands upward */}
       <Animated.View
         style={[
           styles.sheet,
-          { paddingBottom: insets.bottom + 24, transform: [{ translateY: slideAnim }] },
+          { bottom: barBottom, transform: [{ translateY: slideAnim }] },
         ]}
       >
         {/* Drag pill */}
@@ -168,14 +170,23 @@ export default function QueueScreen({ visible, onClose }: QueueScreenProps) {
         {/* Queue list */}
         {queue.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>NEXT UP · {queue.length}</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabel}>NEXT UP · {queue.length}</Text>
+              <Pressable
+                onPress={shuffleQueue}
+                hitSlop={10}
+                style={({ pressed }) => [styles.shuffleBtn, { opacity: pressed ? 0.5 : 1 }]}
+              >
+                <Ionicons name="shuffle" size={18} color={palette.textDim} />
+              </Pressable>
+            </View>
             <FlatList
               data={queue}
               keyExtractor={(item, idx) => `${item.articleId}-${idx}`}
               renderItem={({ item, index }) => (
                 <QueueItem
                   story={item}
-                  index={index}
+                  onPlay={() => { playFromQueue(index); onClose(); }}
                   onRemove={() => removeFromQueue(index)}
                 />
               )}
@@ -202,16 +213,13 @@ const styles = StyleSheet.create({
   },
   sheet: {
     position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
+    left: 10,
+    right: 10,
     maxHeight: "75%",
     backgroundColor: palette.surfaceHigh,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: palette.borderStrong,
-    borderBottomWidth: 0,
     overflow: "hidden",
   },
   dragPillRow: {
@@ -241,12 +249,23 @@ const styles = StyleSheet.create({
   section: {
     paddingHorizontal: 20,
   },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
   sectionLabel: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 11,
     color: palette.textDim,
     letterSpacing: 0.8,
-    marginBottom: 12,
+  },
+  shuffleBtn: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
   },
   nowPlayingRow: {
     flexDirection: "row",
@@ -284,7 +303,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     gap: 4,
-    paddingBottom: 8,
+    paddingBottom: 16,
   },
   queueItem: {
     flexDirection: "row",

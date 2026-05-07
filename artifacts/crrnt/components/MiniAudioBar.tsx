@@ -6,7 +6,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, useSegments } from "expo-router";
+import { useSegments } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useEffect, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -85,7 +85,6 @@ export default function MiniAudioBar() {
   } = useAudio();
 
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const segments = useSegments();
   const slideAnim = useRef(new Animated.Value(140)).current;
 
@@ -115,11 +114,27 @@ export default function MiniAudioBar() {
     }).start();
   }, [shouldShow, slideAnim]);
 
+  // Close queue if bar hides
+  useEffect(() => {
+    if (!shouldShow) setShowQueue(false);
+  }, [shouldShow]);
+
   const clamp = (v: number) => Math.max(0, Math.min(1, v));
 
-  const seekGesture = Gesture.Pan()
+  // Tap gesture: jump to tapped position
+  const tapSeekGesture = Gesture.Tap()
     .runOnJS(true)
-    .minDistance(0)
+    .onEnd((e, success) => {
+      if (!success || trackWidthRef.current === 0 || durationMsRef.current === 0) return;
+      const p = clamp(e.x / trackWidthRef.current);
+      seekHoldRef.current = p;
+      seekToRef.current(p * durationMsRef.current).catch(() => undefined);
+    });
+
+  // Pan gesture: scrub by dragging
+  const panSeekGesture = Gesture.Pan()
+    .runOnJS(true)
+    .minDistance(3)
     .onBegin((e) => {
       if (trackWidthRef.current === 0) return;
       const p = clamp(e.x / trackWidthRef.current);
@@ -146,14 +161,7 @@ export default function MiniAudioBar() {
       setScrubProgress(null);
     });
 
-  // Swipe up anywhere on the bar to open the queue screen
-  const swipeUpGesture = Gesture.Pan()
-    .runOnJS(true)
-    .onEnd((e) => {
-      if (e.translationY < -50 && Math.abs(e.translationY) > Math.abs(e.translationX)) {
-        setShowQueue(true);
-      }
-    });
+  const seekGesture = Gesture.Race(tapSeekGesture, panSeekGesture);
 
   if (!story && !isBarVisible) return null;
 
@@ -176,123 +184,114 @@ export default function MiniAudioBar() {
         ? heldProgress * durationMs
         : positionMs;
   const bottomOffset = insets.bottom + (isInTabs ? TAB_BAR_HEIGHT : 0);
+  const barBottom = bottomOffset + 8;
 
   const categoryMeta = getCategoryMeta(story?.category ?? null);
   const categoryColor = categoryMeta?.color ?? palette.accent;
 
   const thumbX = trackWidth * displayProgress;
 
-  const handleBarPress = () => {
-    if (story) router.push(`/story/${story.articleId}` as any);
-  };
-
   return (
     <>
-      <GestureDetector gesture={swipeUpGesture}>
-        <Animated.View
-          style={[
-            styles.wrapper,
-            { bottom: bottomOffset + 8, transform: [{ translateY: slideAnim }] },
-          ]}
+      <Animated.View
+        style={[
+          styles.wrapper,
+          { bottom: barBottom, transform: [{ translateY: slideAnim }] },
+        ]}
+      >
+        {/* Main content row — tap to open queue */}
+        <Pressable
+          onPress={() => setShowQueue(true)}
+          style={({ pressed }) => [styles.inner, { opacity: pressed ? 0.88 : 1 }]}
         >
-          {/* Drag handle — indicates swipe-up to open queue */}
-          <View style={styles.dragArea}>
-            <View style={styles.dragPill} />
+          {/* Waveform animation */}
+          <View style={styles.waveContainer} pointerEvents="none">
+            <WaveBar delay={0}   isPlaying={isPlaying} />
+            <WaveBar delay={80}  isPlaying={isPlaying} />
+            <WaveBar delay={160} isPlaying={isPlaying} />
+            <WaveBar delay={40}  isPlaying={isPlaying} />
           </View>
 
-          {/* Category accent stripe */}
-          <View style={[styles.accentStripe, { backgroundColor: categoryColor }]} />
+          {/* Title + time */}
+          <View style={styles.info}>
+            <Text style={styles.titleText} numberOfLines={1}>
+              {story?.title ?? ""}
+            </Text>
+            <Text style={styles.timeText}>
+              {durationMs > 0
+                ? `${formatMs(displayMs)} / ${formatMs(durationMs)}`
+                : categoryMeta?.label ?? ""}
+            </Text>
+          </View>
 
-          {/* Main content row */}
+          {/* Play / pause */}
           <Pressable
-            onPress={handleBarPress}
-            style={({ pressed }) => [styles.inner, { opacity: pressed ? 0.88 : 1 }]}
+            onPress={(e) => { e.stopPropagation?.(); togglePlayPause(); }}
+            hitSlop={12}
+            style={({ pressed }) => [
+              styles.playBtn,
+              { backgroundColor: categoryColor, opacity: pressed ? 0.7 : 1 },
+            ]}
           >
-            {/* Waveform animation */}
-            <View style={styles.waveContainer} pointerEvents="none">
-              <WaveBar delay={0}   isPlaying={isPlaying} />
-              <WaveBar delay={80}  isPlaying={isPlaying} />
-              <WaveBar delay={160} isPlaying={isPlaying} />
-              <WaveBar delay={40}  isPlaying={isPlaying} />
-            </View>
-
-            {/* Title + time */}
-            <View style={styles.info}>
-              <Text style={styles.titleText} numberOfLines={1}>
-                {story?.title ?? ""}
-              </Text>
-              <Text style={styles.timeText}>
-                {durationMs > 0
-                  ? `${formatMs(displayMs)} / ${formatMs(durationMs)}`
-                  : categoryMeta?.label ?? ""}
-              </Text>
-            </View>
-
-            {/* Play / pause */}
-            <Pressable
-              onPress={(e) => { e.stopPropagation?.(); togglePlayPause(); }}
-              hitSlop={12}
-              style={({ pressed }) => [
-                styles.playBtn,
-                { backgroundColor: categoryColor, opacity: pressed ? 0.7 : 1 },
-              ]}
-            >
-              <Ionicons
-                name={isPlaying ? "pause" : "play"}
-                size={17}
-                color="#fff"
-                style={isPlaying ? undefined : { marginLeft: 2 }}
-              />
-            </Pressable>
-
-            {/* Dismiss */}
-            <Pressable
-              onPress={(e) => { e.stopPropagation?.(); dismiss(); }}
-              hitSlop={12}
-              style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.5 : 1 }]}
-            >
-              <Ionicons name="close" size={16} color={palette.textDim} />
-            </Pressable>
+            <Ionicons
+              name={isPlaying ? "pause" : "play"}
+              size={17}
+              color="#fff"
+              style={isPlaying ? undefined : { marginLeft: 2 }}
+            />
           </Pressable>
 
-          {/* Scrubable progress bar */}
-          <GestureDetector gesture={seekGesture}>
+          {/* Dismiss */}
+          <Pressable
+            onPress={(e) => { e.stopPropagation?.(); dismiss(); }}
+            hitSlop={12}
+            style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Ionicons name="close" size={16} color={palette.textDim} />
+          </Pressable>
+        </Pressable>
+
+        {/* Scrubable progress bar — tap or drag */}
+        <GestureDetector gesture={seekGesture}>
+          <View
+            style={styles.progressTrack}
+            onLayout={(e) => {
+              const w = e.nativeEvent.layout.width;
+              trackWidthRef.current = w;
+              setTrackWidth(w);
+            }}
+          >
+            <View style={styles.progressRail} />
             <View
-              style={styles.progressTrack}
-              onLayout={(e) => {
-                const w = e.nativeEvent.layout.width;
-                trackWidthRef.current = w;
-                setTrackWidth(w);
-              }}
-            >
-              <View style={styles.progressRail} />
+              style={[
+                styles.progressFill,
+                {
+                  width: Math.min(displayProgress * trackWidth, trackWidth),
+                  backgroundColor: categoryColor,
+                },
+              ]}
+            />
+            {trackWidth > 0 && (
               <View
                 style={[
-                  styles.progressFill,
+                  styles.progressThumb,
+                  scrubProgress !== null && styles.progressThumbActive,
                   {
-                    width: Math.min(displayProgress * trackWidth, trackWidth),
+                    left: thumbX - (scrubProgress !== null ? THUMB_R_ACTIVE : THUMB_R),
                     backgroundColor: categoryColor,
                   },
                 ]}
               />
-              {trackWidth > 0 && (
-                <View
-                  style={[
-                    styles.progressThumb,
-                    scrubProgress !== null && styles.progressThumbActive,
-                    {
-                      left: thumbX - (scrubProgress !== null ? THUMB_R_ACTIVE : THUMB_R),
-                      backgroundColor: categoryColor,
-                    },
-                  ]}
-                />
-              )}
-            </View>
-          </GestureDetector>
-        </Animated.View>
-      </GestureDetector>
+            )}
+          </View>
+        </GestureDetector>
+      </Animated.View>
 
-      <QueueScreen visible={showQueue} onClose={() => setShowQueue(false)} />
+      <QueueScreen
+        visible={showQueue}
+        onClose={() => setShowQueue(false)}
+        barBottom={barBottom}
+      />
     </>
   );
 }
@@ -320,26 +319,11 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 16,
   },
-  dragArea: {
-    alignItems: "center",
-    paddingTop: 8,
-    paddingBottom: 2,
-  },
-  dragPill: {
-    width: 32,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: palette.border,
-  },
-  accentStripe: {
-    height: 3,
-    width: "100%",
-  },
   inner: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
-    paddingTop: 9,
+    paddingTop: 12,
     paddingBottom: 10,
     gap: 10,
   },

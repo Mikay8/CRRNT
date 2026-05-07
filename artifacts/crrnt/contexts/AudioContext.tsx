@@ -24,12 +24,15 @@ interface AudioContextType {
   isBarVisible: boolean;
   queue: Story[];
   playStory: (story: Story) => Promise<void>;
+  playNext: () => Promise<void>;
+  playFromQueue: (index: number) => Promise<void>;
   togglePlayPause: () => Promise<void>;
   seekTo: (ms: number) => Promise<void>;
   dismiss: () => Promise<void>;
   addToQueue: (story: Story) => void;
   addToQueueTop: (story: Story) => void;
   removeFromQueue: (index: number) => void;
+  shuffleQueue: () => void;
 }
 
 const AudioContext = createContext<AudioContextType | null>(null);
@@ -368,6 +371,23 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     await playStory(next);
   }, [playStory]);
 
+  const playFromQueue = useCallback(async (index: number) => {
+    const q = queueRef.current;
+    if (index < 0 || index >= q.length) return;
+    const selected = q[index];
+    _setQueue(q.slice(index + 1));
+    await playStory(selected);
+  }, [playStory]);
+
+  const shuffleQueue = useCallback(() => {
+    const q = [...queueRef.current];
+    for (let i = q.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [q[i], q[j]] = [q[j], q[i]];
+    }
+    _setQueue(q);
+  }, []);
+
   // Keep playNextRef current so speech/audio end callbacks can call it without stale closure issues
   useEffect(() => {
     playNextRef.current = playNext;
@@ -436,12 +456,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         isBarVisible,
         queue,
         playStory,
+        playNext,
+        playFromQueue,
         togglePlayPause,
         seekTo,
         dismiss,
         addToQueue,
         addToQueueTop,
         removeFromQueue,
+        shuffleQueue,
       }}
     >
       {children}

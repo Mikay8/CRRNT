@@ -153,7 +153,25 @@ cd ..
 
 This generates `CRRNT.xcworkspace` and links all native modules including RNTP.
 
-### Step 3 — Start the Metro bundler (from Replit or locally)
+### Step 3 — Configure the API base URL
+
+When Xcode builds the app there are no Replit environment variables, so the app doesn't know where the backend is and **all API calls silently fail**.
+
+Fix: create `artifacts/crrnt/.env.local` (already gitignored):
+
+```bash
+# Option A — point to your running Replit backend (easiest)
+EXPO_PUBLIC_API_BASE=https://fe91dcb7-c4aa-4498-b560-3ba792d414a2-00-3qj7kti9d7lgg.riker.replit.dev
+
+# Option B — point to uvicorn running locally on your Mac
+# EXPO_PUBLIC_API_BASE=http://<your-mac-lan-ip>:8080
+```
+
+Expo loads `.env.local` automatically at Metro bundler start — no extra steps needed. The Replit backend URL is stable for this project; only change it if you moved to a new Repl.
+
+> **Why this happens:** on Replit, the dev workflow injects `EXPO_PUBLIC_DOMAIN=$REPLIT_DEV_DOMAIN` and `_layout.tsx` calls `setBaseUrl()` from that. Locally neither variable exists, so `setBaseUrl()` is never called and every fetch goes to a relative path that resolves nowhere on a real device.
+
+### Step 4 — Start the Metro bundler (from Replit or locally)
 
 The Metro bundler can run on Replit (the Expo workflow is already running) — your device connects to it over the Replit dev domain. Alternatively run it locally:
 

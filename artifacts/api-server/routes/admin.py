@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from services import config as config_service, ingestion, log_buffer, push
 
-log = logging.getLogger("marktr.admin")
+log = logging.getLogger("crrnt.admin")
 
 router = APIRouter(tags=["admin"])
 
@@ -649,16 +649,16 @@ async function repairBatches(){
 }
 
 const LOG_SOURCES={
-  'marktr.xapi':       'X / Twitter',
-  'marktr.newsmesh':   'News (NewsMesh)',
-  'marktr.stock':      'Stock API',
-  'marktr.enrichment': 'AI Enrichment',
-  'marktr.fish_audio': 'Fish Audio',
-  'marktr.push':       'Push Notifications',
-  'marktr.ingestion':  'Ingestion',
-  'marktr.scheduler':  'Scheduler',
-  'marktr.cache':      'Cache',
-  'marktr.admin':      'Admin',
+  'crrnt.xapi':       'X / Twitter',
+  'crrnt.newsmesh':   'News (NewsMesh)',
+  'crrnt.stock':      'Stock API',
+  'crrnt.enrichment': 'AI Enrichment',
+  'crrnt.fish_audio': 'Fish Audio',
+  'crrnt.push':       'Push Notifications',
+  'crrnt.ingestion':  'Ingestion',
+  'crrnt.scheduler':  'Scheduler',
+  'crrnt.cache':      'Cache',
+  'crrnt.admin':      'Admin',
 };
 
 function toggleLog(key){

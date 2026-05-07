@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Story } from "@workspace/api-client-react";
 
-const STORAGE_KEY = "@marktr/saved-stories/v1";
+const STORAGE_KEY = "@crrnt/saved-stories/v1";
 
 interface SavedContextValue {
   saved: Story[];

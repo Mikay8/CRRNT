@@ -60,7 +60,7 @@ artifactId = "artifacts/marktr"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/crrnt run dev"
+args = "pnpm --filter @workspace/marktr run dev"
 
 [agent]
 stack = "PNPM_WORKSPACE"

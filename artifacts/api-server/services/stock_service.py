@@ -10,7 +10,7 @@ import yfinance as yf
 
 from services import cache
 
-log = logging.getLogger("marktr.stock")
+log = logging.getLogger("crrnt.stock")
 
 VALID_RANGES = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "5y"}
 

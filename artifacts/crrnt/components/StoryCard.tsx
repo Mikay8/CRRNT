@@ -110,7 +110,7 @@ export function StoryCard({ story }: StoryCardProps) {
 
           <View style={styles.footer}>
             <Text style={styles.source} numberOfLines={1}>
-              {story.source || "Marktr"}
+              {story.source || "CRRNT"}
             </Text>
             <View style={styles.footerRight}>
               {isToday(story.publishedDate) ? (

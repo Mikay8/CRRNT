@@ -8,7 +8,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from services import ingestion
 
-log = logging.getLogger("marktr.scheduler")
+log = logging.getLogger("crrnt.scheduler")
 
 _scheduler: AsyncIOScheduler | None = None
 

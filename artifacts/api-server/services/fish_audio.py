@@ -15,7 +15,7 @@ import httpx
 
 from services import cache
 
-log = logging.getLogger("marktr.fish_audio")
+log = logging.getLogger("crrnt.fish_audio")
 
 FISH_AUDIO_URL = "https://api.fish.audio/v1/tts"
 AUDIO_KEY_PREFIX = "audio:"

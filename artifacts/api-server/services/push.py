@@ -12,7 +12,7 @@ import httpx
 
 from services import cache
 
-log = logging.getLogger("marktr.push")
+log = logging.getLogger("crrnt.push")
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 TOKENS_KEY = "push:tokens"

@@ -1,4 +1,4 @@
-"""Marktr FastAPI server.
+"""CRRNT FastAPI server.
 
 Serves enriched daily news, stock price history, and an investment
 simulator. Uses Replit DB as a simple key-value cache and APScheduler
@@ -24,13 +24,13 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-log = logging.getLogger("marktr")
+log = logging.getLogger("crrnt")
 log.addHandler(log_buffer.handler)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    log.info("Marktr API starting up")
+    log.info("CRRNT API starting up")
     cache.init()
 
     # Start the daily 8 AM ingestion job.
@@ -40,11 +40,11 @@ async def lifespan(_app: FastAPI):
         yield
     finally:
         scheduler.shutdown()
-        log.info("Marktr API shutting down")
+        log.info("CRRNT API shutting down")
 
 
 app = FastAPI(
-    title="Marktr API",
+    title="CRRNT API",
     version="0.1.0",
     lifespan=lifespan,
 )

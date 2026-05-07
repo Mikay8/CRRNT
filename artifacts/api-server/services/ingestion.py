@@ -15,7 +15,7 @@ from services import cache, config as config_service, enrichment, fish_audio, ne
 
 ALL_CATEGORIES = news_fetcher.ALL_CATEGORIES
 
-log = logging.getLogger("marktr.ingestion")
+log = logging.getLogger("crrnt.ingestion")
 
 _DEFAULT_PER_CATEGORY = 10
 _DEFAULT_TRENDING_LIMIT = 25

@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 import httpx
 
-log = logging.getLogger("marktr.cache")
+log = logging.getLogger("crrnt.cache")
 
 _db_url: Optional[str] = None
 _memory: dict[str, str] = {}

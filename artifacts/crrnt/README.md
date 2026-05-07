@@ -124,7 +124,7 @@ The Expo workflow serves a web version at the Replit preview URL. This uses `Aud
 
 The workflow command is:
 ```bash
-pnpm --filter @workspace/marktr run dev
+pnpm --filter @workspace/crrnt run dev
 ```
 
 This is managed automatically. You don't need to run it manually.

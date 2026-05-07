@@ -18,7 +18,7 @@ interface PriceChartProps {
 export function PriceChart({ points, width, height = 160, positive = true }: PriceChartProps) {
   const chart = useMemo(() => buildChart(points, width, height), [points, width, height]);
   const stroke = positive ? palette.accent : palette.negative;
-  const fillId = positive ? "marktrFillPos" : "marktrFillNeg";
+  const fillId = positive ? "crrntFillPos" : "crrntFillNeg";
 
   if (!chart) {
     return (

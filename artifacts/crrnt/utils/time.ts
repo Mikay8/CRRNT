@@ -1,5 +1,5 @@
 /**
- * Relative and contextual timestamp formatting for Marktr.
+ * Relative and contextual timestamp formatting for CRRNT.
  */
 
 export function formatRelativeTime(iso: string | null | undefined): string {

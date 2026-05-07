@@ -1,4 +1,4 @@
-# Marktr
+# CRRNT
 
 A finance-meets-pop-culture mobile app for young adults. Discover trending news in Celebrity, Entertainment, Tech, Government, Sports, Business, and Science — every story is paired with a relevant stock ticker, an AI market insight ("How does it stocks?"), a personal impact analysis ("How does it affect me?"), a social sentiment summary ("What are people saying?"), a price chart, and audio playback.
 
@@ -7,7 +7,7 @@ A finance-meets-pop-culture mobile app for young adults. Discover trending news 
 pnpm monorepo with two production artifacts:
 
 - `artifacts/api-server` (Python FastAPI) — backend ingesting news + serving stock data
-- `artifacts/marktr` (Expo React Native) — mobile app
+- `artifacts/crrnt` (Expo React Native) — mobile app
 
 Internal tooling:
 
@@ -47,7 +47,7 @@ Internal tooling:
   - `/api/admin/stories` — DELETE all stories (X-Admin-Token)
   - `/api/admin/portal?token=` — web admin portal (HTML, validates SESSION_SECRET)
 
-## Frontend (`artifacts/marktr`)
+## Frontend (`artifacts/crrnt`)
 
 - **Stack**: Expo SDK 54, expo-router, React Native 0.81.5, expo-audio (MP3 playback), expo-speech (TTS fallback), expo-notifications, expo-device, react-native-svg, @tanstack/react-query, AsyncStorage
 - **Audio architecture**: `AudioContext.tsx` (expo-audio for MP3 playback + expo-speech TTS fallback) used on all platforms. `index.native.js` and `index.js` are both simple expo-router entry points with no platform split. `"main": "./index.js"` in package.json.
@@ -87,7 +87,7 @@ Features:
 ## Workflows
 
 - `artifacts/api-server: API Server` → uvicorn on `$PORT`
-- `artifacts/marktr: expo` → Expo dev server on `$PORT`
+- `artifacts/crrnt: expo` → Expo dev server on `$PORT`
 - `artifacts/mockup-sandbox: Component Preview Server` → Vite (design only)
 
 ## Data Model (KV)

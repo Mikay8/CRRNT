@@ -38,7 +38,7 @@ A finance-meets-pop-culture mobile app for young adults. Trending stories across
 /
 ├── artifacts/
 │   ├── api-server/          # FastAPI backend
-│   └── marktr/              # Expo React Native app (CRRNT)
+│   └── crrnt/               # Expo React Native app (CRRNT)
 ├── lib/
 │   ├── api-spec/            # OpenAPI 3.1 schema (single source of truth)
 │   ├── api-client-react/    # React Query hooks (codegen output)
@@ -110,12 +110,12 @@ Open a second terminal:
 
 ```bash
 # From the repository root
-pnpm --filter @workspace/marktr run dev
+pnpm --filter @workspace/crrnt run dev
 ```
 
 This starts the Expo Metro bundler. Scan the QR code with the **Expo Go** app on your phone, or press `w` to open the web preview in your browser.
 
-> The mobile app expects the API at `/api`. When running on Replit the shared reverse proxy handles routing automatically. For purely local development outside Replit, set `EXPO_PUBLIC_API_BASE=http://localhost:8000` in `artifacts/marktr/.env.local` and update the API client base URL accordingly.
+> The mobile app expects the API at `/api`. When running on Replit the shared reverse proxy handles routing automatically. For purely local development outside Replit, set `EXPO_PUBLIC_API_BASE=http://localhost:8000` in `artifacts/crrnt/.env.local` and update the API client base URL accordingly.
 
 ---
 

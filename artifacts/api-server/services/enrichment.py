@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from anthropic import AsyncAnthropic
 
-log = logging.getLogger("marktr.enrichment")
+log = logging.getLogger("crrnt.enrichment")
 
 MODEL = "claude-haiku-4-5"
 MAX_CONCURRENCY = 5

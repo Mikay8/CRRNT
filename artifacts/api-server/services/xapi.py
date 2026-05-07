@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 import httpx
 
-log = logging.getLogger("marktr.xapi")
+log = logging.getLogger("crrnt.xapi")
 
 XAPI_BASE = "https://api.getxapi.com"
 MAX_RESULTS = 10   # returned to Claude for filtering; individual queries fetch 5 each

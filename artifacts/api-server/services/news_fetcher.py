@@ -1,6 +1,6 @@
 """NewsMesh API client.
 
-Marktr's editorial categories map to NewsMesh categories as follows:
+CRRNT's editorial categories map to NewsMesh categories as follows:
   celebrity  -> entertainment  (Claude further splits into celebrity / entertainment)
   tech       -> technology
   government -> politics
@@ -8,7 +8,7 @@ Marktr's editorial categories map to NewsMesh categories as follows:
   business   -> business
   science    -> science
 
-The 'entertainment' Marktr category is populated by Claude at enrichment time —
+The 'entertainment' CRRNT category is populated by Claude at enrichment time —
 stories fetched under 'celebrity' are reclassified as either 'celebrity' (person-
 focused) or 'entertainment' (movie/show/event-focused) based on content.
 
@@ -23,7 +23,7 @@ from typing import Any, Optional
 
 import httpx
 
-log = logging.getLogger("marktr.newsmesh")
+log = logging.getLogger("crrnt.newsmesh")
 
 NEWSMESH_BASE = "https://api.newsmesh.co/v1"
 
@@ -66,12 +66,12 @@ class NewsmeshError(RuntimeError):
 
 
 async def fetch_category(
-    marktr_category: str,
+    crrnt_category: str,
     *,
     limit: int = 10,
     country: str = "us",
 ) -> list[dict[str, Any]]:
-    """Fetch the latest articles for a Marktr category.
+    """Fetch the latest articles for a CRRNT category.
 
     Returns a list of normalized article dicts with our own canonical fields.
     """
@@ -79,9 +79,9 @@ async def fetch_category(
     if not api_key:
         raise NewsmeshError("NEWSMESH_API_KEY is not set")
 
-    nm_category = CATEGORY_MAP.get(marktr_category)
+    nm_category = CATEGORY_MAP.get(crrnt_category)
     if not nm_category:
-        raise NewsmeshError(f"Unknown category: {marktr_category}")
+        raise NewsmeshError(f"Unknown category: {crrnt_category}")
 
     params = {
         "apiKey": api_key,
@@ -95,7 +95,7 @@ async def fetch_category(
         if resp.status_code >= 400:
             log.info(
                 "NewsMesh /latest %s -> %s: %s",
-                marktr_category,
+                crrnt_category,
                 resp.status_code,
                 resp.text[:300],
             )
@@ -103,16 +103,16 @@ async def fetch_category(
         payload = resp.json()
 
     raw_articles = payload.get("articles") or payload.get("data") or []
-    normalized = [_normalize(a, marktr_category) for a in raw_articles if a]
+    normalized = [_normalize(a, crrnt_category) for a in raw_articles if a]
     log.info(
         "NewsMesh: %d article(s) fetched for category '%s'",
         len(normalized),
-        marktr_category,
+        crrnt_category,
     )
     return normalized
 
 
-def _normalize(article: dict[str, Any], marktr_category: str) -> dict[str, Any]:
+def _normalize(article: dict[str, Any], crrnt_category: str) -> dict[str, Any]:
     """Normalize a NewsMesh article to our internal shape."""
     article_id = (
         article.get("id")
@@ -145,7 +145,7 @@ def _normalize(article: dict[str, Any], marktr_category: str) -> dict[str, Any]:
         or article.get("pub_date")
         or "",
         "source": _extract_source(article),
-        "category": marktr_category,
+        "category": crrnt_category,
         "topics": _normalize_list(article.get("topics")),
         "people": _normalize_list(article.get("people")),
         "authors": _normalize_list(article.get("author") or article.get("authors")),
@@ -164,7 +164,7 @@ def _extract_source(article: dict[str, Any]) -> str:
 async def fetch_all_categories(
     categories: list[str], per_category: int = 10
 ) -> list[dict[str, Any]]:
-    """Fetch articles for the specified Marktr categories sequentially.
+    """Fetch articles for the specified CRRNT categories sequentially.
 
     NewsMesh enforces a strict per-second rate limit, so we space out
     requests with a small delay rather than firing them in parallel.

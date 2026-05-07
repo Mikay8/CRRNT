@@ -22,10 +22,14 @@ interface AudioContextType {
   positionMs: number;
   durationMs: number;
   isBarVisible: boolean;
+  queue: Story[];
   playStory: (story: Story) => Promise<void>;
   togglePlayPause: () => Promise<void>;
   seekTo: (ms: number) => Promise<void>;
   dismiss: () => Promise<void>;
+  addToQueue: (story: Story) => void;
+  addToQueueTop: (story: Story) => void;
+  removeFromQueue: (index: number) => void;
 }
 
 const AudioContext = createContext<AudioContextType | null>(null);
@@ -43,9 +47,6 @@ function buildSpeechText(story: Story): string {
 
 async function configureAudioSession() {
   try {
-    // Field names confirmed from expo-audio v1.1.1 Audio.types.d.ts:
-    // playsInSilentMode (not playsInSilentModeIOS)
-    // shouldPlayInBackground (not staysActiveInBackground)
     await setAudioModeAsync({
       playsInSilentMode: true,
       shouldPlayInBackground: true,
@@ -63,6 +64,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [isAudioMode, setIsAudioMode] = useState(false);
   const isAudioModeRef = useRef(false);
 
+  // Queue state
+  const [queue, setQueue] = useState<Story[]>([]);
+  const queueRef = useRef<Story[]>([]);
+
   // Speech-mode state
   const [speechPositionMs, setSpeechPositionMs] = useState(0);
   const [speechDurationMs, setSpeechDurationMs] = useState(0);
@@ -70,60 +75,70 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const speechTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speechOffsetRef = useRef<{ startTime: number; offsetMs: number } | null>(null);
-  // Refs for pause/resume support
   const speechTextRef = useRef<string>("");
   const speechDurationMsRef = useRef<number>(0);
   const speechPausedAtMsRef = useRef<number>(0);
-  // Closure-safe refs for toggle
   const speechPlayingRef = useRef(false);
   const speechPositionMsRef = useRef(0);
-  // Generation counter: incremented each time we stop speech so that any
-  // pending onDone/onStopped callback from a previous Speech.speak() knows
-  // it's stale and should not reset position or cancel the new timer.
   const speechGenRef = useRef(0);
+
+  // Ref for calling playNext from speech/audio end callbacks (avoids circular dep issues)
+  const playNextRef = useRef<() => Promise<void>>(async () => {});
 
   const player = useAudioPlayer(null, { updateInterval: 200 });
   const audioStatus = useAudioPlayerStatus(player);
 
-  // expo-audio v1.1.1 iOS bug (GitHub #37653): the periodic time observer that
-  // drives useAudioPlayerStatus stops firing after seek/pause, so currentTime
-  // freezes at its old value.
-  //
-  // Hybrid fix:
-  //   • duration  → use audioStatus.duration (set via the audio-LOAD event, not
-  //                 the periodic timer, so it fires correctly even in v1.1.1).
-  //                 Retain the last known-good value in state so it survives
-  //                 observer gaps.
-  //   • currentTime / playing → poll player directly at 200 ms with isFinite
-  //                 guards (NaN can appear on iOS during seek transitions).
+  // expo-audio v1.1.1 iOS bug (GitHub #37653): periodic time observer stops firing after seek/pause.
+  // Hybrid fix: duration from audioStatus (load event, not affected), position/playing polled directly.
   const [audioPositionMs, setAudioPositionMs] = useState(0);
   const [audioDurationMs, setAudioDurationMs] = useState(0);
   const [audioIsPlaying, setAudioIsPlaying] = useState(false);
 
-  // Capture duration from the status subscription — it comes via a load event
-  // that is NOT affected by the timer-observer bug, so it arrives reliably.
+  const audioDurationMsRef = useRef(0);
+  // Track end detection refs for auto-advance
+  const wasPlayingRef = useRef(false);
+  const audioEndFiredRef = useRef(false);
+
   useEffect(() => {
     const d = audioStatus.duration;
     if (typeof d === "number" && isFinite(d) && d > 0) {
-      setAudioDurationMs(Math.round(d * 1000));
+      const ms = Math.round(d * 1000);
+      audioDurationMsRef.current = ms;
+      setAudioDurationMs(ms);
     }
   }, [audioStatus.duration]);
 
-  // Poll currentTime and playing directly — bypasses the stale observer.
-  // isFinite guards prevent NaN (which iOS can emit during seek transitions)
-  // from leaking into position state.
+  // Poll currentTime and playing — bypasses stale observer. Also detects track end for auto-advance.
   useEffect(() => {
     const timer = setInterval(() => {
       const t = player.currentTime;
       if (typeof t === "number" && isFinite(t)) {
         setAudioPositionMs(Math.round(t * 1000));
       }
-      setAudioIsPlaying(player.playing ?? false);
+      const isNowPlaying = player.playing ?? false;
+      setAudioIsPlaying(isNowPlaying);
+
+      // Detect natural track end: was playing → stopped near end → fire once
+      if (
+        wasPlayingRef.current &&
+        !isNowPlaying &&
+        !audioEndFiredRef.current &&
+        isAudioModeRef.current
+      ) {
+        const dur = audioDurationMsRef.current;
+        if (dur > 0 && typeof t === "number" && isFinite(t) && dur - t * 1000 < 1500) {
+          audioEndFiredRef.current = true;
+          if (queueRef.current.length > 0) {
+            playNextRef.current().catch(() => {});
+          }
+        }
+      }
+      if (isNowPlaying) audioEndFiredRef.current = false;
+      wasPlayingRef.current = isNowPlaying;
     }, 200);
     return () => clearInterval(timer);
   }, [player]);
 
-  // Register lock-screen remote control handlers once on mount.
   useEffect(() => {
     const cleanup = registerRemoteControls({
       onPlay: () => player.play(),
@@ -133,7 +148,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     return cleanup;
   }, [player]);
 
-  // Keep lock-screen elapsed time in sync with actual playback position.
   useEffect(() => {
     if (!isAudioMode || !storyRef.current) return;
     const s = storyRef.current;
@@ -167,13 +181,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setSpeechPositionMs(val);
   };
 
+  const _setQueue = (q: Story[]) => {
+    queueRef.current = q;
+    setQueue(q);
+  };
+
   const positionMs = isAudioMode ? audioPositionMs : speechPositionMs;
   const durationMs = isAudioMode ? audioDurationMs : speechDurationMs;
   const isPlaying = isAudioMode ? audioIsPlaying : speechPlaying;
 
   const _stopSpeech = useCallback(() => {
-    // Bump generation BEFORE Speech.stop() so any pending onDone/onStopped
-    // callback from the outgoing speech sees a stale gen and bails out.
     speechGenRef.current += 1;
     if (speechTimerRef.current) {
       clearInterval(speechTimerRef.current);
@@ -191,9 +208,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         speechTimerRef.current = null;
       }
 
-      // Capture the generation for this session. Any onEnd that fires with a
-      // different (newer) gen is stale — from a Speech.stop() we already issued —
-      // and must not reset position or kill our new timer.
       const myGen = speechGenRef.current;
 
       speechOffsetRef.current = { startTime: Date.now(), offsetMs: fromMs };
@@ -211,17 +225,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       }, 200);
 
       const onEnd = () => {
-        // Ignore callbacks belonging to a previous (stopped) speech session.
         if (speechGenRef.current !== myGen) return;
 
         const currentMs = speechPositionMsRef.current;
         const remaining = totalMs - currentMs;
 
-        // Chrome's Web SpeechSynthesis API silently kills long utterances after
-        // ~15 s (onDone fires even though playback wasn't finished). On iOS
-        // AVSpeechSynthesizer doesn't have this bug, but the guard is harmless.
-        // If we're still far from the end, restart from the current position
-        // so playback continues uninterrupted — same gen, seamless continuation.
+        // Chrome's ~15s utterance limit workaround — restart from current position.
         if (remaining > 5000) {
           if (speechTimerRef.current) {
             clearInterval(speechTimerRef.current);
@@ -251,7 +260,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        // Natural end — tear down cleanly.
+        // Natural end — tear down cleanly then auto-advance queue if needed.
         _setSpeechPlaying(false);
         if (speechTimerRef.current) {
           clearInterval(speechTimerRef.current);
@@ -260,6 +269,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         speechOffsetRef.current = null;
         speechPausedAtMsRef.current = 0;
         _setSpeechPositionMs(0);
+
+        if (queueRef.current.length > 0) {
+          setTimeout(() => playNextRef.current().catch(() => {}), 500);
+        }
       };
 
       _setSpeechPlaying(true);
@@ -278,6 +291,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const playStory = useCallback(
     async (newStory: Story) => {
+      // Reset auto-advance detection for new track
+      wasPlayingRef.current = false;
+      audioEndFiredRef.current = false;
+
       _stopSpeech();
       player.pause();
       _setAudioMode(false);
@@ -297,8 +314,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         _setAudioMode(true);
         player.replace({ uri: fullUrl });
         player.play();
-        // Register this player as the lock-screen "Now Playing" source so the
-        // system media controls (lock screen, Control Center) reflect CRRNT audio.
         try {
           player.setActiveForLockScreen(true, {
             title: newStory.title,
@@ -306,7 +321,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             artworkUrl: (newStory as any).mediaUrl ?? undefined,
           });
         } catch {}
-        // Prime the lock screen with position=0 before the first status tick.
         updateNowPlayingInfo({
           title: newStory.title,
           artist: "CRRNT",
@@ -316,8 +330,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           isPlaying: true,
         });
       } else {
-        // expo-speech fallback — configure audio session first so iOS plays
-        // even when the device ringer switch is on silent
         await configureAudioSession();
         _setAudioMode(false);
 
@@ -335,6 +347,32 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     [player, _stopSpeech, _startSpeechFrom],
   );
 
+  const addToQueue = useCallback((s: Story) => {
+    _setQueue([...queueRef.current, s]);
+  }, []);
+
+  const addToQueueTop = useCallback((s: Story) => {
+    _setQueue([s, ...queueRef.current]);
+  }, []);
+
+  const removeFromQueue = useCallback((index: number) => {
+    const q = [...queueRef.current];
+    q.splice(index, 1);
+    _setQueue(q);
+  }, []);
+
+  const playNext = useCallback(async () => {
+    if (queueRef.current.length === 0) return;
+    const [next, ...rest] = queueRef.current;
+    _setQueue(rest);
+    await playStory(next);
+  }, [playStory]);
+
+  // Keep playNextRef current so speech/audio end callbacks can call it without stale closure issues
+  useEffect(() => {
+    playNextRef.current = playNext;
+  }, [playNext]);
+
   const togglePlayPause = useCallback(async () => {
     if (isAudioModeRef.current) {
       if (player.playing) {
@@ -345,13 +383,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Speech mode — proper pause/resume
     if (speechPlayingRef.current) {
-      // PAUSE: record current position then stop
       speechPausedAtMsRef.current = speechPositionMsRef.current;
       _stopSpeech();
     } else {
-      // RESUME: re-speak from where we left off
       const text = speechTextRef.current;
       if (!text) return;
       await configureAudioSession();
@@ -362,12 +397,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const seekTo = useCallback(
     async (ms: number) => {
       if (isAudioModeRef.current) {
-        // seekTo is async — must await before play() so iOS doesn't fire play at old position
         await player.seekTo(ms / 1000);
         player.play();
         return;
       }
-      // Speech seek — restart from the new position
       const text = speechTextRef.current;
       if (!text) return;
       _stopSpeech();
@@ -390,6 +423,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     _setSpeechPlaying(false);
     speechPausedAtMsRef.current = 0;
     speechTextRef.current = "";
+    _setQueue([]);
   }, [player, _stopSpeech]);
 
   return (
@@ -400,10 +434,14 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         positionMs,
         durationMs,
         isBarVisible,
+        queue,
         playStory,
         togglePlayPause,
         seekTo,
         dismiss,
+        addToQueue,
+        addToQueueTop,
+        removeFromQueue,
       }}
     >
       {children}

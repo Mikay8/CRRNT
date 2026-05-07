@@ -13,14 +13,14 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useAudio } from "@/contexts/AudioContext";
 import { getCategoryMeta } from "@/constants/categories";
 import palette from "@/constants/colors";
+import QueueScreen from "@/components/QueueScreen";
 
 const TAB_BAR_HEIGHT = 49;
-const BAR_HEIGHT = 4;       // visible rail height
-const TRACK_HIT = 32;       // tall touch target
-const THUMB_R = 6;          // thumb radius when idle
-const THUMB_R_ACTIVE = 8;   // thumb radius while scrubbing
+const BAR_HEIGHT = 4;
+const TRACK_HIT = 32;
+const THUMB_R = 6;
+const THUMB_R_ACTIVE = 8;
 
-// Animated waveform bar component
 function WaveBar({ delay, isPlaying }: { delay: number; isPlaying: boolean }) {
   const anim = useRef(new Animated.Value(0.35)).current;
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -97,6 +97,8 @@ export default function MiniAudioBar() {
   const durationMsRef = useRef(durationMs);
   const seekToRef = useRef(seekTo);
 
+  const [showQueue, setShowQueue] = useState(false);
+
   useEffect(() => { durationMsRef.current = durationMs; }, [durationMs]);
   useEffect(() => { seekToRef.current = seekTo; }, [seekTo]);
 
@@ -144,11 +146,19 @@ export default function MiniAudioBar() {
       setScrubProgress(null);
     });
 
+  // Swipe up anywhere on the bar to open the queue screen
+  const swipeUpGesture = Gesture.Pan()
+    .runOnJS(true)
+    .onEnd((e) => {
+      if (e.translationY < -50 && Math.abs(e.translationY) > Math.abs(e.translationX)) {
+        setShowQueue(true);
+      }
+    });
+
   if (!story && !isBarVisible) return null;
 
   const liveProgress = durationMs > 0 ? positionMs / durationMs : 0;
 
-  // Clear the seek hold once positionMs has caught up within 1.5 s of the target.
   if (seekHoldRef.current !== null && durationMs > 0) {
     const targetMs = seekHoldRef.current * durationMs;
     if (Math.abs(positionMs - targetMs) < 1500) {
@@ -170,7 +180,6 @@ export default function MiniAudioBar() {
   const categoryMeta = getCategoryMeta(story?.category ?? null);
   const categoryColor = categoryMeta?.color ?? palette.accent;
 
-  // Pixel-based thumb position — avoids iOS bug with percentage strings on `left`
   const thumbX = trackWidth * displayProgress;
 
   const handleBarPress = () => {
@@ -178,105 +187,113 @@ export default function MiniAudioBar() {
   };
 
   return (
-    <Animated.View
-      style={[
-        styles.wrapper,
-        { bottom: bottomOffset + 8, transform: [{ translateY: slideAnim }] },
-      ]}
-    >
-      {/* Category accent stripe */}
-      <View style={[styles.accentStripe, { backgroundColor: categoryColor }]} />
-
-      {/* Main content row */}
-      <Pressable
-        onPress={handleBarPress}
-        style={({ pressed }) => [styles.inner, { opacity: pressed ? 0.88 : 1 }]}
-      >
-        {/* Waveform animation */}
-        <View style={styles.waveContainer} pointerEvents="none">
-          <WaveBar delay={0}   isPlaying={isPlaying} />
-          <WaveBar delay={80}  isPlaying={isPlaying} />
-          <WaveBar delay={160} isPlaying={isPlaying} />
-          <WaveBar delay={40}  isPlaying={isPlaying} />
-        </View>
-
-        {/* Title + time */}
-        <View style={styles.info}>
-          <Text style={styles.titleText} numberOfLines={1}>
-            {story?.title ?? ""}
-          </Text>
-          <Text style={styles.timeText}>
-            {durationMs > 0
-              ? `${formatMs(displayMs)} / ${formatMs(durationMs)}`
-              : categoryMeta?.label ?? ""}
-          </Text>
-        </View>
-
-        {/* Play / pause */}
-        <Pressable
-          onPress={(e) => { e.stopPropagation?.(); togglePlayPause(); }}
-          hitSlop={12}
-          style={({ pressed }) => [
-            styles.playBtn,
-            { backgroundColor: categoryColor, opacity: pressed ? 0.7 : 1 },
+    <>
+      <GestureDetector gesture={swipeUpGesture}>
+        <Animated.View
+          style={[
+            styles.wrapper,
+            { bottom: bottomOffset + 8, transform: [{ translateY: slideAnim }] },
           ]}
         >
-          <Ionicons
-            name={isPlaying ? "pause" : "play"}
-            size={17}
-            color="#fff"
-            style={isPlaying ? undefined : { marginLeft: 2 }}
-          />
-        </Pressable>
+          {/* Drag handle — indicates swipe-up to open queue */}
+          <View style={styles.dragArea}>
+            <View style={styles.dragPill} />
+          </View>
 
-        {/* Dismiss */}
-        <Pressable
-          onPress={(e) => { e.stopPropagation?.(); dismiss(); }}
-          hitSlop={12}
-          style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.5 : 1 }]}
-        >
-          <Ionicons name="close" size={16} color={palette.textDim} />
-        </Pressable>
-      </Pressable>
+          {/* Category accent stripe */}
+          <View style={[styles.accentStripe, { backgroundColor: categoryColor }]} />
 
-      {/* Scrubable progress bar */}
-      <GestureDetector gesture={seekGesture}>
-        <View
-          style={styles.progressTrack}
-          onLayout={(e) => {
-            const w = e.nativeEvent.layout.width;
-            trackWidthRef.current = w;
-            setTrackWidth(w);
-          }}
-        >
-          {/* Rail */}
-          <View style={styles.progressRail} />
-          {/* Fill */}
-          <View
-            style={[
-              styles.progressFill,
-              {
-                width: Math.min(displayProgress * trackWidth, trackWidth),
-                backgroundColor: categoryColor,
-              },
-            ]}
-          />
-          {/* Thumb — pixel-positioned to avoid iOS percentage-string bug */}
-          {trackWidth > 0 && (
-            <View
-              style={[
-                styles.progressThumb,
-                scrubProgress !== null && styles.progressThumbActive,
-                {
-                  left: thumbX - (scrubProgress !== null ? THUMB_R_ACTIVE : THUMB_R),
-                  backgroundColor: categoryColor,
-                },
+          {/* Main content row */}
+          <Pressable
+            onPress={handleBarPress}
+            style={({ pressed }) => [styles.inner, { opacity: pressed ? 0.88 : 1 }]}
+          >
+            {/* Waveform animation */}
+            <View style={styles.waveContainer} pointerEvents="none">
+              <WaveBar delay={0}   isPlaying={isPlaying} />
+              <WaveBar delay={80}  isPlaying={isPlaying} />
+              <WaveBar delay={160} isPlaying={isPlaying} />
+              <WaveBar delay={40}  isPlaying={isPlaying} />
+            </View>
+
+            {/* Title + time */}
+            <View style={styles.info}>
+              <Text style={styles.titleText} numberOfLines={1}>
+                {story?.title ?? ""}
+              </Text>
+              <Text style={styles.timeText}>
+                {durationMs > 0
+                  ? `${formatMs(displayMs)} / ${formatMs(durationMs)}`
+                  : categoryMeta?.label ?? ""}
+              </Text>
+            </View>
+
+            {/* Play / pause */}
+            <Pressable
+              onPress={(e) => { e.stopPropagation?.(); togglePlayPause(); }}
+              hitSlop={12}
+              style={({ pressed }) => [
+                styles.playBtn,
+                { backgroundColor: categoryColor, opacity: pressed ? 0.7 : 1 },
               ]}
-            />
-          )}
-        </View>
+            >
+              <Ionicons
+                name={isPlaying ? "pause" : "play"}
+                size={17}
+                color="#fff"
+                style={isPlaying ? undefined : { marginLeft: 2 }}
+              />
+            </Pressable>
+
+            {/* Dismiss */}
+            <Pressable
+              onPress={(e) => { e.stopPropagation?.(); dismiss(); }}
+              hitSlop={12}
+              style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.5 : 1 }]}
+            >
+              <Ionicons name="close" size={16} color={palette.textDim} />
+            </Pressable>
+          </Pressable>
+
+          {/* Scrubable progress bar */}
+          <GestureDetector gesture={seekGesture}>
+            <View
+              style={styles.progressTrack}
+              onLayout={(e) => {
+                const w = e.nativeEvent.layout.width;
+                trackWidthRef.current = w;
+                setTrackWidth(w);
+              }}
+            >
+              <View style={styles.progressRail} />
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: Math.min(displayProgress * trackWidth, trackWidth),
+                    backgroundColor: categoryColor,
+                  },
+                ]}
+              />
+              {trackWidth > 0 && (
+                <View
+                  style={[
+                    styles.progressThumb,
+                    scrubProgress !== null && styles.progressThumbActive,
+                    {
+                      left: thumbX - (scrubProgress !== null ? THUMB_R_ACTIVE : THUMB_R),
+                      backgroundColor: categoryColor,
+                    },
+                  ]}
+                />
+              )}
+            </View>
+          </GestureDetector>
+        </Animated.View>
       </GestureDetector>
-    </Animated.View>
+
+      <QueueScreen visible={showQueue} onClose={() => setShowQueue(false)} />
+    </>
   );
 }
 
@@ -303,6 +320,17 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 16,
   },
+  dragArea: {
+    alignItems: "center",
+    paddingTop: 8,
+    paddingBottom: 2,
+  },
+  dragPill: {
+    width: 32,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: palette.border,
+  },
   accentStripe: {
     height: 3,
     width: "100%",
@@ -311,7 +339,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
-    paddingTop: 11,
+    paddingTop: 9,
     paddingBottom: 10,
     gap: 10,
   },

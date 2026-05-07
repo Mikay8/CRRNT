@@ -1,5 +1,6 @@
 import {
   ActivityIndicator,
+  Animated,
   Dimensions,
   Image,
   Linking,
@@ -15,7 +16,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useGetStockHistory,
   useGetStory,
@@ -23,6 +24,7 @@ import {
   type Tweet,
 } from "@workspace/api-client-react";
 import palette from "@/constants/colors";
+import { getCategoryMeta } from "@/constants/categories";
 import { useAudio } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import CategoryBadge from "@/components/CategoryBadge";
@@ -82,7 +84,7 @@ export default function StoryDetailScreen() {
   // Holds the seek target (0-1) after release until positionMs catches up,
   // preventing the progress bar from snapping back to the stale position.
   const seekHoldRef = useRef<number | null>(null);
-  const { story: audioStory, isPlaying, positionMs, durationMs, playStory, togglePlayPause, seekTo } = useAudio();
+  const { story: audioStory, isPlaying, isBarVisible, positionMs, durationMs, playStory, togglePlayPause, seekTo } = useAudio();
 
   const localFallback = saved.find((s) => s.articleId === id) ?? null;
 
@@ -104,6 +106,20 @@ export default function StoryDetailScreen() {
 
   const isThisStoryActive = !!story && audioStory?.articleId === story.articleId;
   const isThisStoryPlaying = isThisStoryActive && isPlaying;
+
+  // Floating play/pause button — visible when a DIFFERENT story is playing
+  const showFloat = isBarVisible && !!audioStory && !!story && audioStory.articleId !== story.articleId;
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(floatAnim, {
+      toValue: showFloat ? 1 : 0,
+      useNativeDriver: true,
+      tension: 80,
+      friction: 10,
+    }).start();
+  }, [showFloat]);
+  const audioStoryCatColor =
+    (audioStory ? getCategoryMeta(audioStory.category)?.color : null) ?? palette.accent;
 
   // Derived display values (use scrub position while dragging)
   const clamp = (v: number) => Math.max(0, Math.min(1, v));
@@ -237,8 +253,9 @@ export default function StoryDetailScreen() {
   const hasSocialData = peopleSay || tweets.length > 0;
 
   return (
+    <View style={styles.container}>
     <ScrollView
-      style={styles.container}
+      style={styles.scrollView}
       contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
       showsVerticalScrollIndicator={false}
       scrollIndicatorInsets={{ top: insets.top, bottom: insets.bottom }}
@@ -586,6 +603,36 @@ export default function StoryDetailScreen() {
         </Pressable>
       </View>
     </ScrollView>
+
+    {/* Floating play/pause — visible when a different story is actively playing */}
+    <Animated.View
+      pointerEvents={showFloat ? "auto" : "none"}
+      style={[
+        styles.floatingPlayBtn,
+        {
+          bottom: insets.bottom + 24,
+          backgroundColor: audioStoryCatColor,
+          opacity: floatAnim,
+          transform: [{ scale: floatAnim }],
+        },
+      ]}
+    >
+      <Pressable
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+          togglePlayPause();
+        }}
+        style={styles.floatingPlayBtnInner}
+      >
+        <Ionicons
+          name={isPlaying ? "pause" : "play"}
+          size={22}
+          color="#fff"
+          style={isPlaying ? undefined : { marginLeft: 2 }}
+        />
+      </Pressable>
+    </Animated.View>
+    </View>
   );
 }
 
@@ -610,6 +657,26 @@ function formatCount(n: number | undefined): string {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: palette.bg },
+  scrollView: { flex: 1, backgroundColor: palette.bg },
+  floatingPlayBtn: {
+    position: "absolute",
+    right: 20,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  floatingPlayBtnInner: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   center: {
     flex: 1,
     alignItems: "center",

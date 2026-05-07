@@ -16,10 +16,14 @@ import type { Story } from "@workspace/api-client-react";
 
 const ACTION_WIDTH = 80;
 
-function PlayAction() {
+function PlayAction({ isQueue }: { isQueue: boolean }) {
   return (
-    <View style={styles.playAction}>
-      <Ionicons name="play-circle" size={36} color="#fff" />
+    <View style={[styles.playAction, isQueue && styles.queueAction]}>
+      <Ionicons
+        name={isQueue ? "add-circle" : "play-circle"}
+        size={36}
+        color="#fff"
+      />
     </View>
   );
 }
@@ -39,16 +43,26 @@ interface StoryCardProps {
 export function StoryCard({ story }: StoryCardProps) {
   const swipeableRef = useRef<SwipeableMethods | null>(null);
   const { toggleSaved } = useSavedStories();
-  const { playStory } = useAudio();
+  const { playStory, isBarVisible, addToQueue } = useAudio();
 
   const handleSave = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
     toggleSaved(story).catch(() => undefined);
   };
 
-  const handlePlay = () => {
+  const handleSwipePlay = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    if (isBarVisible) {
+      addToQueue(story);
+    } else {
+      playStory(story).catch(() => undefined);
+    }
+  };
+
+  const handlePlayButton = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
     playStory(story).catch(() => undefined);
+    router.push({ pathname: "/story/[id]", params: { id: story.articleId } });
   };
 
   const onPress = () => {
@@ -61,15 +75,13 @@ export function StoryCard({ story }: StoryCardProps) {
       ref={swipeableRef}
       containerStyle={styles.swipeContainer}
       childrenContainerStyle={styles.card}
-      renderLeftActions={() => <PlayAction />}
+      renderLeftActions={() => <PlayAction isQueue={isBarVisible} />}
       renderRightActions={() => <SaveAction />}
       onSwipeableWillOpen={(_direction) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
       }}
       onSwipeableOpen={(direction) => {
-        // direction 'right' = card moved right = left (play) actions visible
-        // direction 'left'  = card moved left  = right (save) actions visible
-        if (direction === "right") handlePlay();
+        if (direction === "right") handleSwipePlay();
         else handleSave();
         setTimeout(() => swipeableRef.current?.close(), 250);
       }}
@@ -89,7 +101,16 @@ export function StoryCard({ story }: StoryCardProps) {
 
         <View style={styles.body}>
           <View style={styles.row}>
-            <CategoryBadge category={story.category} />
+            <View style={styles.rowLeft}>
+              <Pressable
+                onPress={handlePlayButton}
+                hitSlop={6}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="play-circle" size={22} color="#22C55E" />
+              </Pressable>
+              <CategoryBadge category={story.category} />
+            </View>
             <View style={styles.actions}>
               {story.ticker ? (
                 <View style={styles.tickerPill}>
@@ -151,6 +172,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  queueAction: {
+    backgroundColor: "#F59E0B",
+  },
   saveAction: {
     width: ACTION_WIDTH,
     backgroundColor: palette.accent,
@@ -173,6 +197,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  rowLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   actions: {
     flexDirection: "row",

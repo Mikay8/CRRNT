@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from services import ingestion
@@ -50,7 +50,14 @@ async def list_stories(
 
 
 @router.get("/news/{article_id}/audio")
-async def get_story_audio(article_id: str) -> Response:
+async def get_story_audio(article_id: str, request: Request) -> Response:
+    """Serve pre-generated MP3 audio with full HTTP range-request support.
+
+    iOS AVPlayer (used by react-native-track-player under the hood) always
+    sends a Range probe on its first request to extract ID3 duration metadata.
+    Without a proper 206 Partial Content response the player cannot determine
+    the track duration, the progress bar stays frozen at 0, and seeking breaks.
+    """
     from services import cache as cache_svc
     audio_b64 = cache_svc.get(f"audio:{article_id}")
     if not audio_b64 or not isinstance(audio_b64, str):
@@ -59,7 +66,44 @@ async def get_story_audio(article_id: str) -> Response:
         audio_bytes = base64.b64decode(audio_b64)
     except Exception:
         raise HTTPException(status_code=500, detail="Audio data corrupted")
-    return Response(content=audio_bytes, media_type="audio/mpeg")
+
+    total = len(audio_bytes)
+    range_header = request.headers.get("range")
+
+    if range_header:
+        # Parse "Range: bytes=<start>-<end>"
+        try:
+            units, _, ranges = range_header.partition("=")
+            if units.strip().lower() != "bytes" or not ranges:
+                raise ValueError("bad range unit")
+            raw_start, _, raw_end = ranges.partition("-")
+            start = int(raw_start) if raw_start.strip() else 0
+            end = int(raw_end) if raw_end.strip() else total - 1
+            start = max(0, min(start, total - 1))
+            end = max(start, min(end, total - 1))
+        except ValueError:
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{total}"})
+
+        chunk = audio_bytes[start : end + 1]
+        return Response(
+            content=chunk,
+            status_code=206,
+            media_type="audio/mpeg",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Range": f"bytes {start}-{end}/{total}",
+                "Content-Length": str(len(chunk)),
+            },
+        )
+
+    return Response(
+        content=audio_bytes,
+        media_type="audio/mpeg",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(total),
+        },
+    )
 
 
 @router.get("/news/{article_id}")

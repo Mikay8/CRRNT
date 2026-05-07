@@ -26,7 +26,7 @@ artifacts/
   crrnt/           Expo React Native app   →  iOS, Android, Web
 ```
 
-The app talks to the backend at the same domain — no hardcoded URLs. On Replit the proxy routes `/api` to the FastAPI server. On a real device the app connects to your Replit dev domain over HTTPS automatically.
+The app talks to the backend at the same domain — no hardcoded URLs. On Replit the proxy routes `/api` to the FastAPI server automatically. When building locally with Xcode you must configure the API base URL so the device knows where to connect (see [Step 3](#step-3--configure-the-api-base-url)).
 
 ---
 
@@ -75,7 +75,7 @@ EXPO_PUBLIC_REPL_ID      — Replit project ID (set by Replit)
 REACT_NATIVE_PACKAGER_HOSTNAME — Metro bundler hostname (set by Replit)
 ```
 
-When running on a real device, the app connects to your Replit dev domain over HTTPS — no additional config needed.
+When running on Replit these are set automatically. When building locally with Xcode, `EXPO_PUBLIC_DOMAIN` is not injected — you must set `EXPO_PUBLIC_API_BASE` manually (see [Step 3 in the iOS build section](#step-3--configure-the-api-base-url)).
 
 ---
 
@@ -180,7 +180,7 @@ The Metro bundler can run on Replit (the Expo workflow is already running) — y
 pnpm exec expo start
 ```
 
-### Step 4 — Build and run
+### Step 5 — Build and run
 
 ```bash
 # from artifacts/crrnt/
@@ -230,7 +230,7 @@ First build takes 5–10 minutes while it compiles React Native from source. Sub
 
 ### Connecting to the backend
 
-When the app launches on device it connects to your Replit dev domain automatically (the same URL shown in the Expo QR code). Make sure the **Expo workflow is running** in Replit so Metro can serve JS bundles.
+The app reads `EXPO_PUBLIC_API_BASE` from `artifacts/crrnt/.env.local` (which you created in Step 3) to know where to send API requests. Make sure the **Expo workflow is running** in Replit so Metro can serve JS bundles to the device.
 
 If you want the device to connect to a locally running Metro bundler instead:
 1. Run `pnpm exec expo start` on your Mac
@@ -290,6 +290,9 @@ curl -X POST http://localhost:80/api/admin/config \
 ---
 
 ## Troubleshooting
+
+### Feed is blank / no data on device
+API calls are silently failing because the base URL is not set. Make sure `artifacts/crrnt/.env.local` exists and contains `EXPO_PUBLIC_API_BASE=https://...` pointing to your Replit backend. Then restart Metro and rebuild.
 
 ### "No bundle URL present" on launch
 Metro is not reachable. Make sure the Expo workflow is running in Replit and your device has internet access. Shake the device → **Reload**.

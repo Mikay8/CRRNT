@@ -10,6 +10,10 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+
+load_dotenv()  # loads .env file when running locally; no-op on Replit
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

@@ -87,6 +87,19 @@ The backend runs automatically via the **`artifacts/api-server: API Server`** wo
 python -m uvicorn main:app --host 0.0.0.0 --port 8080 --reload --app-dir artifacts/api-server
 ```
 
+**Running locally:** create a `.env` file inside `artifacts/api-server/` (it is gitignored):
+
+```bash
+# artifacts/api-server/.env
+REPLIT_DB_URL=https://kv.replit.com/v0/<your-token>
+ANTHROPIC_API_KEY=...
+NEWSMESH_API_KEY=...
+SESSION_SECRET=...
+XAPI_KEY=...
+```
+
+The server loads `.env` automatically on startup via python-dotenv — no need to `source` it manually. Get the current `REPLIT_DB_URL` by running `echo $REPLIT_DB_URL` in the Replit shell. Note it contains an expiring JWT (~24–48 hrs) so you'll need to refresh it periodically.
+
 Verify it's up:
 ```bash
 curl http://localhost:80/api/healthz

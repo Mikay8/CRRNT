@@ -10,6 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -136,6 +137,35 @@ export default function StoryDetailScreen() {
   const seekToRef = useRef(seekTo);
   seekToRef.current = seekTo;
 
+  const seekGesture = Gesture.Pan()
+    .runOnJS(true)
+    .minDistance(0)
+    .onBegin((e) => {
+      if (!isThisStoryActiveRef.current || audioTrackWidthRef.current === 0) return;
+      const p = clamp(e.x / audioTrackWidthRef.current);
+      scrubRef.current = p;
+      setScrubProgress(p);
+    })
+    .onUpdate((e) => {
+      if (!isThisStoryActiveRef.current || audioTrackWidthRef.current === 0) return;
+      const p = clamp(e.x / audioTrackWidthRef.current);
+      scrubRef.current = p;
+      setScrubProgress(p);
+    })
+    .onEnd(() => {
+      const p = scrubRef.current;
+      if (p !== null && durationMsRef.current > 0) {
+        seekHoldRef.current = p;
+        seekToRef.current(p * durationMsRef.current).catch(() => undefined);
+      }
+      scrubRef.current = null;
+      setScrubProgress(null);
+    })
+    .onFinalize(() => {
+      scrubRef.current = null;
+      setScrubProgress(null);
+    });
+
   const screenWidth = Dimensions.get("window").width;
   const hPad = Math.max(16, insets.left + 4);
   const chartWidth = screenWidth - hPad * 2 - 32;
@@ -252,69 +282,36 @@ export default function StoryDetailScreen() {
               color={palette.bg}
             />
           </Pressable>
-          <View
-            accessible={isThisStoryActive}
-            accessibilityLabel="Seek bar"
-            accessibilityRole="adjustable"
-            style={[
-              styles.audioTrack,
-              // cursor:pointer is CSS-only (web). It makes the seek bar
-              // identifiable as interactive for automated tests and users.
-              Platform.OS === "web" && isThisStoryActive
-                ? ({ cursor: "pointer" } as object)
-                : undefined,
-            ]}
-            onLayout={(e) => {
-              const w = e.nativeEvent.layout.width;
-              audioTrackWidthRef.current = w;
-              setAudioTrackWidth(w);
-            }}
-            // Capture-phase: fires before ScrollView's bubble-phase on iOS,
-            // preventing the scroll view from stealing touch gestures on the
-            // progress bar. Bubble-phase is a reliable fallback on web.
-            onStartShouldSetResponderCapture={() => isThisStoryActiveRef.current}
-            onMoveShouldSetResponderCapture={() => isThisStoryActiveRef.current}
-            onStartShouldSetResponder={() => isThisStoryActiveRef.current}
-            onMoveShouldSetResponder={() => isThisStoryActiveRef.current}
-            onResponderTerminationRequest={() => false}
-            onResponderGrant={(evt) => {
-              if (audioTrackWidthRef.current === 0) return;
-              const p = clamp(evt.nativeEvent.locationX / audioTrackWidthRef.current);
-              scrubRef.current = p;
-              setScrubProgress(p);
-            }}
-            onResponderMove={(evt) => {
-              if (audioTrackWidthRef.current === 0) return;
-              const p = clamp(evt.nativeEvent.locationX / audioTrackWidthRef.current);
-              scrubRef.current = p;
-              setScrubProgress(p);
-            }}
-            onResponderRelease={() => {
-              const p = scrubRef.current;
-              if (p !== null && durationMsRef.current > 0) {
-                seekHoldRef.current = p;
-                seekToRef.current(p * durationMsRef.current).catch(() => undefined);
-              }
-              scrubRef.current = null;
-              setScrubProgress(null);
-            }}
-            onResponderTerminate={() => {
-              scrubRef.current = null;
-              setScrubProgress(null);
-            }}
-          >
-            <View style={styles.audioRail} />
+          <GestureDetector gesture={seekGesture}>
             <View
+              accessible={isThisStoryActive}
+              accessibilityLabel="Seek bar"
+              accessibilityRole="adjustable"
               style={[
-                styles.audioFill,
-                {
-                  width: audioTrackWidth > 0
-                    ? Math.min(displayProgress * audioTrackWidth, audioTrackWidth)
-                    : 0,
-                },
+                styles.audioTrack,
+                Platform.OS === "web" && isThisStoryActive
+                  ? ({ cursor: "pointer" } as object)
+                  : undefined,
               ]}
-            />
-          </View>
+              onLayout={(e) => {
+                const w = e.nativeEvent.layout.width;
+                audioTrackWidthRef.current = w;
+                setAudioTrackWidth(w);
+              }}
+            >
+              <View style={styles.audioRail} />
+              <View
+                style={[
+                  styles.audioFill,
+                  {
+                    width: audioTrackWidth > 0
+                      ? Math.min(displayProgress * audioTrackWidth, audioTrackWidth)
+                      : 0,
+                  },
+                ]}
+              />
+            </View>
+          </GestureDetector>
           {isThisStoryActive ? (
             <Text style={styles.audioTime}>
               {formatMs(displayMs)} / {durationMs > 0 ? formatMs(durationMs) : "--:--"}

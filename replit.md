@@ -49,7 +49,9 @@ Internal tooling:
 
 ## Frontend (`artifacts/marktr`)
 
-- **Stack**: Expo SDK 54, expo-router, React Native 0.81.5, expo-speech, expo-notifications, expo-device, react-native-svg, @tanstack/react-query, AsyncStorage
+- **Stack**: Expo SDK 54, expo-router, React Native 0.81.5, **react-native-track-player** (audio, native), expo-speech (TTS fallback + web), expo-notifications, expo-device, react-native-svg, @tanstack/react-query, AsyncStorage
+- **Audio architecture**: Platform-split — `AudioContext.native.tsx` (RNTP for iOS/Android) + `AudioContext.tsx` (expo-audio + expo-speech for web). Entry point split: `index.native.js` registers RNTP `PlaybackService`; `index.js` is the web fallback. `"main": "./index.js"` in package.json; Metro picks `index.native.js` on device.
+- **RNTP requires a dev build** — `npx expo run:ios` or EAS Build. Expo Go will NOT work after this migration. Web preview in Replit continues to work (web uses AudioContext.tsx / expo-audio path).
 - **Screens**:
   - `app/(tabs)/index.tsx` — Home Feed with category filter + search
   - `app/(tabs)/saved.tsx` — Saved stories (AsyncStorage)

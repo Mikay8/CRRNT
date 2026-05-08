@@ -1,8 +1,11 @@
 import {
   Animated,
+  FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,14 +17,16 @@ import { useAudio } from "@/contexts/AudioContext";
 import { getCategoryMeta } from "@/constants/categories";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
-import QueueScreen from "@/components/QueueScreen";
+import type { Story } from "@workspace/api-client-react";
 
 const TAB_BAR_HEIGHT = 49;
 const BAR_HEIGHT = 4;
 const TRACK_HIT = 32;
 const THUMB_R = 6;
 const THUMB_R_ACTIVE = 8;
-const SWIPE_THRESHOLD = 70;
+const COLLAPSED_HEIGHT = 90;
+const EXPAND_THRESHOLD = 60;
+const DRAG_RANGE = 160;
 
 function WaveBar({ delay, isPlaying, color }: { delay: number; isPlaying: boolean; color: string }) {
   const anim = useRef(new Animated.Value(0.35)).current;
@@ -31,46 +36,77 @@ function WaveBar({ delay, isPlaying, color }: { delay: number; isPlaying: boolea
     if (isPlaying) {
       loopRef.current = Animated.loop(
         Animated.sequence([
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 380 + delay,
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim, {
-            toValue: 0.25,
-            duration: 380 + delay,
-            useNativeDriver: true,
-          }),
+          Animated.timing(anim, { toValue: 1, duration: 380 + delay, useNativeDriver: true }),
+          Animated.timing(anim, { toValue: 0.25, duration: 380 + delay, useNativeDriver: true }),
         ]),
       );
       loopRef.current.start();
     } else {
       loopRef.current?.stop();
-      Animated.timing(anim, {
-        toValue: 0.35,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
+      Animated.timing(anim, { toValue: 0.35, duration: 200, useNativeDriver: true }).start();
     }
     return () => loopRef.current?.stop();
   }, [isPlaying, anim, delay]);
 
   return (
     <Animated.View
-      style={[
-        waveStyles.bar,
-        { backgroundColor: color, transform: [{ scaleY: anim }] },
-      ]}
+      style={[waveStyles.bar, { backgroundColor: color, transform: [{ scaleY: anim }] }]}
     />
   );
 }
 
 const waveStyles = StyleSheet.create({
-  bar: {
-    width: 3,
-    height: 18,
-    borderRadius: 2,
-  },
+  bar: { width: 3, height: 18, borderRadius: 2 },
+});
+
+function QueueItem({
+  story,
+  palette,
+  onPlay,
+  onRemove,
+}: {
+  story: Story;
+  palette: ThemeColors;
+  onPlay: () => void;
+  onRemove: () => void;
+}) {
+  const catMeta = getCategoryMeta(story.category);
+  return (
+    <Pressable
+      onPress={onPlay}
+      style={({ pressed }) => [queueItemStyles.item, { opacity: pressed ? 0.7 : 1 }]}
+    >
+      {story.mediaUrl ? (
+        <Image source={{ uri: story.mediaUrl }} style={queueItemStyles.thumb} resizeMode="cover" />
+      ) : (
+        <View style={[queueItemStyles.thumb, { backgroundColor: palette.border }]} />
+      )}
+      <View style={queueItemStyles.info}>
+        <Text style={[queueItemStyles.title, { color: palette.text }]} numberOfLines={2}>
+          {story.title}
+        </Text>
+        <Text style={[queueItemStyles.meta, { color: palette.textDim }]}>
+          {catMeta?.label ?? story.category}
+        </Text>
+      </View>
+      <Pressable
+        onPress={(e) => { e.stopPropagation?.(); onRemove(); }}
+        hitSlop={10}
+        style={({ pressed }) => [queueItemStyles.removeBtn, { opacity: pressed ? 0.4 : 1 }]}
+      >
+        <Ionicons name="close" size={18} color={palette.textDim} />
+      </Pressable>
+    </Pressable>
+  );
+}
+
+const queueItemStyles = StyleSheet.create({
+  item: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8 },
+  thumb: { width: 48, height: 48, borderRadius: 8 },
+  info: { flex: 1 },
+  title: { fontFamily: "Inter_500Medium", fontSize: 13, lineHeight: 18, marginBottom: 3 },
+  meta: { fontFamily: "Inter_400Regular", fontSize: 11 },
+  removeBtn: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
 });
 
 export default function MiniAudioBar() {
@@ -80,9 +116,13 @@ export default function MiniAudioBar() {
     positionMs,
     durationMs,
     isBarVisible,
+    queue,
     togglePlayPause,
     seekTo,
     dismiss,
+    removeFromQueue,
+    playFromQueue,
+    shuffleQueue,
   } = useAudio();
 
   const { theme: palette } = useThemeContext();
@@ -90,7 +130,15 @@ export default function MiniAudioBar() {
 
   const insets = useSafeAreaInsets();
   const segments = useSegments();
+  const { height: screenHeight } = useWindowDimensions();
+  const EXPANDED_HEIGHT = Math.round(screenHeight * 0.72);
+
+  // slideAnim: native driver — controls bar slide in/out from bottom
   const slideAnim = useRef(new Animated.Value(140)).current;
+  // expandAnim: JS driver — controls bar height expansion
+  const expandAnim = useRef(new Animated.Value(0)).current;
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isExpandedRef = useRef(false);
 
   const [scrubProgress, setScrubProgress] = useState<number | null>(null);
   const [trackWidth, setTrackWidth] = useState(0);
@@ -99,9 +147,6 @@ export default function MiniAudioBar() {
   const seekHoldRef = useRef<number | null>(null);
   const durationMsRef = useRef(durationMs);
   const seekToRef = useRef(seekTo);
-
-  const [showQueue, setShowQueue] = useState(false);
-  const dragAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => { durationMsRef.current = durationMs; }, [durationMs]);
   useEffect(() => { seekToRef.current = seekTo; }, [seekTo]);
@@ -119,14 +164,47 @@ export default function MiniAudioBar() {
     }).start();
   }, [shouldShow, slideAnim]);
 
-  // Close queue if bar hides
   useEffect(() => {
-    if (!shouldShow) setShowQueue(false);
+    if (!shouldShow) {
+      expandAnim.setValue(0);
+      isExpandedRef.current = false;
+      setIsExpanded(false);
+    }
   }, [shouldShow]);
+
+  function openPanel() {
+    isExpandedRef.current = true;
+    setIsExpanded(true);
+    Animated.spring(expandAnim, {
+      toValue: 1,
+      useNativeDriver: false,
+      tension: 68,
+      friction: 12,
+    }).start();
+  }
+
+  function closePanel() {
+    isExpandedRef.current = false;
+    Animated.spring(expandAnim, {
+      toValue: 0,
+      useNativeDriver: false,
+      tension: 68,
+      friction: 12,
+    }).start(() => setIsExpanded(false));
+  }
+
+  // Derived animated values (JS driver — tied to expandAnim)
+  const panelHeight = expandAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [COLLAPSED_HEIGHT, EXPANDED_HEIGHT],
+  });
+  const queueOpacity = expandAnim.interpolate({
+    inputRange: [0.25, 0.65],
+    outputRange: [0, 1],
+  });
 
   const clamp = (v: number) => Math.max(0, Math.min(1, v));
 
-  // Tap gesture: jump to tapped position
   const tapSeekGesture = Gesture.Tap()
     .runOnJS(true)
     .onEnd((e, success) => {
@@ -136,7 +214,6 @@ export default function MiniAudioBar() {
       seekToRef.current(p * durationMsRef.current).catch(() => undefined);
     });
 
-  // Pan gesture: scrub by dragging
   const panSeekGesture = Gesture.Pan()
     .runOnJS(true)
     .minDistance(3)
@@ -168,27 +245,50 @@ export default function MiniAudioBar() {
 
   const seekGesture = Gesture.Race(tapSeekGesture, panSeekGesture);
 
-  // Swipe-up gesture: bar grows then opens queue
+  // Swipe-up on mini bar → expand into full queue panel
   const swipeUpGesture = Gesture.Pan()
     .runOnJS(true)
+    .enabled(!isExpanded)
     .activeOffsetY(-8)
     .failOffsetX([-15, 15])
     .onUpdate((e) => {
-      const p = e.translationY < 0 ? Math.min(-e.translationY / SWIPE_THRESHOLD, 1) : 0;
-      dragAnim.setValue(p);
+      if (e.translationY >= 0) return;
+      expandAnim.setValue(Math.min(-e.translationY / DRAG_RANGE, 1));
     })
     .onEnd((e) => {
-      if (e.translationY < -SWIPE_THRESHOLD || e.velocityY < -600) {
-        setShowQueue(true);
+      if (e.translationY < -EXPAND_THRESHOLD || e.velocityY < -500) {
+        openPanel();
+      } else {
+        Animated.spring(expandAnim, { toValue: 0, useNativeDriver: false, tension: 80, friction: 12 }).start();
       }
-      Animated.spring(dragAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }).start();
     })
     .onFinalize(() => {
-      Animated.spring(dragAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }).start();
+      if (!isExpandedRef.current) {
+        Animated.spring(expandAnim, { toValue: 0, useNativeDriver: false, tension: 80, friction: 12 }).start();
+      }
     });
 
-  const dragScaleY = dragAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] });
-  const dragTranslateY = dragAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -7] });
+  // Drag pill downward swipe → collapse back to mini bar
+  const collapsePanGesture = Gesture.Pan()
+    .runOnJS(true)
+    .enabled(isExpanded)
+    .activeOffsetY(8)
+    .onUpdate((e) => {
+      if (e.translationY <= 0) return;
+      expandAnim.setValue(Math.max(1 - e.translationY / DRAG_RANGE, 0));
+    })
+    .onEnd((e) => {
+      if (e.translationY > EXPAND_THRESHOLD || e.velocityY > 500) {
+        closePanel();
+      } else {
+        Animated.spring(expandAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
+      }
+    })
+    .onFinalize(() => {
+      if (isExpandedRef.current) {
+        Animated.spring(expandAnim, { toValue: 1, useNativeDriver: false, tension: 80, friction: 12 }).start();
+      }
+    });
 
   if (!story && !isBarVisible) return null;
 
@@ -196,9 +296,7 @@ export default function MiniAudioBar() {
 
   if (seekHoldRef.current !== null && durationMs > 0) {
     const targetMs = seekHoldRef.current * durationMs;
-    if (Math.abs(positionMs - targetMs) < 1500) {
-      seekHoldRef.current = null;
-    }
+    if (Math.abs(positionMs - targetMs) < 1500) seekHoldRef.current = null;
   }
 
   const heldProgress = seekHoldRef.current;
@@ -210,118 +308,191 @@ export default function MiniAudioBar() {
       : heldProgress !== null
         ? heldProgress * durationMs
         : positionMs;
+
   const bottomOffset = insets.bottom + (isInTabs ? TAB_BAR_HEIGHT : 0);
   const barBottom = bottomOffset + 8;
 
   const categoryMeta = getCategoryMeta(story?.category ?? null);
   const categoryColor = categoryMeta?.color ?? palette.accent;
-
   const thumbX = trackWidth * displayProgress;
 
   return (
-    <>
-      <GestureDetector gesture={swipeUpGesture}>
+    // Outer: position + slide in/out — native driver
+    <GestureDetector gesture={swipeUpGesture}>
       <Animated.View
-        style={[
-          styles.wrapper,
-          { bottom: barBottom, transform: [{ translateY: slideAnim }, { translateY: dragTranslateY }, { scaleY: dragScaleY }] },
-        ]}
+        style={[styles.outerWrapper, { bottom: barBottom, transform: [{ translateY: slideAnim }] }]}
       >
-        {/* Main content row — tap to open queue */}
-        <Pressable
-          onPress={() => setShowQueue(true)}
-          style={({ pressed }) => [styles.inner, { opacity: pressed ? 0.88 : 1 }]}
-        >
-          {/* Waveform animation */}
-          <View style={styles.waveContainer} pointerEvents="none">
-            <WaveBar delay={0}   isPlaying={isPlaying} color={palette.accent} />
-            <WaveBar delay={80}  isPlaying={isPlaying} color={palette.accent} />
-            <WaveBar delay={160} isPlaying={isPlaying} color={palette.accent} />
-            <WaveBar delay={40}  isPlaying={isPlaying} color={palette.accent} />
-          </View>
+        {/* Inner: height expansion — JS driver */}
+        <Animated.View style={[styles.wrapper, { height: panelHeight }]}>
 
-          {/* Title + time */}
-          <View style={styles.info}>
-            <Text style={styles.titleText} numberOfLines={1}>
-              {story?.title ?? ""}
-            </Text>
-            <Text style={styles.timeText}>
-              {durationMs > 0
-                ? `${formatMs(displayMs)} / ${formatMs(durationMs)}`
-                : categoryMeta?.label ?? ""}
-            </Text>
-          </View>
+          {/* ── Queue content (hidden when collapsed, revealed on expand) ── */}
+          <Animated.View
+            style={[styles.queueContent, { opacity: queueOpacity }]}
+            pointerEvents={isExpanded ? "auto" : "none"}
+          >
+            {/* Drag pill — pan down to collapse */}
+            <GestureDetector gesture={collapsePanGesture}>
+              <View style={styles.dragPillRow}>
+                <View style={styles.dragPill} />
+              </View>
+            </GestureDetector>
 
-          {/* Play / pause */}
+            {/* Header */}
+            <View style={styles.queueHeader}>
+              <Text style={styles.queueTitle}>Queue</Text>
+              <Pressable
+                onPress={closePanel}
+                hitSlop={10}
+                style={({ pressed }) => [{ opacity: pressed ? 0.5 : 1 }]}
+              >
+                <Ionicons name="close" size={22} color={palette.textMuted} />
+              </Pressable>
+            </View>
+
+            {/* Now Playing */}
+            {story && (
+              <View style={styles.queueSection}>
+                <Text style={styles.sectionLabel}>NOW PLAYING</Text>
+                <View style={styles.nowPlayingRow}>
+                  {story.mediaUrl ? (
+                    <Image source={{ uri: story.mediaUrl }} style={styles.nowPlayingThumb} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.nowPlayingThumb, { backgroundColor: palette.border }]} />
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.nowPlayingTitle} numberOfLines={2}>{story.title}</Text>
+                    <Text style={styles.nowPlayingMeta}>{categoryMeta?.label ?? story.category}</Text>
+                  </View>
+                  <View style={[styles.playingBadge, { backgroundColor: (categoryMeta?.color ?? palette.accent) + "22" }]}>
+                    <Ionicons name="musical-notes" size={14} color={categoryMeta?.color ?? palette.accent} />
+                  </View>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.divider} />
+
+            {/* Queue list */}
+            {queue.length > 0 ? (
+              <View style={[styles.queueSection, { flex: 1 }]}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionLabel}>NEXT UP · {queue.length}</Text>
+                  <Pressable
+                    onPress={shuffleQueue}
+                    hitSlop={10}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.5 : 1 }]}
+                  >
+                    <Ionicons name="shuffle" size={18} color={palette.textDim} />
+                  </Pressable>
+                </View>
+                <FlatList
+                  data={queue}
+                  keyExtractor={(item, idx) => `${item.articleId}-${idx}`}
+                  renderItem={({ item, index }) => (
+                    <QueueItem
+                      story={item}
+                      palette={palette}
+                      onPlay={() => { playFromQueue(index); closePanel(); }}
+                      onRemove={() => removeFromQueue(index)}
+                    />
+                  )}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 4, paddingBottom: 8 }}
+                />
+              </View>
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons name="list-outline" size={32} color={palette.textDim} />
+                <Text style={styles.emptyTitle}>Queue is empty</Text>
+                <Text style={styles.emptySubtext}>Swipe right on a story to add it</Text>
+              </View>
+            )}
+          </Animated.View>
+
+          {/* ── Mini bar row (always pinned at bottom) ── */}
           <Pressable
-            onPress={(e) => { e.stopPropagation?.(); togglePlayPause(); }}
-            hitSlop={12}
+            onPress={!isExpanded ? openPanel : undefined}
             style={({ pressed }) => [
-              styles.playBtn,
-              { backgroundColor: categoryColor, opacity: pressed ? 0.7 : 1 },
+              styles.inner,
+              { opacity: pressed && !isExpanded ? 0.88 : 1 },
             ]}
           >
-            <Ionicons
-              name={isPlaying ? "pause" : "play"}
-              size={17}
-              color="#fff"
-              style={isPlaying ? undefined : { marginLeft: 2 }}
-            />
-          </Pressable>
-
-          {/* Dismiss */}
-          <Pressable
-            onPress={(e) => { e.stopPropagation?.(); dismiss(); }}
-            hitSlop={12}
-            style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.5 : 1 }]}
-          >
-            <Ionicons name="close" size={16} color={palette.textDim} />
-          </Pressable>
-        </Pressable>
-
-        {/* Scrubable progress bar — tap or drag */}
-        <GestureDetector gesture={seekGesture}>
-          <View
-            style={styles.progressTrack}
-            onLayout={(e) => {
-              const w = e.nativeEvent.layout.width;
-              trackWidthRef.current = w;
-              setTrackWidth(w);
-            }}
-          >
-            <View style={styles.progressRail} />
-            <View
-              style={[
-                styles.progressFill,
-                {
-                  width: Math.min(displayProgress * trackWidth, trackWidth),
-                  backgroundColor: categoryColor,
-                },
+            <View style={styles.waveContainer} pointerEvents="none">
+              <WaveBar delay={0}   isPlaying={isPlaying} color={palette.accent} />
+              <WaveBar delay={80}  isPlaying={isPlaying} color={palette.accent} />
+              <WaveBar delay={160} isPlaying={isPlaying} color={palette.accent} />
+              <WaveBar delay={40}  isPlaying={isPlaying} color={palette.accent} />
+            </View>
+            <View style={styles.info}>
+              <Text style={styles.titleText} numberOfLines={1}>{story?.title ?? ""}</Text>
+              <Text style={styles.timeText}>
+                {durationMs > 0
+                  ? `${formatMs(displayMs)} / ${formatMs(durationMs)}`
+                  : categoryMeta?.label ?? ""}
+              </Text>
+            </View>
+            <Pressable
+              onPress={(e) => { e.stopPropagation?.(); togglePlayPause(); }}
+              hitSlop={12}
+              style={({ pressed }) => [
+                styles.playBtn,
+                { backgroundColor: categoryColor, opacity: pressed ? 0.7 : 1 },
               ]}
-            />
-            {trackWidth > 0 && (
+            >
+              <Ionicons
+                name={isPlaying ? "pause" : "play"}
+                size={17}
+                color="#fff"
+                style={isPlaying ? undefined : { marginLeft: 2 }}
+              />
+            </Pressable>
+            <Pressable
+              onPress={(e) => { e.stopPropagation?.(); dismiss(); }}
+              hitSlop={12}
+              style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.5 : 1 }]}
+            >
+              <Ionicons name="close" size={16} color={palette.textDim} />
+            </Pressable>
+          </Pressable>
+
+          {/* ── Progress bar (always at bottom) ── */}
+          <GestureDetector gesture={seekGesture}>
+            <View
+              style={styles.progressTrack}
+              onLayout={(e) => {
+                const w = e.nativeEvent.layout.width;
+                trackWidthRef.current = w;
+                setTrackWidth(w);
+              }}
+            >
+              <View style={styles.progressRail} />
               <View
                 style={[
-                  styles.progressThumb,
-                  scrubProgress !== null && styles.progressThumbActive,
+                  styles.progressFill,
                   {
-                    left: thumbX - (scrubProgress !== null ? THUMB_R_ACTIVE : THUMB_R),
+                    width: Math.min(displayProgress * trackWidth, trackWidth),
                     backgroundColor: categoryColor,
                   },
                 ]}
               />
-            )}
-          </View>
-        </GestureDetector>
-      </Animated.View>
-      </GestureDetector>
+              {trackWidth > 0 && (
+                <View
+                  style={[
+                    styles.progressThumb,
+                    scrubProgress !== null && styles.progressThumbActive,
+                    {
+                      left: thumbX - (scrubProgress !== null ? THUMB_R_ACTIVE : THUMB_R),
+                      backgroundColor: categoryColor,
+                    },
+                  ]}
+                />
+              )}
+            </View>
+          </GestureDetector>
 
-      <QueueScreen
-        visible={showQueue}
-        onClose={() => setShowQueue(false)}
-        barBottom={barBottom}
-      />
-    </>
+        </Animated.View>
+      </Animated.View>
+    </GestureDetector>
   );
 }
 
@@ -334,10 +505,12 @@ function formatMs(ms: number): string {
 
 function createStyles(palette: ThemeColors) {
   return StyleSheet.create({
-    wrapper: {
+    outerWrapper: {
       position: "absolute",
       left: 10,
       right: 10,
+    },
+    wrapper: {
       borderRadius: 20,
       backgroundColor: palette.surfaceHigh,
       borderWidth: 1,
@@ -349,6 +522,104 @@ function createStyles(palette: ThemeColors) {
       shadowRadius: 20,
       elevation: 16,
     },
+    // ── Queue content ──
+    queueContent: {
+      flex: 1,
+      overflow: "hidden",
+    },
+    dragPillRow: {
+      alignItems: "center",
+      paddingTop: 12,
+      paddingBottom: 4,
+    },
+    dragPill: {
+      width: 36,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: palette.border,
+    },
+    queueHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 20,
+      paddingTop: 8,
+      paddingBottom: 16,
+    },
+    queueTitle: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 20,
+      color: palette.text,
+    },
+    queueSection: {
+      paddingHorizontal: 20,
+    },
+    sectionLabel: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 11,
+      color: palette.textDim,
+      letterSpacing: 0.8,
+      marginBottom: 12,
+    },
+    sectionHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 12,
+    },
+    nowPlayingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      marginBottom: 4,
+    },
+    nowPlayingThumb: {
+      width: 52,
+      height: 52,
+      borderRadius: 10,
+    },
+    nowPlayingTitle: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 14,
+      color: palette.text,
+      lineHeight: 20,
+      marginBottom: 3,
+    },
+    nowPlayingMeta: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 11,
+      color: palette.textDim,
+    },
+    playingBadge: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    divider: {
+      height: 1,
+      backgroundColor: palette.border,
+      marginHorizontal: 20,
+      marginVertical: 16,
+    },
+    emptyState: {
+      alignItems: "center",
+      paddingVertical: 32,
+      gap: 8,
+    },
+    emptyTitle: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 15,
+      color: palette.textMuted,
+    },
+    emptySubtext: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 12,
+      color: palette.textDim,
+      textAlign: "center",
+    },
+    // ── Mini bar row ──
     inner: {
       flexDirection: "row",
       alignItems: "center",
@@ -391,6 +662,7 @@ function createStyles(palette: ThemeColors) {
       alignItems: "center",
       justifyContent: "center",
     },
+    // ── Progress bar ──
     progressTrack: {
       height: TRACK_HIT,
       width: "100%",

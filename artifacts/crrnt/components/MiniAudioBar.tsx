@@ -21,6 +21,7 @@ const BAR_HEIGHT = 4;
 const TRACK_HIT = 32;
 const THUMB_R = 6;
 const THUMB_R_ACTIVE = 8;
+const SWIPE_THRESHOLD = 70;
 
 function WaveBar({ delay, isPlaying, color }: { delay: number; isPlaying: boolean; color: string }) {
   const anim = useRef(new Animated.Value(0.35)).current;
@@ -100,6 +101,7 @@ export default function MiniAudioBar() {
   const seekToRef = useRef(seekTo);
 
   const [showQueue, setShowQueue] = useState(false);
+  const dragAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => { durationMsRef.current = durationMs; }, [durationMs]);
   useEffect(() => { seekToRef.current = seekTo; }, [seekTo]);
@@ -166,6 +168,28 @@ export default function MiniAudioBar() {
 
   const seekGesture = Gesture.Race(tapSeekGesture, panSeekGesture);
 
+  // Swipe-up gesture: bar grows then opens queue
+  const swipeUpGesture = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetY(-8)
+    .failOffsetX([-15, 15])
+    .onUpdate((e) => {
+      const p = e.translationY < 0 ? Math.min(-e.translationY / SWIPE_THRESHOLD, 1) : 0;
+      dragAnim.setValue(p);
+    })
+    .onEnd((e) => {
+      if (e.translationY < -SWIPE_THRESHOLD || e.velocityY < -600) {
+        setShowQueue(true);
+      }
+      Animated.spring(dragAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }).start();
+    })
+    .onFinalize(() => {
+      Animated.spring(dragAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }).start();
+    });
+
+  const dragScaleY = dragAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] });
+  const dragTranslateY = dragAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -7] });
+
   if (!story && !isBarVisible) return null;
 
   const liveProgress = durationMs > 0 ? positionMs / durationMs : 0;
@@ -196,10 +220,11 @@ export default function MiniAudioBar() {
 
   return (
     <>
+      <GestureDetector gesture={swipeUpGesture}>
       <Animated.View
         style={[
           styles.wrapper,
-          { bottom: barBottom, transform: [{ translateY: slideAnim }] },
+          { bottom: barBottom, transform: [{ translateY: slideAnim }, { translateY: dragTranslateY }, { scaleY: dragScaleY }] },
         ]}
       >
         {/* Main content row — tap to open queue */}
@@ -289,6 +314,7 @@ export default function MiniAudioBar() {
           </View>
         </GestureDetector>
       </Animated.View>
+      </GestureDetector>
 
       <QueueScreen
         visible={showQueue}

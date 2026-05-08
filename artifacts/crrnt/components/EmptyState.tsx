@@ -1,6 +1,8 @@
+import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import palette from "@/constants/colors";
+import { useThemeContext } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 
 interface EmptyStateProps {
   icon?: keyof typeof Ionicons.glyphMap;
@@ -17,6 +19,9 @@ export function EmptyState({
   actionLabel,
   onAction,
 }: EmptyStateProps) {
+  const { theme: palette } = useThemeContext();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   return (
     <View style={styles.container}>
       <View style={styles.iconWrap}>
@@ -36,47 +41,49 @@ export function EmptyState({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    paddingVertical: 64,
-    paddingHorizontal: 32,
-    alignItems: "center",
-    gap: 12,
-  },
-  iconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: palette.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
-  title: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 18,
-    color: palette.text,
-    textAlign: "center",
-  },
-  message: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    color: palette.textMuted,
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  action: {
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: palette.accent,
-  },
-  actionLabel: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 14,
-    color: "#001A11",
-  },
-});
+function createStyles(palette: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      paddingVertical: 64,
+      paddingHorizontal: 32,
+      alignItems: "center",
+      gap: 12,
+    },
+    iconWrap: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      backgroundColor: palette.surface,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 8,
+    },
+    title: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 18,
+      color: palette.text,
+      textAlign: "center",
+    },
+    message: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 14,
+      color: palette.textMuted,
+      textAlign: "center",
+      lineHeight: 20,
+    },
+    action: {
+      marginTop: 16,
+      paddingHorizontal: 20,
+      paddingVertical: 12,
+      borderRadius: 12,
+      backgroundColor: palette.accent,
+    },
+    actionLabel: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 14,
+      color: "#001A11",
+    },
+  });
+}
 
 export default EmptyState;

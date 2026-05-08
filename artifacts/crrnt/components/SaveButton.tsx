@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet } from "react-native";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import palette from "@/constants/colors";
+import { useThemeContext } from "@/contexts/ThemeContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import type { Story } from "@workspace/api-client-react";
 
@@ -12,6 +12,7 @@ interface SaveButtonProps {
 
 export function SaveButton({ story, size = 22 }: SaveButtonProps) {
   const { isSaved, toggleSaved } = useSavedStories();
+  const { theme: palette } = useThemeContext();
   const saved = isSaved(story.articleId);
 
   return (

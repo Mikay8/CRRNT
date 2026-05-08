@@ -16,17 +16,18 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useGetStockHistory,
   useGetStory,
   type Story,
   type Tweet,
 } from "@workspace/api-client-react";
-import palette from "@/constants/colors";
 import { getCategoryMeta } from "@/constants/categories";
 import { useAudio } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
+import { useThemeContext } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 import CategoryBadge from "@/components/CategoryBadge";
 import PriceChart from "@/components/PriceChart";
 import SaveButton from "@/components/SaveButton";
@@ -42,36 +43,39 @@ const RANGE_TABS: { label: string; value: StockRange; hint: string }[] = [
   { label: "1Y", value: "1y", hint: "1 year" },
 ];
 
-const SENTIMENT_CONFIG = {
-  concerned: {
-    label: "Concerned",
-    color: "#FF9500",
-    icon: "alert-circle" as const,
-  },
-  hopeful: {
-    label: "Hopeful",
-    color: palette.positive,
-    icon: "trending-up" as const,
-  },
-  angry: {
-    label: "Angry",
-    color: palette.negative,
-    icon: "flame" as const,
-  },
-  divided: {
-    label: "Divided",
-    color: "#FFB347",
-    icon: "swap-horizontal" as const,
-  },
-  unbothered: {
-    label: "Unbothered",
-    color: palette.textMuted,
-    icon: "remove" as const,
-  },
-  mixed: { label: "Mixed", color: "#8B5CF6", icon: "shuffle" as const },
-} as const;
-
 export default function StoryDetailScreen() {
+  const { theme: palette } = useThemeContext();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
+  const SENTIMENT_CONFIG = useMemo(() => ({
+    concerned: {
+      label: "Concerned",
+      color: "#FF9500",
+      icon: "alert-circle" as const,
+    },
+    hopeful: {
+      label: "Hopeful",
+      color: palette.positive,
+      icon: "trending-up" as const,
+    },
+    angry: {
+      label: "Angry",
+      color: palette.negative,
+      icon: "flame" as const,
+    },
+    divided: {
+      label: "Divided",
+      color: "#FFB347",
+      icon: "swap-horizontal" as const,
+    },
+    unbothered: {
+      label: "Unbothered",
+      color: palette.textMuted,
+      icon: "remove" as const,
+    },
+    mixed: { label: "Mixed", color: "#8B5CF6", icon: "shuffle" as const },
+  }), [palette]);
+
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -81,8 +85,6 @@ export default function StoryDetailScreen() {
   const audioTrackWidthRef = useRef(0);
   const [scrubProgress, setScrubProgress] = useState<number | null>(null);
   const scrubRef = useRef<number | null>(null);
-  // Holds the seek target (0-1) after release until positionMs catches up,
-  // preventing the progress bar from snapping back to the stale position.
   const seekHoldRef = useRef<number | null>(null);
   const { story: audioStory, isPlaying, isBarVisible, positionMs, durationMs, playStory, togglePlayPause, seekTo } = useAudio();
 
@@ -107,7 +109,6 @@ export default function StoryDetailScreen() {
   const isThisStoryActive = !!story && audioStory?.articleId === story.articleId;
   const isThisStoryPlaying = isThisStoryActive && isPlaying;
 
-  // Floating play/pause button — visible when a DIFFERENT story is playing
   const showFloat = isBarVisible && !!audioStory && !!story && audioStory.articleId !== story.articleId;
   const floatAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -121,12 +122,9 @@ export default function StoryDetailScreen() {
   const audioStoryCatColor =
     (audioStory ? getCategoryMeta(audioStory.category)?.color : null) ?? palette.accent;
 
-  // Derived display values (use scrub position while dragging)
   const clamp = (v: number) => Math.max(0, Math.min(1, v));
   const liveProgress = isThisStoryActive && durationMs > 0 ? positionMs / durationMs : 0;
 
-  // Clear the seek hold once positionMs has caught up to within 1.5 s of target.
-  // This prevents the bar from snapping back to a stale position after release.
   if (seekHoldRef.current !== null && durationMs > 0) {
     const targetMs = seekHoldRef.current * durationMs;
     if (Math.abs(positionMs - targetMs) < 1500) {
@@ -144,8 +142,6 @@ export default function StoryDetailScreen() {
         ? heldProgress * durationMs
         : positionMs;
 
-  // Live refs so responder callbacks always see current values even if the
-  // React Compiler memoises the lambda between renders.
   const isThisStoryActiveRef = useRef(false);
   isThisStoryActiveRef.current = isThisStoryActive;
   const durationMsRef = useRef(0);
@@ -495,7 +491,7 @@ export default function StoryDetailScreen() {
               </Text>
             </View>
 
-            {/* Sentiment badge — hidden when tweets were irrelevant/scammy */}
+            {/* Sentiment badge */}
             {(story as any).sentiment ? (
               <View style={styles.sentimentRow}>
                 <View
@@ -655,309 +651,310 @@ function formatCount(n: number | undefined): string {
   return String(n);
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: palette.bg },
-  scrollView: { flex: 1, backgroundColor: palette.bg },
-  floatingPlayBtn: {
-    position: "absolute",
-    right: 20,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 10,
-  },
-  floatingPlayBtnInner: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: palette.bg,
-  },
-  hero: { width: "100%", height: 280, backgroundColor: palette.surfaceHigh },
-  heroPlaceholder: { backgroundColor: palette.surfaceHigh },
-  heroOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "transparent",
-  },
-  content: {
-    gap: 16,
-    backgroundColor: palette.bg,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 22,
-  },
-  metaRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  actionButtons: { flexDirection: "row", alignItems: "center", gap: 10 },
-  audioRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  audioPlayBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: palette.accent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  audioTrack: {
-    flex: 1,
-    height: 28,
-    justifyContent: "center",
-  },
-  audioRail: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 2,
-    backgroundColor: palette.border,
-    borderRadius: 1,
-  },
-  audioFill: {
-    position: "absolute",
-    left: 0,
-    height: 2,
-    backgroundColor: palette.accent,
-    borderRadius: 1,
-  },
-  audioTime: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 11,
-    color: palette.textMuted,
-  },
-  title: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 26,
-    lineHeight: 32,
-    color: palette.text,
-    letterSpacing: -0.5,
-  },
-  source: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 13,
-    color: palette.textDim,
-  },
-  insightCard: {
-    backgroundColor: palette.surface,
-    borderRadius: 18,
-    padding: 16,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: palette.border,
-  },
-  impactCard: {
-    borderColor: "#7B68EE44",
-    backgroundColor: "#7B68EE0A",
-  },
-  socialCard: {
-    borderColor: "#1DA1F233",
-    backgroundColor: "#1DA1F20A",
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  sectionLabel: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 12,
-    color: palette.accent,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  xLogo: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#1DA1F2",
-    lineHeight: 18,
-  },
-  insight: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 18,
-    lineHeight: 24,
-    color: palette.text,
-  },
-  explanation: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    lineHeight: 21,
-    color: palette.textMuted,
-    marginTop: 4,
-  },
-  impactText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 15,
-    lineHeight: 22,
-    color: palette.text,
-  },
-  stockCard: {
-    backgroundColor: palette.surface,
-    borderRadius: 18,
-    padding: 16,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: palette.border,
-  },
-  stockHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  tickerLabel: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 22,
-    color: palette.text,
-    letterSpacing: 0.5,
-  },
-  company: {
-    marginTop: 2,
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
-    color: palette.textMuted,
-  },
-  price: { fontFamily: "Inter_700Bold", fontSize: 20, color: palette.text },
-  delta: { marginTop: 2, fontFamily: "Inter_600SemiBold", fontSize: 13 },
-  rangeTabs: { flexDirection: "row", gap: 8 },
-  rangeTab: {
-    flex: 1,
-    paddingVertical: 7,
-    borderRadius: 8,
-    alignItems: "center",
-    borderWidth: 1,
-  },
-  rangeTabLabel: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
-  chartPlaceholder: {
-    height: 160,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: palette.bgElevated,
-    borderRadius: 12,
-  },
-  chartEmpty: {
-    fontFamily: "Inter_500Medium",
-    color: palette.textDim,
-    fontSize: 13,
-  },
-  chartHint: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 11,
-    color: palette.textDim,
-    textAlign: "center",
-    marginTop: -4,
-  },
-  noTickerCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: palette.surface,
-    borderWidth: 1,
-    borderColor: palette.border,
-  },
-  noTickerText: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 13,
-    color: palette.textMuted,
-    flex: 1,
-  },
-  // Social / Twitter section
-  sentimentRow: { flexDirection: "row", alignItems: "center" },
-  sentimentBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  sentimentLabel: { fontFamily: "Inter_700Bold", fontSize: 12 },
-  peopleSay: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    lineHeight: 21,
-    color: palette.textMuted,
-  },
-  tweetList: { gap: 10, marginTop: 4 },
-  tweetCard: {
-    backgroundColor: palette.bgElevated,
-    borderRadius: 14,
-    padding: 12,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: palette.border,
-  },
-  tweetHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
-  tweetAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#1DA1F233",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  tweetAvatarText: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 13,
-    color: "#1DA1F2",
-  },
-  tweetAuthorName: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 13,
-    color: palette.text,
-  },
-  tweetHandle: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    color: palette.textDim,
-  },
-  tweetText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-    lineHeight: 19,
-    color: palette.textMuted,
-  },
-  tweetStats: { flexDirection: "row", gap: 16 },
-  tweetStat: { flexDirection: "row", alignItems: "center", gap: 4 },
-  tweetStatText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    color: palette.textDim,
-  },
-  sourceBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: palette.bgElevated,
-    borderWidth: 1,
-    borderColor: palette.border,
-    marginTop: 4,
-  },
-  sourceBtnText: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 14,
-    color: palette.text,
-  },
-});
+function createStyles(palette: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: palette.bg },
+    scrollView: { flex: 1, backgroundColor: palette.bg },
+    floatingPlayBtn: {
+      position: "absolute",
+      right: 20,
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.4,
+      shadowRadius: 12,
+      elevation: 10,
+    },
+    floatingPlayBtnInner: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    center: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: palette.bg,
+    },
+    hero: { width: "100%", height: 280, backgroundColor: palette.surfaceHigh },
+    heroPlaceholder: { backgroundColor: palette.surfaceHigh },
+    heroOverlay: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: "transparent",
+    },
+    content: {
+      gap: 16,
+      backgroundColor: palette.bg,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingTop: 22,
+    },
+    metaRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    actionButtons: { flexDirection: "row", alignItems: "center", gap: 10 },
+    audioRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    audioPlayBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: palette.accent,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    audioTrack: {
+      flex: 1,
+      height: 28,
+      justifyContent: "center",
+    },
+    audioRail: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      height: 2,
+      backgroundColor: palette.border,
+      borderRadius: 1,
+    },
+    audioFill: {
+      position: "absolute",
+      left: 0,
+      height: 2,
+      backgroundColor: palette.accent,
+      borderRadius: 1,
+    },
+    audioTime: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 11,
+      color: palette.textMuted,
+    },
+    title: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 26,
+      lineHeight: 32,
+      color: palette.text,
+      letterSpacing: -0.5,
+    },
+    source: {
+      fontFamily: "Inter_500Medium",
+      fontSize: 13,
+      color: palette.textDim,
+    },
+    insightCard: {
+      backgroundColor: palette.surface,
+      borderRadius: 18,
+      padding: 16,
+      gap: 8,
+      borderWidth: 1,
+      borderColor: palette.border,
+    },
+    impactCard: {
+      borderColor: "#7B68EE44",
+      backgroundColor: "#7B68EE0A",
+    },
+    socialCard: {
+      borderColor: "#1DA1F233",
+      backgroundColor: "#1DA1F20A",
+    },
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    sectionLabel: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 12,
+      color: palette.accent,
+      letterSpacing: 1,
+      textTransform: "uppercase",
+    },
+    xLogo: {
+      fontSize: 14,
+      fontWeight: "900",
+      color: "#1DA1F2",
+      lineHeight: 18,
+    },
+    insight: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 18,
+      lineHeight: 24,
+      color: palette.text,
+    },
+    explanation: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 14,
+      lineHeight: 21,
+      color: palette.textMuted,
+      marginTop: 4,
+    },
+    impactText: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 15,
+      lineHeight: 22,
+      color: palette.text,
+    },
+    stockCard: {
+      backgroundColor: palette.surface,
+      borderRadius: 18,
+      padding: 16,
+      gap: 12,
+      borderWidth: 1,
+      borderColor: palette.border,
+    },
+    stockHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+    },
+    tickerLabel: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 22,
+      color: palette.text,
+      letterSpacing: 0.5,
+    },
+    company: {
+      marginTop: 2,
+      fontFamily: "Inter_500Medium",
+      fontSize: 12,
+      color: palette.textMuted,
+    },
+    price: { fontFamily: "Inter_700Bold", fontSize: 20, color: palette.text },
+    delta: { marginTop: 2, fontFamily: "Inter_600SemiBold", fontSize: 13 },
+    rangeTabs: { flexDirection: "row", gap: 8 },
+    rangeTab: {
+      flex: 1,
+      paddingVertical: 7,
+      borderRadius: 8,
+      alignItems: "center",
+      borderWidth: 1,
+    },
+    rangeTabLabel: { fontFamily: "Inter_600SemiBold", fontSize: 12 },
+    chartPlaceholder: {
+      height: 160,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: palette.bgElevated,
+      borderRadius: 12,
+    },
+    chartEmpty: {
+      fontFamily: "Inter_500Medium",
+      color: palette.textDim,
+      fontSize: 13,
+    },
+    chartHint: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 11,
+      color: palette.textDim,
+      textAlign: "center",
+      marginTop: -4,
+    },
+    noTickerCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      padding: 14,
+      borderRadius: 14,
+      backgroundColor: palette.surface,
+      borderWidth: 1,
+      borderColor: palette.border,
+    },
+    noTickerText: {
+      fontFamily: "Inter_500Medium",
+      fontSize: 13,
+      color: palette.textMuted,
+      flex: 1,
+    },
+    sentimentRow: { flexDirection: "row", alignItems: "center" },
+    sentimentBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingVertical: 5,
+      paddingHorizontal: 10,
+      borderRadius: 20,
+      borderWidth: 1,
+    },
+    sentimentLabel: { fontFamily: "Inter_700Bold", fontSize: 12 },
+    peopleSay: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 14,
+      lineHeight: 21,
+      color: palette.textMuted,
+    },
+    tweetList: { gap: 10, marginTop: 4 },
+    tweetCard: {
+      backgroundColor: palette.bgElevated,
+      borderRadius: 14,
+      padding: 12,
+      gap: 8,
+      borderWidth: 1,
+      borderColor: palette.border,
+    },
+    tweetHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+    tweetAvatar: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: "#1DA1F233",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    tweetAvatarText: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 13,
+      color: "#1DA1F2",
+    },
+    tweetAuthorName: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 13,
+      color: palette.text,
+    },
+    tweetHandle: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 12,
+      color: palette.textDim,
+    },
+    tweetText: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 13,
+      lineHeight: 19,
+      color: palette.textMuted,
+    },
+    tweetStats: { flexDirection: "row", gap: 16 },
+    tweetStat: { flexDirection: "row", alignItems: "center", gap: 4 },
+    tweetStatText: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 12,
+      color: palette.textDim,
+    },
+    sourceBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      padding: 14,
+      borderRadius: 12,
+      backgroundColor: palette.bgElevated,
+      borderWidth: 1,
+      borderColor: palette.border,
+      marginTop: 4,
+    },
+    sourceBtnText: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 14,
+      color: palette.text,
+    },
+  });
+}

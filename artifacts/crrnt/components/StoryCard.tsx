@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
@@ -6,19 +6,20 @@ import { Ionicons } from "@expo/vector-icons";
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
-import palette from "@/constants/colors";
 import CategoryBadge from "@/components/CategoryBadge";
 import SaveButton from "@/components/SaveButton";
 import { useAudio } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
+import { useThemeContext } from "@/contexts/ThemeContext";
 import { formatRelativeTime, isToday } from "@/utils/time";
 import type { Story } from "@workspace/api-client-react";
+import type { ThemeColors } from "@/constants/theme";
 
 const ACTION_WIDTH = 80;
 
 function PlayAction({ isQueue }: { isQueue: boolean }) {
   return (
-    <View style={[styles.playAction, isQueue && styles.queueAction]}>
+    <View style={[actionStyles.playAction, isQueue && actionStyles.queueAction]}>
       <Ionicons
         name={isQueue ? "add-circle" : "play-circle"}
         size={36}
@@ -28,13 +29,30 @@ function PlayAction({ isQueue }: { isQueue: boolean }) {
   );
 }
 
-function SaveAction() {
+function SaveAction({ accent }: { accent: string }) {
   return (
-    <View style={styles.saveAction}>
+    <View style={[actionStyles.saveAction, { backgroundColor: accent }]}>
       <Ionicons name="bookmark" size={28} color="#fff" />
     </View>
   );
 }
+
+const actionStyles = StyleSheet.create({
+  playAction: {
+    width: ACTION_WIDTH,
+    backgroundColor: "#22C55E",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  queueAction: {
+    backgroundColor: "#F59E0B",
+  },
+  saveAction: {
+    width: ACTION_WIDTH,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});
 
 interface StoryCardProps {
   story: Story;
@@ -44,6 +62,8 @@ export function StoryCard({ story }: StoryCardProps) {
   const swipeableRef = useRef<SwipeableMethods | null>(null);
   const { toggleSaved } = useSavedStories();
   const { playStory, isBarVisible, addToQueue } = useAudio();
+  const { theme: palette } = useThemeContext();
+  const styles = useMemo(() => createStyles(palette), [palette]);
 
   const handleSave = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
@@ -76,7 +96,7 @@ export function StoryCard({ story }: StoryCardProps) {
       containerStyle={styles.swipeContainer}
       childrenContainerStyle={styles.card}
       renderLeftActions={() => <PlayAction isQueue={isBarVisible} />}
-      renderRightActions={() => <SaveAction />}
+      renderRightActions={() => <SaveAction accent={palette.accent} />}
       onSwipeableWillOpen={(_direction) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
       }}
@@ -152,124 +172,111 @@ export function StoryCard({ story }: StoryCardProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  swipeContainer: {
-    marginHorizontal: 16,
-    marginBottom: 14,
-    borderRadius: 18,
-    overflow: "hidden",
-  },
-  card: {
-    backgroundColor: palette.surface,
-    borderRadius: 18,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: palette.border,
-  },
-  playAction: {
-    width: ACTION_WIDTH,
-    backgroundColor: "#22C55E",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  queueAction: {
-    backgroundColor: "#F59E0B",
-  },
-  saveAction: {
-    width: ACTION_WIDTH,
-    backgroundColor: palette.accent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  media: {
-    width: "100%",
-    height: 180,
-    backgroundColor: palette.surfaceHigh,
-  },
-  mediaPlaceholder: {
-    backgroundColor: palette.surfaceHigh,
-  },
-  body: {
-    padding: 16,
-    gap: 10,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  rowLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  actions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  tickerPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: palette.accent + "1F",
-    borderWidth: 1,
-    borderColor: palette.accent + "55",
-  },
-  tickerText: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 12,
-    color: palette.accent,
-    letterSpacing: 0.4,
-  },
-  title: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 18,
-    lineHeight: 24,
-    color: palette.text,
-  },
-  insight: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 14,
-    lineHeight: 20,
-    color: palette.textMuted,
-  },
-  footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 4,
-  },
-  source: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
-    color: palette.textDim,
-    flex: 1,
-  },
-  footerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  todayBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    backgroundColor: "#22C55E22",
-    borderWidth: 1,
-    borderColor: "#22C55E55",
-  },
-  todayBadgeText: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 10,
-    color: "#22C55E",
-    letterSpacing: 0.3,
-  },
-  timestamp: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 11,
-    color: palette.textDim,
-  },
-});
+function createStyles(palette: ThemeColors) {
+  return StyleSheet.create({
+    swipeContainer: {
+      marginHorizontal: 16,
+      marginBottom: 14,
+      borderRadius: 18,
+      overflow: "hidden",
+    },
+    card: {
+      backgroundColor: palette.surface,
+      borderRadius: 18,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: palette.border,
+    },
+    media: {
+      width: "100%",
+      height: 180,
+      backgroundColor: palette.surfaceHigh,
+    },
+    mediaPlaceholder: {
+      backgroundColor: palette.surfaceHigh,
+    },
+    body: {
+      padding: 16,
+      gap: 10,
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    rowLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    actions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    tickerPill: {
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 8,
+      backgroundColor: palette.accent + "1F",
+      borderWidth: 1,
+      borderColor: palette.accent + "55",
+    },
+    tickerText: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 12,
+      color: palette.accent,
+      letterSpacing: 0.4,
+    },
+    title: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 18,
+      lineHeight: 24,
+      color: palette.text,
+    },
+    insight: {
+      fontFamily: "Inter_500Medium",
+      fontSize: 14,
+      lineHeight: 20,
+      color: palette.textMuted,
+    },
+    footer: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginTop: 4,
+    },
+    source: {
+      fontFamily: "Inter_500Medium",
+      fontSize: 12,
+      color: palette.textDim,
+      flex: 1,
+    },
+    footerRight: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    todayBadge: {
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 6,
+      backgroundColor: "#22C55E22",
+      borderWidth: 1,
+      borderColor: "#22C55E55",
+    },
+    todayBadgeText: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 10,
+      color: "#22C55E",
+      letterSpacing: 0.3,
+    },
+    timestamp: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 11,
+      color: palette.textDim,
+    },
+  });
+}
 
 export default StoryCard;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -12,7 +12,8 @@ import {
   useSimulateInvestment,
   type SimulateResponse,
 } from "@workspace/api-client-react";
-import palette from "@/constants/colors";
+import { useThemeContext } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 
 interface SimulatorPanelProps {
   ticker: string;
@@ -41,7 +42,55 @@ function fmtMoney(n: number): string {
   });
 }
 
+interface ChipProps {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}
+
+function Chip({ label, active, onPress }: ChipProps) {
+  const { theme: palette } = useThemeContext();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        chipStyles.chip,
+        {
+          backgroundColor: active ? palette.accent + "26" : palette.surfaceHigh,
+          borderColor: active ? palette.accent : palette.border,
+          opacity: pressed ? 0.7 : 1,
+        },
+      ]}
+    >
+      <Text
+        style={[
+          chipStyles.chipLabel,
+          { color: active ? palette.accent : palette.textMuted },
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+const chipStyles = StyleSheet.create({
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  chipLabel: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
+  },
+});
+
 export function SimulatorPanel({ ticker }: SimulatorPanelProps) {
+  const { theme: palette } = useThemeContext();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   const [amount, setAmount] = useState(1000);
   const [days, setDays] = useState(365);
   const [result, setResult] = useState<SimulateResponse | null>(null);
@@ -156,137 +205,98 @@ export function SimulatorPanel({ ticker }: SimulatorPanelProps) {
   );
 }
 
-interface ChipProps {
-  label: string;
-  active: boolean;
-  onPress: () => void;
+function createStyles(palette: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      backgroundColor: palette.surface,
+      borderRadius: 18,
+      padding: 16,
+      gap: 10,
+      borderWidth: 1,
+      borderColor: palette.border,
+    },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 4,
+    },
+    title: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 16,
+      color: palette.text,
+    },
+    label: {
+      fontFamily: "Inter_500Medium",
+      fontSize: 12,
+      color: palette.textDim,
+      letterSpacing: 0.4,
+      textTransform: "uppercase",
+      marginTop: 6,
+    },
+    row: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+    cta: {
+      marginTop: 12,
+      height: 48,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    ctaLabel: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 15,
+      color: "#001A11",
+    },
+    error: {
+      color: palette.negative,
+      fontFamily: "Inter_500Medium",
+      fontSize: 13,
+      marginTop: 6,
+    },
+    result: {
+      marginTop: 12,
+      padding: 14,
+      borderRadius: 14,
+      backgroundColor: palette.bgElevated,
+      borderWidth: 1,
+      borderColor: palette.border,
+      gap: 4,
+    },
+    resultLabel: {
+      fontFamily: "Inter_500Medium",
+      fontSize: 12,
+      color: palette.textDim,
+      letterSpacing: 0.4,
+      textTransform: "uppercase",
+    },
+    resultValue: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 32,
+      color: palette.text,
+      letterSpacing: -0.5,
+    },
+    deltaRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginTop: 4,
+    },
+    delta: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 15,
+    },
+    meta: {
+      marginTop: 8,
+      fontFamily: "Inter_400Regular",
+      fontSize: 12,
+      color: palette.textDim,
+      lineHeight: 18,
+    },
+  });
 }
-
-function Chip({ label, active, onPress }: ChipProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.chip,
-        {
-          backgroundColor: active ? palette.accent + "26" : palette.surfaceHigh,
-          borderColor: active ? palette.accent : palette.border,
-          opacity: pressed ? 0.7 : 1,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          styles.chipLabel,
-          { color: active ? palette.accent : palette.textMuted },
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: palette.surface,
-    borderRadius: 18,
-    padding: 16,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: palette.border,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 4,
-  },
-  title: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 16,
-    color: palette.text,
-  },
-  label: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
-    color: palette.textDim,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    marginTop: 6,
-  },
-  row: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  chipLabel: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 13,
-  },
-  cta: {
-    marginTop: 12,
-    height: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  ctaLabel: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 15,
-    color: "#001A11",
-  },
-  error: {
-    color: palette.negative,
-    fontFamily: "Inter_500Medium",
-    fontSize: 13,
-    marginTop: 6,
-  },
-  result: {
-    marginTop: 12,
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: palette.bgElevated,
-    borderWidth: 1,
-    borderColor: palette.border,
-    gap: 4,
-  },
-  resultLabel: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 12,
-    color: palette.textDim,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-  },
-  resultValue: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 32,
-    color: palette.text,
-    letterSpacing: -0.5,
-  },
-  deltaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 4,
-  },
-  delta: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 15,
-  },
-  meta: {
-    marginTop: 8,
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    color: palette.textDim,
-    lineHeight: 18,
-  },
-});
 
 export default SimulatorPanel;

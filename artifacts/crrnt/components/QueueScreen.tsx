@@ -9,10 +9,11 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAudio } from "@/contexts/AudioContext";
 import { getCategoryMeta } from "@/constants/categories";
-import palette from "@/constants/colors";
+import { useThemeContext } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 import type { Story } from "@workspace/api-client-react";
 
 interface QueueScreenProps {
@@ -30,7 +31,10 @@ function QueueItem({
   onPlay: () => void;
   onRemove: () => void;
 }) {
+  const { theme: palette } = useThemeContext();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const catMeta = getCategoryMeta(story.category);
+
   return (
     <Pressable
       onPress={onPlay}
@@ -60,6 +64,9 @@ function QueueItem({
 
 export default function QueueScreen({ visible, onClose, barBottom }: QueueScreenProps) {
   const { story, queue, removeFromQueue, playFromQueue, shuffleQueue } = useAudio();
+  const { theme: palette } = useThemeContext();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   const slideAnim = useRef(new Animated.Value(700)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const [modalVisible, setModalVisible] = useState(false);
@@ -207,154 +214,156 @@ export default function QueueScreen({ visible, onClose, barBottom }: QueueScreen
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: {
-    backgroundColor: "rgba(0,0,0,0.55)",
-  },
-  sheet: {
-    position: "absolute",
-    left: 10,
-    right: 10,
-    maxHeight: "75%",
-    backgroundColor: palette.surfaceHigh,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: palette.borderStrong,
-    overflow: "hidden",
-  },
-  dragPillRow: {
-    alignItems: "center",
-    paddingTop: 12,
-    paddingBottom: 4,
-  },
-  dragPill: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: palette.border,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
-  },
-  headerTitle: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 20,
-    color: palette.text,
-  },
-  section: {
-    paddingHorizontal: 20,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  sectionLabel: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 11,
-    color: palette.textDim,
-    letterSpacing: 0.8,
-  },
-  shuffleBtn: {
-    width: 32,
-    height: 32,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  nowPlayingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 4,
-  },
-  nowPlayingThumb: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
-  },
-  nowPlayingTitle: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 14,
-    color: palette.text,
-    lineHeight: 20,
-    marginBottom: 3,
-  },
-  playingBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: palette.border,
-    marginHorizontal: 20,
-    marginVertical: 16,
-  },
-  list: {
-    flexGrow: 0,
-  },
-  listContent: {
-    gap: 4,
-    paddingBottom: 16,
-  },
-  queueItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  queueThumb: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
-  },
-  thumbPlaceholder: {
-    backgroundColor: palette.border,
-  },
-  queueItemInfo: {
-    flex: 1,
-  },
-  queueItemTitle: {
-    fontFamily: "Inter_500Medium",
-    fontSize: 13,
-    color: palette.text,
-    lineHeight: 18,
-    marginBottom: 3,
-  },
-  queueItemMeta: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 11,
-    color: palette.textDim,
-  },
-  removeBtn: {
-    width: 28,
-    height: 28,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingVertical: 40,
-    gap: 10,
-  },
-  emptyTitle: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 16,
-    color: palette.textMuted,
-  },
-  emptySubtext: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-    color: palette.textDim,
-    textAlign: "center",
-  },
-});
+function createStyles(palette: ThemeColors) {
+  return StyleSheet.create({
+    backdrop: {
+      backgroundColor: "rgba(0,0,0,0.55)",
+    },
+    sheet: {
+      position: "absolute",
+      left: 10,
+      right: 10,
+      maxHeight: "75%",
+      backgroundColor: palette.surfaceHigh,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: palette.borderStrong,
+      overflow: "hidden",
+    },
+    dragPillRow: {
+      alignItems: "center",
+      paddingTop: 12,
+      paddingBottom: 4,
+    },
+    dragPill: {
+      width: 36,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: palette.border,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 20,
+      paddingTop: 8,
+      paddingBottom: 16,
+    },
+    headerTitle: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 20,
+      color: palette.text,
+    },
+    section: {
+      paddingHorizontal: 20,
+    },
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 12,
+    },
+    sectionLabel: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 11,
+      color: palette.textDim,
+      letterSpacing: 0.8,
+    },
+    shuffleBtn: {
+      width: 32,
+      height: 32,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    nowPlayingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      marginBottom: 4,
+    },
+    nowPlayingThumb: {
+      width: 52,
+      height: 52,
+      borderRadius: 10,
+    },
+    nowPlayingTitle: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 14,
+      color: palette.text,
+      lineHeight: 20,
+      marginBottom: 3,
+    },
+    playingBadge: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    divider: {
+      height: 1,
+      backgroundColor: palette.border,
+      marginHorizontal: 20,
+      marginVertical: 16,
+    },
+    list: {
+      flexGrow: 0,
+    },
+    listContent: {
+      gap: 4,
+      paddingBottom: 16,
+    },
+    queueItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      paddingVertical: 8,
+      borderRadius: 12,
+    },
+    queueThumb: {
+      width: 48,
+      height: 48,
+      borderRadius: 8,
+    },
+    thumbPlaceholder: {
+      backgroundColor: palette.border,
+    },
+    queueItemInfo: {
+      flex: 1,
+    },
+    queueItemTitle: {
+      fontFamily: "Inter_500Medium",
+      fontSize: 13,
+      color: palette.text,
+      lineHeight: 18,
+      marginBottom: 3,
+    },
+    queueItemMeta: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 11,
+      color: palette.textDim,
+    },
+    removeBtn: {
+      width: 28,
+      height: 28,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    emptyState: {
+      alignItems: "center",
+      paddingVertical: 40,
+      gap: 10,
+    },
+    emptyTitle: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 16,
+      color: palette.textMuted,
+    },
+    emptySubtext: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 13,
+      color: palette.textDim,
+      textAlign: "center",
+    },
+  });
+}

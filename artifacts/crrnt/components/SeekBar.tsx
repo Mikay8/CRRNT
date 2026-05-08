@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { formatTime } from "@/utils/formatTime";
-import palette from "@/constants/colors";
+import { useThemeContext } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 
 const TRACK_H = 4;
 const HIT_H = 32;
@@ -16,6 +17,9 @@ interface SeekBarProps {
 }
 
 export default function SeekBar({ positionMs, durationMs, onSeek }: SeekBarProps) {
+  const { theme: palette } = useThemeContext();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   const [isSeeking, setIsSeeking] = useState(false);
   const seekValueRef = useRef(0);
   const isSeekingRef = useRef(false);
@@ -61,8 +65,6 @@ export default function SeekBar({ positionMs, durationMs, onSeek }: SeekBarProps
       setIsSeeking(false);
     });
 
-  // While isSeeking, freeze the label at the drag position so the status
-  // callback's positionMs updates don't fight the thumb.
   const displayMs = isSeeking ? seekValueRef.current * durationMs : positionMs;
   const thumbR = isSeeking ? THUMB_R_ACT : THUMB_R;
 
@@ -105,39 +107,41 @@ export default function SeekBar({ positionMs, durationMs, onSeek }: SeekBarProps
   );
 }
 
-const styles = StyleSheet.create({
-  track: {
-    height: HIT_H,
-    width: "100%",
-    justifyContent: "center",
-  },
-  rail: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: TRACK_H,
-    borderRadius: TRACK_H / 2,
-    backgroundColor: palette.border,
-  },
-  fill: {
-    position: "absolute",
-    left: 0,
-    height: TRACK_H,
-    borderRadius: TRACK_H / 2,
-    backgroundColor: palette.accent,
-  },
-  thumb: {
-    position: "absolute",
-    backgroundColor: palette.accent,
-  },
-  labels: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 2,
-  },
-  label: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 11,
-    color: palette.textMuted,
-  },
-});
+function createStyles(palette: ThemeColors) {
+  return StyleSheet.create({
+    track: {
+      height: HIT_H,
+      width: "100%",
+      justifyContent: "center",
+    },
+    rail: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      height: TRACK_H,
+      borderRadius: TRACK_H / 2,
+      backgroundColor: palette.border,
+    },
+    fill: {
+      position: "absolute",
+      left: 0,
+      height: TRACK_H,
+      borderRadius: TRACK_H / 2,
+      backgroundColor: palette.accent,
+    },
+    thumb: {
+      position: "absolute",
+      backgroundColor: palette.accent,
+    },
+    labels: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginTop: 2,
+    },
+    label: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 11,
+      color: palette.textMuted,
+    },
+  });
+}

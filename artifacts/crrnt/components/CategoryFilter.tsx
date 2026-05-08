@@ -1,7 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import palette from "@/constants/colors";
+import { useThemeContext } from "@/contexts/ThemeContext";
 import { CATEGORIES, type Category } from "@/constants/categories";
 
 interface CategoryFilterProps {
@@ -20,6 +20,8 @@ const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
 };
 
 export function CategoryFilter({ active, onChange }: CategoryFilterProps) {
+  const { theme: palette } = useThemeContext();
+
   const handle = (next: Category | null) => {
     Haptics.selectionAsync().catch(() => undefined);
     onChange(next);
@@ -36,6 +38,7 @@ export function CategoryFilter({ active, onChange }: CategoryFilterProps) {
         color={palette.text}
         active={active === null}
         onPress={() => handle(null)}
+        palette={palette}
       />
       {CATEGORIES.map((cat) => (
         <Chip
@@ -45,6 +48,7 @@ export function CategoryFilter({ active, onChange }: CategoryFilterProps) {
           color={cat.color}
           active={active === cat.key}
           onPress={() => handle(cat.key)}
+          palette={palette}
         />
       ))}
     </ScrollView>
@@ -57,9 +61,10 @@ interface ChipProps {
   active: boolean;
   icon?: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
+  palette: ReturnType<typeof useThemeContext>["theme"];
 }
 
-function Chip({ label, color, active, icon, onPress }: ChipProps) {
+function Chip({ label, color, active, icon, onPress, palette }: ChipProps) {
   return (
     <Pressable
       onPress={onPress}

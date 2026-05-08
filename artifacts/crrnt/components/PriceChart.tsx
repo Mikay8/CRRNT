@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Path, Stop } from "react-native-svg";
-import palette from "@/constants/colors";
+import { useThemeContext } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 
 export interface PricePoint {
   date: string;
@@ -16,6 +17,8 @@ interface PriceChartProps {
 }
 
 export function PriceChart({ points, width, height = 160, positive = true }: PriceChartProps) {
+  const { theme: palette } = useThemeContext();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const chart = useMemo(() => buildChart(points, width, height), [points, width, height]);
   const stroke = positive ? palette.accent : palette.negative;
   const fillId = positive ? "crrntFillPos" : "crrntFillNeg";
@@ -88,18 +91,20 @@ function buildChart(points: PricePoint[], width: number, height: number): ChartP
   return { linePath, areaPath };
 }
 
-const styles = StyleSheet.create({
-  empty: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: palette.surfaceHigh,
-    borderRadius: 12,
-  },
-  emptyText: {
-    fontFamily: "Inter_500Medium",
-    color: palette.textDim,
-    fontSize: 13,
-  },
-});
+function createStyles(palette: ThemeColors) {
+  return StyleSheet.create({
+    empty: {
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: palette.surfaceHigh,
+      borderRadius: 12,
+    },
+    emptyText: {
+      fontFamily: "Inter_500Medium",
+      color: palette.textDim,
+      fontSize: 13,
+    },
+  });
+}
 
 export default PriceChart;

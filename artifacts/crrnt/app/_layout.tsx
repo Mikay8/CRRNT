@@ -25,7 +25,7 @@ import { setBaseUrl } from "@workspace/api-client-react";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import MiniAudioBar from "@/components/MiniAudioBar";
-import palette from "@/constants/colors";
+import { ThemeProvider, useThemeContext } from "@/contexts/ThemeContext";
 import { AudioProvider } from "@/contexts/AudioContext";
 import { SavedStoriesProvider } from "@/contexts/SavedStoriesContext";
 
@@ -72,7 +72,7 @@ async function registerPushToken(): Promise<void> {
         name: "CRRNT",
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: palette.accent,
+        lightColor: "#06B6D4",
       });
     }
 
@@ -100,57 +100,27 @@ const queryClient = new QueryClient({
   },
 });
 
-export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-    Outfit_600SemiBold,
-    Outfit_700Bold,
-  });
-
-  useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync().catch(() => undefined);
-    }
-  }, [fontsLoaded, fontError]);
-
-  useEffect(() => {
-    registerPushToken();
-  }, []);
-
-  if (!fontsLoaded && !fontError) {
-    return (
-      <View style={launchStyles.container}>
-        <StatusBar style="light" />
-        <Image
-          source={require("../assets/gif/crrnt-splash-navy.gif")}
-          style={launchStyles.logo}
-          contentFit="contain"
-        />
-      </View>
-    );
-  }
+function ThemedApp() {
+  const { isDark, theme } = useThemeContext();
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: palette.bg }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.bg }}>
       <KeyboardProvider>
         <SafeAreaProvider>
           <ErrorBoundary>
             <QueryClientProvider client={queryClient}>
               <SavedStoriesProvider>
                 <AudioProvider>
-                  <StatusBar style="light" />
+                  <StatusBar style={isDark ? "light" : "dark"} />
                   <Stack
                     screenOptions={{
-                      headerStyle: { backgroundColor: palette.bg },
-                      headerTintColor: palette.text,
+                      headerStyle: { backgroundColor: theme.bg },
+                      headerTintColor: theme.text,
                       headerTitleStyle: {
                         fontFamily: "Inter_700Bold",
-                        color: palette.text,
+                        color: theme.text,
                       },
-                      contentStyle: { backgroundColor: palette.bg },
+                      contentStyle: { backgroundColor: theme.bg },
                     }}
                   >
                     <Stack.Screen
@@ -179,10 +149,50 @@ export default function RootLayout() {
   );
 }
 
+export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Outfit_600SemiBold,
+    Outfit_700Bold,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync().catch(() => undefined);
+    }
+  }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    registerPushToken();
+  }, []);
+
+  if (!fontsLoaded && !fontError) {
+    return (
+      <View style={launchStyles.container}>
+        <StatusBar style="light" />
+        <Image
+          source={require("../assets/gif/crrnt-splash-dark.gif")}
+          style={launchStyles.logo}
+          contentFit="contain"
+        />
+      </View>
+    );
+  }
+
+  return (
+    <ThemeProvider>
+      <ThemedApp />
+    </ThemeProvider>
+  );
+}
+
 const launchStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0E1A",
+    backgroundColor: "#090D12",
     alignItems: "center",
     justifyContent: "center",
   },

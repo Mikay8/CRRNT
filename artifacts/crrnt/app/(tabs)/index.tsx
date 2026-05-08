@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Platform,
   Pressable,
   RefreshControl,
@@ -9,7 +10,6 @@ import {
   Text,
   TextInput,
   View,
-  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -20,19 +20,26 @@ import {
   useTriggerIngestion,
   type Story,
 } from "@workspace/api-client-react";
-import palette from "@/constants/colors";
 import StoryCard from "@/components/StoryCard";
 import CategoryFilter from "@/components/CategoryFilter";
 import EmptyState from "@/components/EmptyState";
 import type { Category } from "@/constants/categories";
+import { useThemeContext } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+
+const LOGO_DARK = require("@/assets/images/full-logo-dark.png") as number;
+const LOGO_LIGHT = require("@/assets/images/full-logo-light.png") as number;
 
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
+  const { isDark, theme: palette, toggleTheme } = useThemeContext();
   const [category, setCategory] = useState<Category | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const styles = useMemo(() => createStyles(palette), [palette]);
 
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);
@@ -128,7 +135,6 @@ export default function FeedScreen() {
             paddingTop: (Platform.OS === "web" ? 16 : insets.top) + 8,
             paddingLeft: Math.max(0, insets.left),
             paddingRight: Math.max(0, insets.right),
-            backgroundColor: palette.bg,
           },
         ]}
       >
@@ -147,7 +153,7 @@ export default function FeedScreen() {
             />
           ) : (
             <Image
-              source={require("@/assets/images/full-logo.png")}
+              source={isDark ? LOGO_DARK : LOGO_LIGHT}
               style={{ width: 100, height: 30 }}
               resizeMode="contain"
               accessibilityLabel="CRRNT"
@@ -162,6 +168,20 @@ export default function FeedScreen() {
                 style={{ marginRight: 8 }}
               />
             ) : null}
+            {!searchVisible && (
+              <Pressable
+                onPress={toggleTheme}
+                hitSlop={10}
+                style={styles.iconBtn}
+                accessibilityLabel={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                <Ionicons
+                  name={isDark ? "sunny-outline" : "moon-outline"}
+                  size={22}
+                  color={palette.textMuted}
+                />
+              </Pressable>
+            )}
             <Pressable
               onPress={searchVisible ? closeSearch : openSearch}
               hitSlop={10}
@@ -170,7 +190,7 @@ export default function FeedScreen() {
               <Ionicons
                 name={searchVisible ? "close" : "search-outline"}
                 size={22}
-                color={searchVisible ? palette.textMuted : palette.textMuted}
+                color={palette.textMuted}
               />
             </Pressable>
           </View>
@@ -254,69 +274,66 @@ export default function FeedScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: palette.bg },
-  header: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: palette.divider,
-  },
-  titleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingBottom: 8,
-  },
-  brand: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 28,
-    color: palette.text,
-    letterSpacing: -0.5,
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  iconBtn: {
-    padding: 4,
-  },
-  searchInput: {
-    flex: 1,
-    height: 36,
-    backgroundColor: palette.surfaceHigh,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    color: palette.text,
-    fontFamily: "Inter_400Regular",
-    fontSize: 15,
-    marginRight: 10,
-  },
-  searchMeta: {
-    height: 36,
-    justifyContent: "center",
-  },
-  searchMetaText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    color: palette.textDim,
-  },
-  searchMetaQuery: {
-    color: palette.textMuted,
-    fontFamily: "Inter_500Medium",
-  },
-  loading: {
-    paddingVertical: 80,
-    alignItems: "center",
-    gap: 12,
-  },
-  loadingText: {
-    fontFamily: "Inter_500Medium",
-    color: palette.textMuted,
-    fontSize: 13,
-  },
-});
+function createStyles(palette: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: palette.bg },
+    header: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 10,
+      paddingBottom: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.divider,
+      backgroundColor: palette.bg,
+    },
+    titleRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingBottom: 8,
+    },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    iconBtn: {
+      padding: 4,
+    },
+    searchInput: {
+      flex: 1,
+      height: 36,
+      backgroundColor: palette.surfaceHigh,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      color: palette.text,
+      fontFamily: "Inter_400Regular",
+      fontSize: 15,
+      marginRight: 10,
+    },
+    searchMeta: {
+      height: 36,
+      justifyContent: "center",
+    },
+    searchMetaText: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 12,
+      color: palette.textDim,
+    },
+    searchMetaQuery: {
+      color: palette.textMuted,
+      fontFamily: "Inter_500Medium",
+    },
+    loading: {
+      paddingVertical: 80,
+      alignItems: "center",
+      gap: 12,
+    },
+    loadingText: {
+      fontFamily: "Inter_500Medium",
+      color: palette.textMuted,
+      fontSize: 13,
+    },
+  });
+}

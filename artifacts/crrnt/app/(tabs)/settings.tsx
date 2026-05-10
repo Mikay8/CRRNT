@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePurchases } from "@/contexts/PurchasesContext";
 import { useGetOnboardingQuiz } from "@workspace/api-client-react";
 import type { ThemeColors } from "@/constants/theme";
+import { AlertDialog, type AlertButton } from "@/components/AlertDialog";
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -138,6 +138,12 @@ export default function SettingsScreen() {
   const [signingOut, setSigningOut] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [dialog, setDialog] = useState<{
+    title: string;
+    message?: string;
+    buttons: AlertButton[];
+  } | null>(null);
+  const closeDialog = () => setDialog(null);
 
   const { data: quizData } = useGetOnboardingQuiz();
   const prefs = quizData?.preferences;
@@ -154,84 +160,103 @@ export default function SettingsScreen() {
 
   const handleChangePassword = () => {
     if (!user?.email) return;
-    Alert.alert(
-      "Change password",
-      `We'll send a reset link to ${user.email}.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Send link",
-          onPress: async () => {
-            try {
-              await forgotPassword(user.email);
-              Alert.alert("Email sent", "Check your inbox for the reset link.");
-            } catch {
-              Alert.alert("Error", "Could not send reset email. Try again.");
-            }
-          },
-        },
-      ]
-    );
+
+    const doSend = async () => {
+      closeDialog();
+      try {
+        await forgotPassword(user.email);
+        setDialog({
+          title: "Email sent",
+          message: "Check your inbox for the reset link.",
+          buttons: [{ text: "OK", onPress: closeDialog }],
+        });
+      } catch {
+        setDialog({
+          title: "Error",
+          message: "Could not send reset email. Try again.",
+          buttons: [{ text: "OK", onPress: closeDialog }],
+        });
+      }
+    };
+
+    setDialog({
+      title: "Change password",
+      message: `We'll send a reset link to ${user.email}.`,
+      buttons: [
+        { text: "Cancel", style: "cancel", onPress: closeDialog },
+        { text: "Send link", onPress: doSend },
+      ],
+    });
   };
 
   const handleSignOut = () => {
-    Alert.alert("Sign out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign out",
-        style: "destructive",
-        onPress: async () => {
-          setSigningOut(true);
-          await logout();
-          setSigningOut(false);
-        },
-      },
-    ]);
+    const doSignOut = async () => {
+      closeDialog();
+      setSigningOut(true);
+      await logout();
+      setSigningOut(false);
+    };
+
+    setDialog({
+      title: "Sign out",
+      message: "Are you sure you want to sign out?",
+      buttons: [
+        { text: "Cancel", style: "cancel", onPress: closeDialog },
+        { text: "Sign out", style: "destructive", onPress: doSignOut },
+      ],
+    });
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete account",
-      "This will permanently delete your account and all associated data. This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete account",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Are you absolutely sure?",
-              "Your stories, preferences, and subscription will be removed immediately.",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Yes, delete everything",
-                  style: "destructive",
-                  onPress: async () => {
-                    setDeleting(true);
-                    try {
-                      await fetch(`${getApiBase()}/api/auth/account`, {
-                        method: "DELETE",
-                        headers: { Authorization: `Bearer ${accessToken ?? ""}` },
-                      });
-                      await logout();
-                    } catch {
-                      Alert.alert("Error", "Could not delete account. Please try again or contact support.");
-                    } finally {
-                      setDeleting(false);
-                    }
-                  },
-                },
-              ]
-            );
-          },
-        },
-      ]
-    );
+    const doDelete = async () => {
+      closeDialog();
+      setDeleting(true);
+      try {
+        await fetch(`${getApiBase()}/api/auth/account`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${accessToken ?? ""}` },
+        });
+        await logout();
+      } catch {
+        setDialog({
+          title: "Error",
+          message: "Could not delete account. Please try again or contact support.",
+          buttons: [{ text: "OK", onPress: closeDialog }],
+        });
+      } finally {
+        setDeleting(false);
+      }
+    };
+
+    const confirmDelete = () => {
+      setDialog({
+        title: "Are you absolutely sure?",
+        message: "Your stories, preferences, and subscription will be removed immediately.",
+        buttons: [
+          { text: "Cancel", style: "cancel", onPress: closeDialog },
+          { text: "Yes, delete everything", style: "destructive", onPress: doDelete },
+        ],
+      });
+    };
+
+    setDialog({
+      title: "Delete account",
+      message: "This will permanently delete your account and all associated data. This cannot be undone.",
+      buttons: [
+        { text: "Cancel", style: "cancel", onPress: closeDialog },
+        { text: "Delete account", style: "destructive", onPress: confirmDelete },
+      ],
+    });
   };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
+      <AlertDialog
+        visible={dialog !== null}
+        title={dialog?.title ?? ""}
+        message={dialog?.message}
+        buttons={dialog?.buttons ?? []}
+      />
       <Text style={[styles.screenTitle, { color: theme.text }]}>Settings</Text>
 
       <ScrollView

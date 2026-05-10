@@ -60,7 +60,15 @@ artifactId = "artifacts/marktr"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/marktr run dev"
+args = "pnpm --filter @workspace/crrnt run dev"
+cwd = "./artifacts/crrnt"
+waitForPort = 20256
+ensurePreviewReachable = "/status"
+router = "expo-domain"
+
+[workflows.workflow.tasks.env]
+PORT = "20256"
+BASE_PATH = "/"
 
 [agent]
 stack = "PNPM_WORKSPACE"

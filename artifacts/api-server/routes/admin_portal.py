@@ -30,7 +30,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from services import db, ingestion, log_buffer
+from services import db, ingestion, log_buffer, metrics
 
 log = logging.getLogger("crrnt.admin")
 
@@ -237,6 +237,76 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
         "cfg": cfg,
         "env_status": env_status,
     })
+
+
+# ── Service logs ──────────────────────────────────────────────────────────────
+
+@router.get("/logs", response_class=HTMLResponse)
+async def admin_logs(request: Request, _: None = Depends(_verify_admin)):
+    return templates.TemplateResponse(request, "admin/logs.html", {
+        "page": "logs",
+        "logs": log_buffer.get_logs(),
+    })
+
+
+# ── API usage ─────────────────────────────────────────────────────────────────
+
+def _dashboard_links() -> list[dict]:
+    return [
+        {
+            "name": "Anthropic (Claude)",
+            "description": "Token usage, cost, rate limits for Claude enrichment",
+            "url": os.environ.get("ANTHROPIC_DASHBOARD_URL", "https://console.anthropic.com/settings/usage"),
+        },
+        {
+            "name": "Supabase",
+            "description": "Database, Auth, Storage usage and billing",
+            "url": os.environ.get("SUPABASE_DASHBOARD_URL", "https://supabase.com/dashboard/project/gdgqbneacjirwlkbgnyb"),
+        },
+        {
+            "name": "RevenueCat",
+            "description": "Subscription analytics, webhook logs, customer lookup",
+            "url": os.environ.get("REVENUECAT_DASHBOARD_URL", "https://app.revenuecat.com"),
+        },
+        {
+            "name": "NewsMesh",
+            "description": "Daily request quota and news API usage",
+            "url": os.environ.get("NEWSMESH_DASHBOARD_URL", "https://newsmesh.com/dashboard"),
+        },
+        {
+            "name": "GetXAPI (Twitter/X)",
+            "description": "Tweet search quota and API usage",
+            "url": os.environ.get("XAPI_DASHBOARD_URL", "https://getxapi.com/dashboard"),
+        },
+        {
+            "name": "Fish Audio (TTS)",
+            "description": "TTS character usage and billing",
+            "url": os.environ.get("FISH_AUDIO_DASHBOARD_URL", "https://fish.audio/dashboard"),
+        },
+    ]
+
+
+@router.get("/usage", response_class=HTMLResponse)
+async def admin_usage(request: Request, _: None = Depends(_verify_admin)):
+    rows = metrics.get_all()
+    total_calls = sum(r["calls"] for r in rows)
+    total_errors = sum(r["errors"] for r in rows)
+    error_rate = round(total_errors / total_calls * 100, 1) if total_calls else 0
+    return templates.TemplateResponse(request, "admin/usage.html", {
+        "page": "usage",
+        "rows": rows,
+        "total_calls": total_calls,
+        "total_errors": total_errors,
+        "error_rate": error_rate,
+        "endpoints": len(rows),
+        "dashboards": _dashboard_links(),
+    })
+
+
+@router.post("/usage/reset")
+async def reset_usage(_: None = Depends(_verify_admin)):
+    metrics.reset()
+    return RedirectResponse(url="/admin/usage", status_code=302)
 
 
 # ── Ingestion actions ─────────────────────────────────────────────────────────

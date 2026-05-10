@@ -14,7 +14,9 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+import time
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -24,7 +26,7 @@ from routes import stories as stories_routes
 from routes import onboarding as onboarding_routes
 from routes import subscriptions as subscriptions_routes
 from routes import admin_portal
-from services import log_buffer, scheduler
+from services import log_buffer, scheduler, metrics
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,6 +67,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _metrics_middleware(request: Request, call_next):
+    start = time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = (time.monotonic() - start) * 1000
+    metrics.record(request.method, request.url.path, response.status_code, elapsed_ms)
+    return response
 
 # ── API routes ────────────────────────────────────────────────────────────────
 app.include_router(health.router, prefix="/api")

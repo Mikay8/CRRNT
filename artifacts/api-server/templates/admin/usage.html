@@ -1,0 +1,135 @@
+{% extends "admin/base.html" %}
+{% block title %} — API Usage{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-white">API Usage</h1>
+      <p class="text-gray-500 text-sm mt-0.5">Per-endpoint request metrics since last server restart</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="/admin/usage" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
+        ↺ Refresh
+      </a>
+      <form method="POST" action="/admin/usage/reset">
+        <button type="submit" class="px-3 py-2 bg-red-900 hover:bg-red-800 text-red-300 text-sm font-medium rounded-lg transition-colors">
+          Reset Counters
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Total Requests</div>
+      <div class="text-3xl font-bold text-white mt-1">{{ total_calls }}</div>
+    </div>
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Total Errors</div>
+      <div class="text-3xl font-bold {% if total_errors > 0 %}text-red-400{% else %}text-green-400{% endif %} mt-1">{{ total_errors }}</div>
+    </div>
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Unique Endpoints</div>
+      <div class="text-3xl font-bold text-white mt-1">{{ endpoints }}</div>
+    </div>
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Error Rate</div>
+      <div class="text-3xl font-bold {% if error_rate > 5 %}text-red-400{% elif error_rate > 0 %}text-yellow-400{% else %}text-green-400{% endif %} mt-1">{{ error_rate }}%</div>
+    </div>
+  </div>
+
+  <!-- Per-endpoint table -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-700">
+      <h2 class="text-sm font-semibold text-white">Endpoint Breakdown</h2>
+    </div>
+    {% if rows %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-700 text-gray-400 text-xs uppercase tracking-wider">
+            <th class="px-5 py-3 text-left">Method</th>
+            <th class="px-5 py-3 text-left">Path</th>
+            <th class="px-5 py-3 text-right">Calls</th>
+            <th class="px-5 py-3 text-right">Errors</th>
+            <th class="px-5 py-3 text-right">Err %</th>
+            <th class="px-5 py-3 text-right">Avg ms</th>
+            <th class="px-5 py-3 text-left">Status codes</th>
+            <th class="px-5 py-3 text-left">Last hit</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-700/50">
+          {% for row in rows %}
+          <tr class="hover:bg-gray-700/30 transition-colors">
+            <td class="px-5 py-3">
+              <span class="inline-block px-2 py-0.5 rounded text-xs font-bold font-mono
+                {% if row.method == 'GET' %}bg-blue-900 text-blue-300
+                {% elif row.method == 'POST' %}bg-green-900 text-green-300
+                {% elif row.method == 'DELETE' %}bg-red-900 text-red-300
+                {% else %}bg-gray-700 text-gray-300{% endif %}">
+                {{ row.method }}
+              </span>
+            </td>
+            <td class="px-5 py-3 font-mono text-xs text-gray-300">{{ row.path }}</td>
+            <td class="px-5 py-3 text-right text-white font-semibold">{{ row.calls }}</td>
+            <td class="px-5 py-3 text-right {% if row.errors > 0 %}text-red-400{% else %}text-gray-400{% endif %}">{{ row.errors }}</td>
+            <td class="px-5 py-3 text-right">
+              <span class="text-xs {% if row.error_pct > 10 %}text-red-400{% elif row.error_pct > 0 %}text-yellow-400{% else %}text-gray-500{% endif %}">
+                {{ row.error_pct }}%
+              </span>
+            </td>
+            <td class="px-5 py-3 text-right font-mono text-xs text-gray-300">{{ row.avg_ms }}</td>
+            <td class="px-5 py-3 text-xs text-gray-400 font-mono">
+              {% for code, count in row.status_counts.items() %}
+                <span class="{% if code|int >= 500 %}text-red-400{% elif code|int >= 400 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                  {{ code }}×{{ count }}
+                </span>
+              {% endfor %}
+            </td>
+            <td class="px-5 py-3 text-xs text-gray-500 font-mono">{{ row.last_ts }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="px-5 py-10 text-center text-gray-500 text-sm">
+      No requests recorded yet. Make some API calls to see metrics here.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- External service dashboards -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-700">
+      <h2 class="text-sm font-semibold text-white">External Service Dashboards</h2>
+    </div>
+    <div class="divide-y divide-gray-700/50">
+      {% for svc in dashboards %}
+      <div class="px-5 py-4 flex items-center justify-between">
+        <div>
+          <div class="text-sm font-medium text-white">{{ svc.name }}</div>
+          <div class="text-xs text-gray-500 mt-0.5">{{ svc.description }}</div>
+        </div>
+        {% if svc.url %}
+        <a href="{{ svc.url }}" target="_blank" rel="noopener"
+           class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5">
+          Open ↗
+        </a>
+        {% else %}
+        <span class="text-xs text-gray-600 italic">URL not configured</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<script>
+  setTimeout(() => location.reload(), 30000);
+</script>
+{% endblock %}

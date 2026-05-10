@@ -2,9 +2,9 @@ uploads = []
 
 [[generated]]
 id = "jWeATstLuKdIIejUIOAV6"
-uri = "file://artifacts/marktr/assets/images/icon.png"
+uri = "file://artifacts/crrnt/assets/images/icon.png"
 type = "image"
-title = "marktr app icon"
+title = "crrnt app icon"
 
 [[outputs]]
 id = "AHbgnUy25K-YJ1HevNZpn"

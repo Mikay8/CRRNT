@@ -39,9 +39,13 @@ async def register(body: RegisterRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Registration failed")
 
     # Ensure public.users row exists
-    user = db.get_user(res.user.id)
-    if not user:
-        user = db.create_user(res.user.id, body.email)
+    try:
+        user = db.get_user(res.user.id)
+        if not user:
+            user = db.create_user(res.user.id, body.email)
+    except Exception as exc:
+        log.error("Failed to create/get user row after sign_up: %s", exc)
+        raise HTTPException(status_code=500, detail=f"User profile creation failed: {exc}")
 
     session = res.session
 

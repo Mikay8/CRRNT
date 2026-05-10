@@ -129,12 +129,12 @@ function AuthGate() {
     return <Redirect href={"/auth/login" as any} />;
   }
 
-  if (user && !user.onboarding_complete && !inOnboarding && !inAuthGroup) {
-    return <Redirect href={"/onboarding" as any} />;
+  if (user && inAuthGroup) {
+    return <Redirect href={!user.onboarding_complete ? ("/onboarding" as any) : "/(tabs)"} />;
   }
 
-  if (user && (inAuthGroup || inOnboarding)) {
-    return <Redirect href="/(tabs)" />;
+  if (user && !user.onboarding_complete && !inOnboarding) {
+    return <Redirect href={"/onboarding" as any} />;
   }
 
   return null;

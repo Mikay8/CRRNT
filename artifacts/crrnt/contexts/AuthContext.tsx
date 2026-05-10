@@ -38,6 +38,7 @@ interface AuthContextValue {
   register: (email: string, password: string) => Promise<{ requiresConfirmation: boolean }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  updateUser: (fields: Partial<CrrntUser>) => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   getAuthHeader: () => Record<string, string>;
   isPaid: boolean;
@@ -178,6 +179,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await _clearSession();
   }, [accessToken, _clearSession]);
 
+  const updateUser = useCallback(async (fields: Partial<CrrntUser>) => {
+    if (!user) return;
+    const updated = { ...user, ...fields };
+    setUser(updated);
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(updated));
+  }, [user]);
+
   const refreshUser = useCallback(async () => {
     if (!accessToken) return;
     try {
@@ -211,11 +219,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       register,
       logout,
       refreshUser,
+      updateUser,
       forgotPassword,
       getAuthHeader,
       isPaid,
     }),
-    [user, accessToken, hydrated, login, register, logout, refreshUser, forgotPassword, getAuthHeader, isPaid]
+    [user, accessToken, hydrated, login, register, logout, refreshUser, updateUser, forgotPassword, getAuthHeader, isPaid]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -2,7 +2,7 @@
  * Onboarding quiz — collected once after registration.
  * Answers feed the personalization engine.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -136,10 +136,16 @@ const STEPS: Step[] = [
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
-  const { accessToken, refreshUser } = useAuth();
+  const { user, updateUser } = useAuth();
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({ ...QUIZ_DEFAULTS });
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (user?.onboarding_complete) {
+      router.replace("/(tabs)");
+    }
+  }, [user?.onboarding_complete]);
 
   const saveQuiz = useSaveOnboardingQuiz();
   const current = STEPS[step];
@@ -168,12 +174,7 @@ export default function OnboardingScreen() {
     return Boolean(val);
   };
 
-  const handleNext = async () => {
-    if (step < total - 1) {
-      setStep((s) => s + 1);
-      return;
-    }
-    setSubmitting(true);
+  const submitQuiz = async () => {
     try {
       await saveQuiz.mutateAsync({
         data: {
@@ -185,21 +186,30 @@ export default function OnboardingScreen() {
           income_bracket: answers.income_bracket || undefined,
         },
       } as Parameters<typeof saveQuiz.mutateAsync>[0]);
-      await refreshUser();
-      router.replace("/(tabs)");
     } catch {
-      router.replace("/(tabs)");
-    } finally {
-      setSubmitting(false);
+      // best-effort — still mark complete locally so the user isn't stuck
     }
+    await updateUser({ onboarding_complete: true });
   };
 
-  const handleSkip = () => {
+  const handleNext = async () => {
     if (step < total - 1) {
       setStep((s) => s + 1);
-    } else {
-      router.replace("/(tabs)");
+      return;
     }
+    setSubmitting(true);
+    await submitQuiz();
+    setSubmitting(false);
+  };
+
+  const handleSkip = async () => {
+    if (step < total - 1) {
+      setStep((s) => s + 1);
+      return;
+    }
+    setSubmitting(true);
+    await submitQuiz();
+    setSubmitting(false);
   };
 
   return (

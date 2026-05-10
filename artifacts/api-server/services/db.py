@@ -246,13 +246,22 @@ def get_user_by_email(email: str) -> Optional[dict[str, Any]]:
 
 
 def create_user(user_id: str, email: str) -> dict[str, Any]:
-    """Create a users row after Supabase Auth creates the auth.users entry."""
+    """Create a users row after Supabase Auth creates the auth.users entry.
+
+    Uses upsert so this is idempotent if a DB trigger already created the row.
+    """
     result = (
         get_client().table("users")
-        .insert({"id": user_id, "email": email})
+        .upsert({"id": user_id, "email": email}, on_conflict="id")
         .execute()
     )
-    return result.data[0]
+    if result.data:
+        return result.data[0]
+    # Upsert returned no data (no-op on conflict) — fetch the existing row
+    existing = get_user(user_id)
+    if existing:
+        return existing
+    raise RuntimeError(f"Failed to create or retrieve user row for {user_id}")
 
 
 def update_user(user_id: str, fields: dict[str, Any]) -> Optional[dict[str, Any]]:

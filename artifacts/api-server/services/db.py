@@ -309,14 +309,26 @@ def get_preferences(user_id: str) -> Optional[dict[str, Any]]:
 def upsert_preferences(user_id: str, prefs: dict[str, Any]) -> dict[str, Any]:
     from datetime import datetime, timezone
 
-    prefs["user_id"] = user_id
-    prefs["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = (
-        get_client().table("user_preferences")
-        .upsert(prefs, on_conflict="user_id")
-        .execute()
-    )
-    return result.data[0]
+    payload = {
+        **prefs,
+        "user_id": user_id,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    existing = get_preferences(user_id)
+    if existing:
+        result = (
+            get_client().table("user_preferences")
+            .update(payload)
+            .eq("user_id", user_id)
+            .execute()
+        )
+    else:
+        result = (
+            get_client().table("user_preferences")
+            .insert(payload)
+            .execute()
+        )
+    return result.data[0] if result.data else payload
 
 
 # ── Ingestion logs ─────────────────────────────────────────────────────────────

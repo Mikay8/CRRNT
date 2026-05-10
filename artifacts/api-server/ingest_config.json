@@ -1,0 +1,30 @@
+{
+  "mode": "trending",
+  "categories": {
+    "celebrity": {
+      "enabled": true,
+      "count": 10
+    },
+    "tech": {
+      "enabled": true,
+      "count": 10
+    },
+    "government": {
+      "enabled": true,
+      "count": 10
+    },
+    "sports": {
+      "enabled": true,
+      "count": 10
+    },
+    "business": {
+      "enabled": true,
+      "count": 10
+    },
+    "science": {
+      "enabled": true,
+      "count": 10
+    }
+  },
+  "trending_count": 2
+}

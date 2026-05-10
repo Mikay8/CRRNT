@@ -24,6 +24,7 @@ import {
 } from "@workspace/api-client-react";
 import { getCategoryMeta } from "@/constants/categories";
 import { useAudio } from "@/contexts/AudioContext";
+import { usePurchases } from "@/contexts/PurchasesContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -114,6 +115,7 @@ export default function StoryDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { isPro } = usePurchases();
   const { saved } = useSavedStories();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
   const [audioTrackWidth, setAudioTrackWidth] = useState(0);
@@ -339,63 +341,65 @@ export default function StoryDetailScreen() {
 
           <Text style={styles.title}>{story.title}</Text>
 
-          {/* Audio player row */}
-          <View style={styles.audioRow}>
-            <Pressable
-              onPress={toggleAudio}
-              style={({ pressed }) => [
-                styles.audioPlayBtn,
-                { opacity: pressed ? 0.7 : 1 },
-              ]}
-              accessibilityLabel={isThisStoryPlaying ? "Pause audio" : "Play audio"}
-            >
-              <Ionicons
-                name={isThisStoryPlaying ? "pause" : "play"}
-                size={14}
-                color={palette.bg}
-              />
-            </Pressable>
-            <GestureDetector gesture={seekGesture}>
-              <View
-                accessible={isThisStoryActive}
-                accessibilityLabel="Seek bar"
-                accessibilityRole="adjustable"
-                style={[
-                  styles.audioTrack,
-                  Platform.OS === "web" && isThisStoryActive
-                    ? ({ cursor: "pointer" } as object)
-                    : undefined,
+          {/* Audio player row — Pro only */}
+          {isPro && (
+            <View style={styles.audioRow}>
+              <Pressable
+                onPress={toggleAudio}
+                style={({ pressed }) => [
+                  styles.audioPlayBtn,
+                  { opacity: pressed ? 0.7 : 1 },
                 ]}
-                onLayout={(e) => {
-                  const w = e.nativeEvent.layout.width;
-                  audioTrackWidthRef.current = w;
-                  setAudioTrackWidth(w);
-                }}
+                accessibilityLabel={isThisStoryPlaying ? "Pause audio" : "Play audio"}
               >
-                <View style={styles.audioRail} />
-                <View
-                  style={[
-                    styles.audioFill,
-                    {
-                      width:
-                        audioTrackWidth > 0
-                          ? Math.min(
-                              displayProgress * audioTrackWidth,
-                              audioTrackWidth
-                            )
-                          : 0,
-                    },
-                  ]}
+                <Ionicons
+                  name={isThisStoryPlaying ? "pause" : "play"}
+                  size={14}
+                  color={palette.bg}
                 />
-              </View>
-            </GestureDetector>
-            {isThisStoryActive ? (
-              <Text style={styles.audioTime}>
-                {formatMs(displayMs)} /{" "}
-                {durationMs > 0 ? formatMs(durationMs) : "--:--"}
-              </Text>
-            ) : null}
-          </View>
+              </Pressable>
+              <GestureDetector gesture={seekGesture}>
+                <View
+                  accessible={isThisStoryActive}
+                  accessibilityLabel="Seek bar"
+                  accessibilityRole="adjustable"
+                  style={[
+                    styles.audioTrack,
+                    Platform.OS === "web" && isThisStoryActive
+                      ? ({ cursor: "pointer" } as object)
+                      : undefined,
+                  ]}
+                  onLayout={(e) => {
+                    const w = e.nativeEvent.layout.width;
+                    audioTrackWidthRef.current = w;
+                    setAudioTrackWidth(w);
+                  }}
+                >
+                  <View style={styles.audioRail} />
+                  <View
+                    style={[
+                      styles.audioFill,
+                      {
+                        width:
+                          audioTrackWidth > 0
+                            ? Math.min(
+                                displayProgress * audioTrackWidth,
+                                audioTrackWidth
+                              )
+                            : 0,
+                      },
+                    ]}
+                  />
+                </View>
+              </GestureDetector>
+              {isThisStoryActive ? (
+                <Text style={styles.audioTime}>
+                  {formatMs(displayMs)} /{" "}
+                  {durationMs > 0 ? formatMs(durationMs) : "--:--"}
+                </Text>
+              ) : null}
+            </View>
+          )}
 
           <Pressable
             onPress={openSource}
@@ -620,8 +624,8 @@ export default function StoryDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Floating play/pause — visible when a different story is actively playing */}
-      <Animated.View
+      {/* Floating play/pause — Pro only, visible when a different story is actively playing */}
+      {isPro && <Animated.View
         pointerEvents={showFloat ? "auto" : "none"}
         style={[
           styles.floatingPlayBtn,
@@ -649,7 +653,7 @@ export default function StoryDetailScreen() {
             style={isPlaying ? undefined : { marginLeft: 2 }}
           />
         </Pressable>
-      </Animated.View>
+      </Animated.View>}
     </View>
   );
 }

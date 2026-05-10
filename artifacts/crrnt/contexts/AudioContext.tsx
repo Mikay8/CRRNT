@@ -4,7 +4,7 @@ import {
   setAudioModeAsync,
 } from "expo-audio";
 import * as Speech from "expo-speech";
-import { getBaseUrl } from "@workspace/api-client-react";
+import { getBaseUrl, getAuthToken } from "@workspace/api-client-react";
 import type { Story } from "@workspace/api-client-react";
 import React, {
   createContext,
@@ -77,6 +77,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [speechDurationMs, setSpeechDurationMs] = useState(0);
   const [speechPlaying, setSpeechPlaying] = useState(false);
 
+  const blobUrlRef = useRef<string | null>(null);
   const speechTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speechOffsetRef = useRef<{ startTime: number; offsetMs: number } | null>(null);
   const speechTextRef = useRef<string>("");
@@ -310,13 +311,30 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       _setSpeechPlaying(false);
       speechPausedAtMsRef.current = 0;
 
-      const audioUrl = (newStory as any).audioUrl as string | undefined;
+      const audioUrl = newStory.tts_url;
 
       if (audioUrl) {
         const fullUrl = `${getBaseUrl() ?? ""}${audioUrl}`;
+        const token = await getAuthToken();
         await configureAudioSession();
         _setAudioMode(true);
-        player.replace({ uri: fullUrl });
+
+        if (typeof document !== "undefined" && token) {
+          // Web: HTML5 audio can't send auth headers, fetch the blob first
+          if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+          const res = await fetch(fullUrl, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          blobUrlRef.current = blobUrl;
+          player.replace({ uri: blobUrl });
+        } else {
+          player.replace({
+            uri: fullUrl,
+            ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+          });
+        }
         player.play();
         try {
           player.setActiveForLockScreen(true, {

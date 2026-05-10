@@ -31,8 +31,8 @@ import MiniAudioBar from "@/components/MiniAudioBar";
 import { ThemeProvider, useThemeContext } from "@/contexts/ThemeContext";
 import { AudioProvider } from "@/contexts/AudioContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { PurchasesProvider } from "@/contexts/PurchasesContext";
 import { SavedStoriesProvider } from "@/contexts/SavedStoriesContext";
-import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -152,7 +152,7 @@ function ThemedApp() {
               <QueryClientProvider client={queryClient}>
                 <AuthTokenWirer />
                 <AuthGate />
-                <SubscriptionProvider>
+                <PurchasesProvider>
                   <SavedStoriesProvider>
                     <AudioProvider>
                       <StatusBar style={isDark ? "light" : "dark"} />
@@ -208,7 +208,7 @@ function ThemedApp() {
                       <MiniAudioBar />
                     </AudioProvider>
                   </SavedStoriesProvider>
-                </SubscriptionProvider>
+                </PurchasesProvider>
               </QueryClientProvider>
             </AuthProvider>
           </ErrorBoundary>

@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePurchases } from "@/contexts/PurchasesContext";
 import { useGetOnboardingQuiz } from "@workspace/api-client-react";
 import type { ThemeColors } from "@/constants/theme";
 
@@ -117,12 +118,8 @@ const rowStyles = StyleSheet.create({
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function tierLabel(tier: string): string {
-  return tier === "paid" ? "Pro" : "Free";
-}
-
-function tierColor(tier: string): string {
-  return tier === "paid" ? "#10B981" : "#F59E0B";
+function tierColor(isPro: boolean): string {
+  return isPro ? "#10B981" : "#F59E0B";
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -131,8 +128,16 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { isDark, theme, toggleTheme } = useThemeContext();
   const { user, logout, forgotPassword, accessToken } = useAuth();
+  const {
+    isPro,
+    customerInfo,
+    presentPaywall,
+    presentCustomerCenter,
+    restorePurchases,
+  } = usePurchases();
   const [signingOut, setSigningOut] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const { data: quizData } = useGetOnboardingQuiz();
   const prefs = quizData?.preferences;
@@ -244,12 +249,68 @@ export default function SettingsScreen() {
             <Text style={[styles.accountEmail, { color: theme.text }]} numberOfLines={1}>
               {user?.email ?? "—"}
             </Text>
-            <View style={[styles.tierBadge, { backgroundColor: tierColor(user?.tier ?? "free") + "22" }]}>
-              <Text style={[styles.tierText, { color: tierColor(user?.tier ?? "free") }]}>
-                {tierLabel(user?.tier ?? "free")}
+            <View style={[styles.tierBadge, { backgroundColor: tierColor(isPro) + "22" }]}>
+              <Text style={[styles.tierText, { color: tierColor(isPro) }]}>
+                {isPro ? "Pro" : "Free"}
               </Text>
             </View>
           </View>
+          {!isPro && (
+            <Pressable
+              style={[styles.upgradeBtn, { backgroundColor: theme.accent }]}
+              onPress={() => presentPaywall()}
+            >
+              <Text style={styles.upgradeBtnText}>Upgrade</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {/* ── Subscription ──────────────────────────────────────────── */}
+        <SectionHeader label="Subscription" theme={theme} />
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {isPro ? (
+            <>
+              <Row
+                icon="shield-checkmark-outline"
+                label="CRRNT Pro"
+                value={
+                  customerInfo?.entitlements.active["CRRNT Pro"]?.expirationDate
+                    ? `Renews ${new Date(customerInfo.entitlements.active["CRRNT Pro"].expirationDate).toLocaleDateString()}`
+                    : "Active"
+                }
+                theme={theme}
+              />
+              <Row
+                icon="settings-outline"
+                label="Manage subscription"
+                onPress={presentCustomerCenter}
+                theme={theme}
+              />
+            </>
+          ) : (
+            <Row
+              icon="star-outline"
+              label="Upgrade to CRRNT Pro"
+              value="Unlimited stories, audio & more"
+              onPress={() => presentPaywall()}
+              theme={theme}
+            />
+          )}
+          <Row
+            icon="refresh-outline"
+            label={restoring ? "Restoring…" : "Restore purchases"}
+            onPress={
+              restoring
+                ? undefined
+                : async () => {
+                    setRestoring(true);
+                    await restorePurchases();
+                    setRestoring(false);
+                  }
+            }
+            theme={theme}
+            last
+          />
         </View>
 
         {/* ── Personalization ───────────────────────────────────────── */}
@@ -379,5 +440,15 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     overflow: "hidden",
+  },
+  upgradeBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  upgradeBtnText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 13,
+    color: "#fff",
   },
 });

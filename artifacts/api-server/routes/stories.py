@@ -148,13 +148,15 @@ async def unsave_story(
 async def get_story_audio(
     story_id: str,
     request: Request,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user_optional),
 ) -> Response:
     story = db.get_story(story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
-    if story.get("tier") == "paid" and user.get("tier") != "paid":
-        raise HTTPException(status_code=403, detail="Requires Pro subscription")
+    # Paid audio requires auth; free audio is publicly streamable (UUIDs are unguessable)
+    if story.get("tier") == "paid":
+        if not user or user.get("tier") != "paid":
+            raise HTTPException(status_code=403, detail="Requires Pro subscription")
 
     audio_bytes = db.get_audio(story_id)
     if not audio_bytes:

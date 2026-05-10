@@ -4,7 +4,7 @@ import {
   setAudioModeAsync,
 } from "expo-audio";
 import * as Speech from "expo-speech";
-import { getBaseUrl, getAuthToken } from "@workspace/api-client-react";
+import { getBaseUrl } from "@workspace/api-client-react";
 import type { Story } from "@workspace/api-client-react";
 import React, {
   createContext,
@@ -318,46 +318,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       let audioStarted = false;
 
       if (audioUrl) {
+        // Audio endpoint is publicly streamable (free stories use UUID-based URLs).
+        // Stream directly — no auth headers needed on any platform.
         const fullUrl = `${getBaseUrl() ?? ""}${audioUrl}`;
-        const token = await getAuthToken();
         await configureAudioSession();
-
-        if (typeof document !== "undefined" && token) {
-          // Web: HTML5 audio can't send auth headers — fetch blob with auth first
-          if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
-          try {
-            const res = await fetch(fullUrl, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (res.ok) {
-              const blob = await res.blob();
-              const blobUrl = URL.createObjectURL(blob);
-              blobUrlRef.current = blobUrl;
-              // Pre-load duration via HTML5 Audio — expo-audio web reports it late
-              const probeEl = document.createElement("audio");
-              const probeDur = await new Promise<number>((resolve) => {
-                probeEl.onloadedmetadata = () => resolve((probeEl as any).duration as number);
-                probeEl.onerror = () => resolve(0);
-                probeEl.src = blobUrl;
-              });
-              if (probeDur > 0 && isFinite(probeDur)) {
-                const ms = Math.round(probeDur * 1000);
-                audioDurationMsRef.current = ms;
-                setAudioDurationMs(ms);
-              }
-              player.replace({ uri: blobUrl });
-              audioStarted = true;
-            }
-          } catch {
-            // fetch failed — fall through to speech synthesis
-          }
-        } else {
-          player.replace({
-            uri: fullUrl,
-            ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
-          });
-          audioStarted = true;
+        if (blobUrlRef.current) {
+          URL.revokeObjectURL(blobUrlRef.current);
+          blobUrlRef.current = null;
         }
+        player.replace({ uri: fullUrl });
+        audioStarted = true;
       }
 
       if (audioStarted) {

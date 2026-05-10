@@ -201,6 +201,10 @@ function ThemedApp() {
                           options={{ headerShown: false, presentation: "card" }}
                         />
                         <Stack.Screen
+                          name="subscription/manage"
+                          options={{ headerShown: false, presentation: "card" }}
+                        />
+                        <Stack.Screen
                           name="+not-found"
                           options={{ title: "Not found" }}
                         />

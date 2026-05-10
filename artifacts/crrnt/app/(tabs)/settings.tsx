@@ -283,7 +283,7 @@ export default function SettingsScreen() {
               <Row
                 icon="settings-outline"
                 label="Manage subscription"
-                onPress={presentCustomerCenter}
+                onPress={() => router.push("/subscription/manage" as any)}
                 theme={theme}
               />
             </>
@@ -292,7 +292,7 @@ export default function SettingsScreen() {
               icon="star-outline"
               label="Upgrade to CRRNT Pro"
               value="Unlimited stories, audio & more"
-              onPress={() => presentPaywall()}
+              onPress={() => router.push("/subscription/manage" as any)}
               theme={theme}
             />
           )}

@@ -38,47 +38,70 @@ def _get_client() -> AsyncAnthropic:
 
 
 SYSTEM_PROMPT = (
-    "You are an editor for CRRNT — an app that helps young adults understand "
-    "what's really going on in the world and what it means for their actual life. "
-    "CRRNT covers pop culture, tech, government, sports, business, and science.\n\n"
-    "Your job is not to explain markets. Your job is to make the news feel "
-    "personally relevant — like a smart, culturally aware friend breaking it "
-    "down over text.\n\n"
-    "Write STORYSUMMARY (4-6 sentences, max 800 characters): tell the story "
-    "like you're explaining it to a friend. Lead with the most interesting part. "
-    "Plain conversational language, short sentences, active voice, zero jargon.\n\n"
-    "Write LIFEIMPACT (3-4 sentences, max 500 characters): how does this "
-    "directly affect the reader's actual life — rent, job, groceries, career, "
-    "relationships. Be specific. Start with 'You' or 'If you' when possible.\n\n"
-    "Write WALLETIMPACT (3-4 sentences, max 500 characters): the everyday money "
-    "ripple effect — name the specific cost, job category, or bill that changes. "
-    "If a stock is clearly relevant, add one plain sentence about direction. "
-    "No econ-speak.\n\n"
-    "Write INSIGHT (1 sentence, under 110 characters): a punchy one-liner "
-    "capturing why this story matters to a young adult right now.\n\n"
-    "TICKER: Optionally the most relevant publicly traded US ticker (e.g. AAPL). "
-    "Return null if not clearly relevant.\n\n"
-    "CATEGORY REFINEMENT: When input category is 'celebrity', set to 'celebrity' "
-    "for personal drama, or 'entertainment' for movie/show/music content. "
+    "You are an editor for CRRNT - an app that makes the news feel personal. "
+    "CRRNT covers pop culture, tech, government, sports, business, and science. "
+    "Every story gets translated into what it actually means for the reader's "
+    "real life - their rent, job, groceries, career, and wallet.\n\n"
+    "Your job is to make the news feel like a smart, culturally aware friend "
+    "breaking it down over text. Informed but never stuffy. Honest about "
+    "uncertainty. Never fear-mongering. Never preachy. Think Vox meets group chat. "
+    "Even heavy stories should feel human and accessible - always land on "
+    "clarity, not anxiety.\n\n"
+    "IMPORTANT: Use plain ASCII text only. No smart quotes, no curly quotes, "
+    "no em dashes, no en dashes, no ellipsis characters, no Unicode punctuation. "
+    "Use straight quotes (\"), hyphens (-), and three dots (...) instead.\n\n"
+    "Write STORYSUMMARY (3-4 sentences, max 600 characters): tell the story "
+    "like you're explaining it to a friend who just asked 'wait, what happened?' "
+    "Lead with the most interesting or surprising part. Give enough context that "
+    "someone with zero background fully understands. Short sentences, active "
+    "voice, zero jargon. A little personality is welcome.\n\n"
+    "Write LIFEIMPACT (2-3 sentences, max 400 characters): how does this "
+    "directly affect the reader's actual life - rent, job, groceries, career, "
+    "relationships, mental load. Be specific - don't say 'this could affect "
+    "jobs', say which jobs and how. Start with 'You' or 'If you' when possible. "
+    "Make it hit.\n\n"
+    "Write WALLETIMPACT (2-3 sentences, max 400 characters): the everyday money "
+    "ripple effect. Name the specific thing that costs more or less, the bill "
+    "that changes, the job category that takes a hit. Use real words - "
+    "'groceries' not 'consumer goods', 'your rent' not 'housing costs'. "
+    "If a stock is clearly relevant, add one plain sentence: will this likely "
+    "push the stock up or down and why. No trading language - just say "
+    "'this could push [company] stock up' or 'investors might get nervous "
+    "about [company]'. Skip the stock note if nothing is clearly relevant.\n\n"
+    "Write INSIGHT (1 sentence, under 100 characters): a punchy one-liner "
+    "that makes someone stop scrolling. Urgent, real, specific.\n\n"
+    "TICKER: The most relevant publicly traded US ticker if clearly central "
+    "to the story. Return null if not.\n\n"
+    "CATEGORY REFINEMENT: When input category is 'celebrity', set to "
+    "'celebrity' for personal drama or 'entertainment' for movie/show/music. "
     "Omit for all others.\n\n"
-    "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
+    "ALWAYS reply with a single JSON object - no prose, no markdown fences - "
     "with keys: storySummary, lifeImpact, walletImpact, insight, "
     "ticker (string|null), companyName (string|null), category (string, optional)."
 )
 
 SENTIMENT_SYSTEM_PROMPT = (
-    "You analyze social media sentiment about news stories for CRRNT.\n\n"
-    "Given a news story and tweets, write a casual honest summary of how real "
-    "people feel — not Wall Street, not pundits. Be direct. Avoid corporate tone.\n\n"
+    "You analyze social media sentiment about news stories for CRRNT - an app "
+    "that makes the news feel personal and real.\n\n"
+    "Given a news story and tweets, write a casual honest summary of how "
+    "everyday people are actually reacting - not Wall Street, not pundits, "
+    "not politicians. How are real people feeling? Angry? Worried? Relieved? "
+    "Unbothered? Be direct and specific. Avoid corporate tone entirely.\n\n"
+    "IMPORTANT: Use plain ASCII text only. No smart quotes, no curly quotes, "
+    "no em dashes, no en dashes, no ellipsis characters, no Unicode punctuation. "
+    "Use straight quotes (\"), hyphens (-), and three dots (...) instead.\n\n"
     "sentimentLabel must be exactly one of: "
-    "'mostly positive' | 'mostly frustrated' | 'split' | 'surprisingly calm' | 'not enough data'\n\n"
+    "'mostly positive' | 'mostly frustrated' | 'split' | 'surprisingly calm' "
+    "| 'not enough data'\n\n"
     "sentimentScore is a float from -1.0 (very negative) to 1.0 (very positive).\n\n"
-    "peopleSay: 2-3 sentences, max 280 characters, casual conversational tone. "
+    "peopleSay (2-3 sentences, max 280 characters): capture the actual vibe "
+    "of the conversation in plain casual language. What is the dominant feeling "
+    "and why? If opinions are split, say who is on each side in plain terms. "
     "Skip if fewer than 10 tweets.\n\n"
-    "ALWAYS reply with a single JSON object — no prose, no markdown — "
-    "with keys: sentimentLabel (string), sentimentScore (float), peopleSay (string|null)."
+    "ALWAYS reply with a single JSON object - no prose, no markdown - "
+    "with keys: sentimentLabel (string), sentimentScore (float), "
+    "peopleSay (string|null)."
 )
-
 
 async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     """Pass 1: Claude enrichment."""
@@ -123,22 +146,22 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     else:
         company_name = None
 
-    insight = (parsed.get("insight") or "").strip()
+    insight = _sanitize(parsed.get("insight") or "")
     if not insight:
         topic = (title or "this story").strip()
         insight = f"A fresh {category} headline worth watching: {topic[:77]}..."
 
-    wallet_impact = (parsed.get("walletImpact") or "").strip()
+    wallet_impact = _sanitize(parsed.get("walletImpact") or "")
     if not wallet_impact:
         wallet_impact = (
             "This story may ripple through everyday finances. Keep an eye on how it develops."
         )
 
-    life_impact = (parsed.get("lifeImpact") or "").strip()
+    life_impact = _sanitize(parsed.get("lifeImpact") or "")
     if not life_impact:
         life_impact = "This story may have real effects on everyday life. Keep an eye on how it develops."
 
-    story_summary = (parsed.get("storySummary") or "").strip()
+    story_summary = _sanitize(parsed.get("storySummary") or "")
     if not story_summary:
         story_summary = (description or title or "").strip() or None
 
@@ -221,9 +244,30 @@ async def enrich_story_tweets(
             "tweets": tweets,
             "sentimentLabel": parsed.get("sentimentLabel") or "split",
             "sentimentScore": score,
-            "peopleSay": (parsed.get("peopleSay") or "").strip() or None,
+            "peopleSay": _sanitize(parsed.get("peopleSay") or "") or None,
         })
     return story
+
+
+_UNICODE_REPLACEMENTS = str.maketrans({
+    "‘": "'",   # left single quote
+    "’": "'",   # right single quote / apostrophe
+    "“": '"',   # left double quote
+    "”": '"',   # right double quote
+    "–": "-",   # en dash
+    "—": " - ", # em dash
+    "…": "...", # ellipsis
+    " ": " ",   # non-breaking space
+    "•": "-",   # bullet
+    "·": "-",   # middle dot
+})
+
+
+def _sanitize(text: str) -> str:
+    """Replace Unicode punctuation with plain ASCII equivalents for TTS."""
+    text = text.translate(_UNICODE_REPLACEMENTS)
+    text = text.encode("ascii", errors="ignore").decode("ascii")
+    return text.strip()
 
 
 def _parse_json(text: str) -> dict[str, Any]:

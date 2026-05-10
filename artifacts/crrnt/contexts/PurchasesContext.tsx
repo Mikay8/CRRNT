@@ -119,7 +119,18 @@ export function PurchasesProvider({
     if (user?.id && user.id !== loggedInUserId.current) {
       loggedInUserId.current = user.id;
       Purchases.logIn(user.id)
-        .then(({ customerInfo: info }) => setCustomerInfo(info))
+        .then(({ customerInfo: info }) => {
+          setCustomerInfo(info);
+          // Stamp the user profile with attributes visible in the RC dashboard.
+          // These are set for every user — free or paid — so you can filter and
+          // segment non-subscribers in RC Analytics.
+          if (user.email) Purchases.setEmail(user.email);
+          Purchases.setAttributes({
+            tier: user.tier ?? "free",
+            // ISO string so RC can display it as a date in the dashboard
+            created_at: new Date().toISOString(),
+          });
+        })
         .catch(() => {});
     } else if (!user && loggedInUserId.current !== null) {
       loggedInUserId.current = null;

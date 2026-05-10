@@ -1,0 +1,103 @@
+{% extends "admin/base.html" %}
+{% block title %} — Breaking News{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div>
+    <h1 class="text-2xl font-bold text-white">Breaking News</h1>
+    <p class="text-gray-500 text-sm mt-0.5">Publish a breaking alert that shows up in every user's feed</p>
+  </div>
+
+  <!-- Active breaking card -->
+  {% if active %}
+  <div class="bg-red-900/20 border border-red-700/60 rounded-xl p-5 flex items-start justify-between">
+    <div>
+      <div class="flex items-center gap-2 mb-2">
+        <span class="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+        <span class="text-red-400 text-xs font-bold uppercase tracking-wider">Live Now</span>
+      </div>
+      <div class="text-white text-lg font-bold">{{ active.headline }}</div>
+      {% if active.link %}
+        <a href="{{ active.link }}" target="_blank" class="text-cyan-400 text-sm hover:underline break-all">{{ active.link }}</a>
+      {% endif %}
+      <div class="text-gray-500 text-xs mt-2">Expires: {{ active.expires_at[:19] if active.expires_at else '?' }}</div>
+    </div>
+    <form method="POST" action="/admin/breaking/{{ active.id }}/dismiss">
+      <button type="submit" class="px-3 py-1.5 bg-red-800 hover:bg-red-700 text-red-200 text-xs font-medium rounded-lg transition-colors ml-4 whitespace-nowrap">
+        Dismiss
+      </button>
+    </form>
+  </div>
+  {% else %}
+  <div class="bg-gray-800 border border-gray-700/60 rounded-xl p-5">
+    <div class="text-gray-500 text-sm">No active breaking news alert.</div>
+  </div>
+  {% endif %}
+
+  <!-- Create form -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
+    <h2 class="text-sm font-semibold text-white mb-4">Publish New Alert</h2>
+    <form method="POST" action="/admin/breaking/create" class="space-y-4">
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Headline <span class="text-red-400">*</span></label>
+        <input name="headline" required maxlength="200" placeholder="Breaking headline…"
+               class="w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 placeholder-gray-600"/>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Link (optional)</label>
+        <input name="link" type="url" placeholder="https://…"
+               class="w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 placeholder-gray-600"/>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">TTL (hours)</label>
+        <input name="ttl_hours" type="number" value="6" min="1" max="48"
+               class="w-32 bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"/>
+      </div>
+      <button type="submit" class="px-5 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-lg transition-colors">
+        🔴 Publish Alert
+      </button>
+    </form>
+  </div>
+
+  <!-- Recent log -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-700">
+      <h2 class="text-sm font-semibold text-white">Recent Alerts</h2>
+    </div>
+    {% if recent %}
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-gray-700 text-gray-400 text-xs uppercase tracking-wider">
+          <th class="px-5 py-3 text-left">Headline</th>
+          <th class="px-5 py-3 text-left">Link</th>
+          <th class="px-5 py-3 text-left">Created</th>
+          <th class="px-5 py-3 text-left">Expires</th>
+          <th class="px-5 py-3 text-left">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-700/50">
+        {% for b in recent %}
+        <tr class="hover:bg-gray-700/30 transition-colors">
+          <td class="px-5 py-3 text-white max-w-xs truncate" title="{{ b.headline }}">{{ b.headline }}</td>
+          <td class="px-5 py-3 max-w-xs">
+            {% if b.link %}<a href="{{ b.link }}" target="_blank" class="text-cyan-400 text-xs hover:underline truncate block max-w-xs">{{ b.link[:40] }}…</a>{% else %}—{% endif %}
+          </td>
+          <td class="px-5 py-3 text-gray-400 text-xs font-mono">{{ b.created_at[:19] if b.created_at else '—' }}</td>
+          <td class="px-5 py-3 text-gray-400 text-xs font-mono">{{ b.expires_at[:19] if b.expires_at else '—' }}</td>
+          <td class="px-5 py-3">
+            <form method="POST" action="/admin/breaking/{{ b.id }}/dismiss">
+              <button type="submit" class="text-xs text-red-500 hover:text-red-400 transition-colors">Dismiss</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="px-5 py-8 text-center text-gray-500 text-sm">No alerts yet.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

@@ -36,7 +36,7 @@ export default function SavedScreen() {
 
       <FlatList
         data={saved}
-        keyExtractor={(item) => item.articleId}
+        keyExtractor={(item) => item.id}
         renderItem={({ item }) => <StoryCard story={item} />}
         contentContainerStyle={{
           paddingTop: insets.top + 96,

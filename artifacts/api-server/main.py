@@ -1,24 +1,30 @@
 """CRRNT FastAPI server.
 
-Serves enriched daily news, stock price history, and an investment
-simulator. Uses Replit DB as a simple key-value cache and APScheduler
-for daily ingestion at 8 AM.
+Architecture v2:
+  - All data stored in Supabase PostgreSQL (no KV / Replit DB)
+  - Supabase Auth for user auth (JWT validated per-request)
+  - RevenueCat webhooks for subscription management
+  - APScheduler for daily ingestion (08:00 ET) and cleanup (03:00 ET)
+  - Jinja2 admin portal at /admin (HTTP Basic Auth)
 """
 from __future__ import annotations
 
 import logging
 import os
 from contextlib import asynccontextmanager
-
-from dotenv import load_dotenv
-
-load_dotenv()  # loads .env file when running locally; no-op on Replit
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-from routes import admin, health, news, stocks
-from services import cache, ingestion, log_buffer, scheduler
+from routes import health, stocks
+from routes import auth as auth_routes
+from routes import stories as stories_routes
+from routes import onboarding as onboarding_routes
+from routes import subscriptions as subscriptions_routes
+from routes import admin_portal
+from services import log_buffer, scheduler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,10 +36,14 @@ log.addHandler(log_buffer.handler)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    log.info("CRRNT API starting up")
-    cache.init()
+    log.info("CRRNT API v2 starting up")
 
-    # Start the daily 8 AM ingestion job.
+    # Validate required Supabase env vars (warn but don't crash so healthz works)
+    if not os.environ.get("SUPABASE_URL"):
+        log.warning("SUPABASE_URL is not set — database calls will fail")
+    if not os.environ.get("SUPABASE_SERVICE_KEY"):
+        log.warning("SUPABASE_SERVICE_KEY is not set — database calls will fail")
+
     scheduler.start()
 
     try:
@@ -45,7 +55,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="CRRNT API",
-    version="0.1.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -56,16 +66,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# Mount under /api so requests come through the workspace proxy at /api/...
+# ── API routes ────────────────────────────────────────────────────────────────
 app.include_router(health.router, prefix="/api")
-app.include_router(news.router, prefix="/api")
 app.include_router(stocks.router, prefix="/api")
-app.include_router(admin.router, prefix="/api")
+app.include_router(auth_routes.router)          # already prefixed /api/auth
+app.include_router(stories_routes.router)       # already prefixed /api/stories
+app.include_router(onboarding_routes.router)    # already prefixed /api/onboarding
+app.include_router(subscriptions_routes.router) # already prefixed /api/subscriptions
+
+# ── Legacy push token endpoint (backward compat with old app installs) ────────
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+class PushTokenBody(BaseModel):
+    token: str
+
+@app.post("/api/push-token", tags=["push"])
+async def register_push_token(body: PushTokenBody) -> dict:
+    try:
+        from services import push
+        push.add_token(body.token)
+        return {"status": "registered"}
+    except Exception:
+        return {"status": "ok"}
+
+# ── Admin portal (Jinja2, HTTP Basic Auth) ────────────────────────────────────
+app.include_router(admin_portal.router)         # already prefixed /admin
 
 
 if __name__ == "__main__":
     import uvicorn
-
     port = int(os.environ.get("PORT", "8080"))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

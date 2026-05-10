@@ -17,6 +17,24 @@ import type { ThemeColors } from "@/constants/theme";
 
 const ACTION_WIDTH = 80;
 
+/** Extract ticker symbol from stock_note like "AAPL (Apple Inc.)" */
+function parseTickerFromStockNote(stockNote?: string | null): string | null {
+  if (!stockNote) return null;
+  const match = stockNote.match(/^([A-Z]{1,5})\b/);
+  return match ? match[1] : null;
+}
+
+/** Extract a display-friendly domain from a URL */
+function sourceDomain(url?: string | null): string {
+  if (!url) return "CRRNT";
+  try {
+    const { hostname } = new URL(url);
+    return hostname.replace(/^www\./, "");
+  } catch {
+    return "CRRNT";
+  }
+}
+
 function PlayAction({ isQueue }: { isQueue: boolean }) {
   return (
     <View style={[actionStyles.playAction, isQueue && actionStyles.queueAction]}>
@@ -65,6 +83,10 @@ export function StoryCard({ story }: StoryCardProps) {
   const { theme: palette } = useThemeContext();
   const styles = useMemo(() => createStyles(palette), [palette]);
 
+  const ticker = parseTickerFromStockNote(story.stock_note);
+  const displaySource = sourceDomain(story.source_url);
+  const timestamp = story.published_at ?? null;
+
   const handleSave = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
     toggleSaved(story).catch(() => undefined);
@@ -82,12 +104,12 @@ export function StoryCard({ story }: StoryCardProps) {
   const handlePlayButton = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
     playStory(story).catch(() => undefined);
-    router.push({ pathname: "/story/[id]", params: { id: story.articleId } });
+    router.push({ pathname: "/story/[id]", params: { id: story.id } });
   };
 
   const onPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-    router.push({ pathname: "/story/[id]", params: { id: story.articleId } });
+    router.push({ pathname: "/story/[id]", params: { id: story.id } });
   };
 
   return (
@@ -113,8 +135,8 @@ export function StoryCard({ story }: StoryCardProps) {
         onPress={onPress}
         style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
       >
-        {story.mediaUrl ? (
-          <Image source={{ uri: story.mediaUrl }} style={styles.media} resizeMode="cover" />
+        {story.media_url ? (
+          <Image source={{ uri: story.media_url }} style={styles.media} resizeMode="cover" />
         ) : (
           <View style={[styles.media, styles.mediaPlaceholder]} />
         )}
@@ -132,9 +154,9 @@ export function StoryCard({ story }: StoryCardProps) {
               <CategoryBadge category={story.category} />
             </View>
             <View style={styles.actions}>
-              {story.ticker ? (
+              {ticker ? (
                 <View style={styles.tickerPill}>
-                  <Text style={styles.tickerText}>${story.ticker}</Text>
+                  <Text style={styles.tickerText}>${ticker}</Text>
                 </View>
               ) : null}
               <SaveButton story={story} />
@@ -146,22 +168,22 @@ export function StoryCard({ story }: StoryCardProps) {
           </Text>
 
           <Text style={styles.insight} numberOfLines={2}>
-            {story.insight}
+            {story.one_liner}
           </Text>
 
           <View style={styles.footer}>
             <Text style={styles.source} numberOfLines={1}>
-              {story.source || "CRRNT"}
+              {displaySource}
             </Text>
             <View style={styles.footerRight}>
-              {isToday(story.publishedDate) ? (
+              {isToday(timestamp) ? (
                 <View style={styles.todayBadge}>
                   <Text style={styles.todayBadgeText}>Today</Text>
                 </View>
               ) : null}
-              {story.publishedDate ? (
+              {timestamp ? (
                 <Text style={styles.timestamp}>
-                  {formatRelativeTime(story.publishedDate)}
+                  {formatRelativeTime(timestamp)}
                 </Text>
               ) : null}
             </View>

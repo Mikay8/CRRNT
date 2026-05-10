@@ -40,11 +40,12 @@ const AudioContext = createContext<AudioContextType | null>(null);
 function buildSpeechText(story: Story): string {
   const parts: string[] = [];
   parts.push(story.title + ".");
-  if ((story as any).lifeImpact)
-    parts.push("Here's how it affects you. " + (story as any).lifeImpact);
-  parts.push("Wallet impact. " + story.insight + ". " + (story as any).walletImpact);
-  if ((story as any).peopleSay)
-    parts.push("What people are saying. " + (story as any).peopleSay);
+  if (story.life_impact)
+    parts.push("Here's how it affects you. " + story.life_impact);
+  if (story.wallet_impact)
+    parts.push("Wallet impact. " + story.one_liner + ". " + story.wallet_impact);
+  if (story.people_say)
+    parts.push("What people are saying. " + story.people_say);
   return parts.join(" ");
 }
 
@@ -157,7 +158,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     updateNowPlayingInfo({
       title: s.title,
       artist: "CRRNT",
-      artworkUri: (s as any).mediaUrl ?? undefined,
+      artworkUri: (s as any).media_url ?? undefined,
       positionMs: audioPositionMs,
       durationMs: audioDurationMs,
       isPlaying: audioIsPlaying,
@@ -321,13 +322,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           player.setActiveForLockScreen(true, {
             title: newStory.title,
             artist: "CRRNT",
-            artworkUrl: (newStory as any).mediaUrl ?? undefined,
+            artworkUrl: (newStory as any).media_url ?? undefined,
           });
         } catch {}
         updateNowPlayingInfo({
           title: newStory.title,
           artist: "CRRNT",
-          artworkUri: (newStory as any).mediaUrl ?? undefined,
+          artworkUri: (newStory as any).media_url ?? undefined,
           positionMs: 0,
           durationMs: 0,
           isPlaying: true,

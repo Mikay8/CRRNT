@@ -21,7 +21,6 @@ import {
   useGetStockHistory,
   useGetStory,
   type Story,
-  type Tweet,
 } from "@workspace/api-client-react";
 import { getCategoryMeta } from "@/constants/categories";
 import { useAudio } from "@/contexts/AudioContext";
@@ -43,38 +42,74 @@ const RANGE_TABS: { label: string; value: StockRange; hint: string }[] = [
   { label: "1Y", value: "1y", hint: "1 year" },
 ];
 
+type SentimentKey =
+  | "mostly positive"
+  | "mostly frustrated"
+  | "split"
+  | "surprisingly calm"
+  | "not enough data";
+
+const SENTIMENT_CONFIG: Record<
+  SentimentKey,
+  { label: string; color: string; icon: string }
+> = {
+  "mostly positive": {
+    label: "Mostly Positive",
+    color: "#22C55E",
+    icon: "trending-up",
+  },
+  "mostly frustrated": {
+    label: "Mostly Frustrated",
+    color: "#EF4444",
+    icon: "flame",
+  },
+  split: { label: "Split", color: "#F59E0B", icon: "swap-horizontal" },
+  "surprisingly calm": {
+    label: "Surprisingly Calm",
+    color: "#8B5CF6",
+    icon: "remove",
+  },
+  "not enough data": {
+    label: "Not Enough Data",
+    color: "#6B7280",
+    icon: "help-circle",
+  },
+};
+
+const FALLBACK_SENTIMENT: (typeof SENTIMENT_CONFIG)[SentimentKey] = {
+  label: "Mixed",
+  color: "#8B5CF6",
+  icon: "shuffle",
+};
+
+/** Extract ticker symbol from stock_note like "AAPL (Apple Inc.)" */
+function parseTickerFromStockNote(stockNote?: string | null): string | null {
+  if (!stockNote) return null;
+  const match = stockNote.match(/^([A-Z]{1,5})\b/);
+  return match ? match[1] : null;
+}
+
+/** Extract company name from stock_note like "AAPL (Apple Inc.)" */
+function parseCompanyFromStockNote(stockNote?: string | null): string | null {
+  if (!stockNote) return null;
+  const match = stockNote.match(/^[A-Z]{1,5}\s+\((.+)\)/);
+  return match ? match[1] : null;
+}
+
+/** Extract domain from a source URL */
+function sourceDomain(url?: string | null): string {
+  if (!url) return "CRRNT";
+  try {
+    const { hostname } = new URL(url);
+    return hostname.replace(/^www\./, "");
+  } catch {
+    return "CRRNT";
+  }
+}
+
 export default function StoryDetailScreen() {
   const { theme: palette } = useThemeContext();
   const styles = useMemo(() => createStyles(palette), [palette]);
-
-  const SENTIMENT_CONFIG = useMemo(() => ({
-    concerned: {
-      label: "Concerned",
-      color: "#FF9500",
-      icon: "alert-circle" as const,
-    },
-    hopeful: {
-      label: "Hopeful",
-      color: palette.positive,
-      icon: "trending-up" as const,
-    },
-    angry: {
-      label: "Angry",
-      color: palette.negative,
-      icon: "flame" as const,
-    },
-    divided: {
-      label: "Divided",
-      color: "#FFB347",
-      icon: "swap-horizontal" as const,
-    },
-    unbothered: {
-      label: "Unbothered",
-      color: palette.textMuted,
-      icon: "remove" as const,
-    },
-    mixed: { label: "Mixed", color: "#8B5CF6", icon: "shuffle" as const },
-  }), [palette]);
 
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -86,9 +121,18 @@ export default function StoryDetailScreen() {
   const [scrubProgress, setScrubProgress] = useState<number | null>(null);
   const scrubRef = useRef<number | null>(null);
   const seekHoldRef = useRef<number | null>(null);
-  const { story: audioStory, isPlaying, isBarVisible, positionMs, durationMs, playStory, togglePlayPause, seekTo } = useAudio();
+  const {
+    story: audioStory,
+    isPlaying,
+    isBarVisible,
+    positionMs,
+    durationMs,
+    playStory,
+    togglePlayPause,
+    seekTo,
+  } = useAudio();
 
-  const localFallback = saved.find((s) => s.articleId === id) ?? null;
+  const localFallback = saved.find((s) => s.id === id) ?? null;
 
   const { data, isLoading, error } = useGetStory(id ?? "", {
     query: {
@@ -99,17 +143,25 @@ export default function StoryDetailScreen() {
 
   const story: Story | null = (data as Story | undefined) ?? localFallback;
 
-  const ticker = story?.ticker ?? null;
+  const ticker = parseTickerFromStockNote(story?.stock_note);
+  const companyName = parseCompanyFromStockNote(story?.stock_note);
+  const displaySource = sourceDomain(story?.source_url);
+
   const stockQuery = useGetStockHistory(
     ticker ?? "",
     { range: stockRange },
-    { query: { enabled: !!ticker, staleTime: 5 * 60 * 1000 } as any },
+    { query: { enabled: !!ticker, staleTime: 5 * 60 * 1000 } as any }
   );
 
-  const isThisStoryActive = !!story && audioStory?.articleId === story.articleId;
+  const isThisStoryActive =
+    !!story && audioStory?.id === story.id;
   const isThisStoryPlaying = isThisStoryActive && isPlaying;
 
-  const showFloat = isBarVisible && !!audioStory && !!story && audioStory.articleId !== story.articleId;
+  const showFloat =
+    isBarVisible &&
+    !!audioStory &&
+    !!story &&
+    audioStory.id !== story.id;
   const floatAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.spring(floatAnim, {
@@ -120,10 +172,12 @@ export default function StoryDetailScreen() {
     }).start();
   }, [showFloat]);
   const audioStoryCatColor =
-    (audioStory ? getCategoryMeta(audioStory.category)?.color : null) ?? palette.accent;
+    (audioStory ? getCategoryMeta(audioStory.category)?.color : null) ??
+    palette.accent;
 
   const clamp = (v: number) => Math.max(0, Math.min(1, v));
-  const liveProgress = isThisStoryActive && durationMs > 0 ? positionMs / durationMs : 0;
+  const liveProgress =
+    isThisStoryActive && durationMs > 0 ? positionMs / durationMs : 0;
 
   if (seekHoldRef.current !== null && durationMs > 0) {
     const targetMs = seekHoldRef.current * durationMs;
@@ -134,7 +188,11 @@ export default function StoryDetailScreen() {
 
   const heldProgress = seekHoldRef.current;
   const displayProgress =
-    scrubProgress !== null ? scrubProgress : heldProgress !== null ? heldProgress : liveProgress;
+    scrubProgress !== null
+      ? scrubProgress
+      : heldProgress !== null
+        ? heldProgress
+        : liveProgress;
   const displayMs =
     scrubProgress !== null
       ? scrubProgress * durationMs
@@ -153,13 +211,15 @@ export default function StoryDetailScreen() {
     .runOnJS(true)
     .minDistance(0)
     .onBegin((e) => {
-      if (!isThisStoryActiveRef.current || audioTrackWidthRef.current === 0) return;
+      if (!isThisStoryActiveRef.current || audioTrackWidthRef.current === 0)
+        return;
       const p = clamp(e.x / audioTrackWidthRef.current);
       scrubRef.current = p;
       setScrubProgress(p);
     })
     .onUpdate((e) => {
-      if (!isThisStoryActiveRef.current || audioTrackWidthRef.current === 0) return;
+      if (!isThisStoryActiveRef.current || audioTrackWidthRef.current === 0)
+        return;
       const p = clamp(e.x / audioTrackWidthRef.current);
       scrubRef.current = p;
       setScrubProgress(p);
@@ -216,12 +276,8 @@ export default function StoryDetailScreen() {
 
   const openSource = () => {
     Haptics.selectionAsync().catch(() => undefined);
-    if (story.link) Linking.openURL(story.link).catch(() => undefined);
-  };
-
-  const openTweet = (url: string) => {
-    Haptics.selectionAsync().catch(() => undefined);
-    Linking.openURL(url).catch(() => undefined);
+    if (story.source_url)
+      Linking.openURL(story.source_url).catch(() => undefined);
   };
 
   const handleRangeChange = (r: StockRange) => {
@@ -231,7 +287,9 @@ export default function StoryDetailScreen() {
 
   const toggleAudio = async () => {
     if (!story) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+      () => undefined
+    );
     if (isThisStoryActive) {
       await togglePlayPause();
     } else {
@@ -240,394 +298,358 @@ export default function StoryDetailScreen() {
   };
 
   const activeTab = RANGE_TABS.find((t) => t.value === stockRange)!;
-  const tweets: Tweet[] = (story as any).tweets ?? [];
-  const peopleSay: string | null = (story as any).peopleSay ?? null;
-  const sentimentKey = ((story as any).sentiment ??
-    "mixed") as keyof typeof SENTIMENT_CONFIG;
+  const sentimentKey = story.sentiment_label as SentimentKey | null | undefined;
   const sentimentCfg =
-    SENTIMENT_CONFIG[sentimentKey] ?? SENTIMENT_CONFIG.mixed;
-  const hasSocialData = peopleSay || tweets.length > 0;
+    sentimentKey && SENTIMENT_CONFIG[sentimentKey]
+      ? SENTIMENT_CONFIG[sentimentKey]
+      : FALLBACK_SENTIMENT;
+  const hasSocialData = story.people_say;
 
   return (
     <View style={styles.container}>
-    <ScrollView
-      style={styles.scrollView}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
-      showsVerticalScrollIndicator={false}
-      scrollIndicatorInsets={{ top: insets.top, bottom: insets.bottom }}
-      automaticallyAdjustsScrollIndicatorInsets={false}
-    >
-      {story.mediaUrl ? (
-        <Image
-          source={{ uri: story.mediaUrl }}
-          style={styles.hero}
-          resizeMode="cover"
-        />
-      ) : (
-        <View style={[styles.hero, styles.heroPlaceholder]} />
-      )}
-
-      <View style={[styles.heroOverlay, { height: insets.top + 220 }]} />
-
-      <View
-        style={[styles.content, { marginTop: -50, paddingHorizontal: hPad }]}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ top: insets.top, bottom: insets.bottom }}
+        automaticallyAdjustsScrollIndicatorInsets={false}
       >
-        {/* Top row: category + action buttons */}
-        <View style={styles.metaRow}>
-          <CategoryBadge category={story.category} size="md" />
-          <View style={styles.actionButtons}>
-            <SaveButton story={story} size={26} />
-          </View>
-        </View>
+        {story.media_url ? (
+          <Image
+            source={{ uri: story.media_url }}
+            style={styles.hero}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={[styles.hero, styles.heroPlaceholder]} />
+        )}
 
-        <Text style={styles.title}>{story.title}</Text>
+        <View style={[styles.heroOverlay, { height: insets.top + 220 }]} />
 
-        {/* Audio player row */}
-        <View style={styles.audioRow}>
-          <Pressable
-            onPress={toggleAudio}
-            style={({ pressed }) => [styles.audioPlayBtn, { opacity: pressed ? 0.7 : 1 }]}
-            accessibilityLabel={isThisStoryPlaying ? "Pause audio" : "Play audio"}
-          >
-            <Ionicons
-              name={isThisStoryPlaying ? "pause" : "play"}
-              size={14}
-              color={palette.bg}
-            />
-          </Pressable>
-          <GestureDetector gesture={seekGesture}>
-            <View
-              accessible={isThisStoryActive}
-              accessibilityLabel="Seek bar"
-              accessibilityRole="adjustable"
-              style={[
-                styles.audioTrack,
-                Platform.OS === "web" && isThisStoryActive
-                  ? ({ cursor: "pointer" } as object)
-                  : undefined,
-              ]}
-              onLayout={(e) => {
-                const w = e.nativeEvent.layout.width;
-                audioTrackWidthRef.current = w;
-                setAudioTrackWidth(w);
-              }}
-            >
-              <View style={styles.audioRail} />
-              <View
-                style={[
-                  styles.audioFill,
-                  {
-                    width: audioTrackWidth > 0
-                      ? Math.min(displayProgress * audioTrackWidth, audioTrackWidth)
-                      : 0,
-                  },
-                ]}
-              />
-            </View>
-          </GestureDetector>
-          {isThisStoryActive ? (
-            <Text style={styles.audioTime}>
-              {formatMs(displayMs)} / {durationMs > 0 ? formatMs(durationMs) : "--:--"}
-            </Text>
-          ) : null}
-        </View>
-
-        <Pressable
-          onPress={openSource}
-          style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+        <View
+          style={[styles.content, { marginTop: -50, paddingHorizontal: hPad }]}
         >
-          <Text style={styles.source}>
-            {story.source}
-            {story.publishedDate
-              ? `  ·  ${formatRelativeTime(story.publishedDate)}  ·  ${formatDateTime(story.publishedDate)}`
-              : ""}
-            {"   "}
-            <Ionicons name="open-outline" size={12} color={palette.textDim} />
-          </Text>
-        </Pressable>
-        {/* ── story summary ──────────────────────────────────── */}
-        <View style={styles.insightCard}>
-          <Text style={styles.insight}>{story.storySummary ?? story.insight}</Text>
-        </View>
-        {/* ── How does it affect me? ───────────────────────────────── */}
-        {(story as any).lifeImpact ? (
-          <View style={[styles.insightCard, styles.impactCard]}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="people" size={16} color="#7B68EE" />
-              <Text style={[styles.sectionLabel, { color: "#7B68EE" }]}>
-                How does it affect me?
-              </Text>
+          {/* Top row: category + save */}
+          <View style={styles.metaRow}>
+            <CategoryBadge category={story.category} size="md" />
+            <View style={styles.actionButtons}>
+              <SaveButton story={story} size={26} />
             </View>
-            <Text style={styles.impactText}>{(story as any).lifeImpact}</Text>
           </View>
-        ) : null}
-        {/* ── Wallet impact ──────────────────────────────────────────── */}
-        <View style={styles.insightCard}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="sparkles" size={16} color={palette.accent} />
-            <Text style={styles.sectionLabel}>Wallet impact</Text>
-          </View>
-          <Text style={styles.impactText}>{(story as any).walletImpact}</Text>
-        </View>
-        {/* ── Stock chart ──────────────────────────────────────────── */}
-        {ticker ? (
-          <View style={styles.stockCard}>
-            <View style={styles.stockHeader}>
-              <View>
-                <Text style={styles.tickerLabel}>${ticker}</Text>
-                {story.companyName ? (
-                  <Text style={styles.company}>{story.companyName}</Text>
-                ) : null}
-              </View>
-              {stock ? (
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={styles.price}>
-                    ${stock.latestPrice?.toFixed(2)}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.delta,
-                      { color: priceUp ? palette.positive : palette.negative },
-                    ]}
-                  >
-                    {activeTab.label} {priceUp ? "▲" : "▼"}{" "}
-                    {pctChange(stock.points[0]?.close, stock.latestPrice)}%
-                  </Text>
-                </View>
-              ) : null}
-            </View>
 
-            <View style={styles.rangeTabs}>
-              {RANGE_TABS.map((tab) => {
-                const isActive = tab.value === stockRange;
-                return (
-                  <Pressable
-                    key={tab.value}
-                    onPress={() => handleRangeChange(tab.value)}
-                    style={({ pressed }) => [
-                      styles.rangeTab,
-                      {
-                        backgroundColor: isActive
-                          ? (priceUp ? palette.positive : palette.negative) +
-                            "22"
-                          : "transparent",
-                        borderColor: isActive
-                          ? priceUp
-                            ? palette.positive
-                            : palette.negative
-                          : palette.border,
-                        opacity: pressed ? 0.7 : 1,
-                      },
-                    ]}
-                  >
+          <Text style={styles.title}>{story.title}</Text>
+
+          {/* Audio player row */}
+          <View style={styles.audioRow}>
+            <Pressable
+              onPress={toggleAudio}
+              style={({ pressed }) => [
+                styles.audioPlayBtn,
+                { opacity: pressed ? 0.7 : 1 },
+              ]}
+              accessibilityLabel={isThisStoryPlaying ? "Pause audio" : "Play audio"}
+            >
+              <Ionicons
+                name={isThisStoryPlaying ? "pause" : "play"}
+                size={14}
+                color={palette.bg}
+              />
+            </Pressable>
+            <GestureDetector gesture={seekGesture}>
+              <View
+                accessible={isThisStoryActive}
+                accessibilityLabel="Seek bar"
+                accessibilityRole="adjustable"
+                style={[
+                  styles.audioTrack,
+                  Platform.OS === "web" && isThisStoryActive
+                    ? ({ cursor: "pointer" } as object)
+                    : undefined,
+                ]}
+                onLayout={(e) => {
+                  const w = e.nativeEvent.layout.width;
+                  audioTrackWidthRef.current = w;
+                  setAudioTrackWidth(w);
+                }}
+              >
+                <View style={styles.audioRail} />
+                <View
+                  style={[
+                    styles.audioFill,
+                    {
+                      width:
+                        audioTrackWidth > 0
+                          ? Math.min(
+                              displayProgress * audioTrackWidth,
+                              audioTrackWidth
+                            )
+                          : 0,
+                    },
+                  ]}
+                />
+              </View>
+            </GestureDetector>
+            {isThisStoryActive ? (
+              <Text style={styles.audioTime}>
+                {formatMs(displayMs)} /{" "}
+                {durationMs > 0 ? formatMs(durationMs) : "--:--"}
+              </Text>
+            ) : null}
+          </View>
+
+          <Pressable
+            onPress={openSource}
+            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Text style={styles.source}>
+              {displaySource}
+              {story.published_at
+                ? `  ·  ${formatRelativeTime(story.published_at)}  ·  ${formatDateTime(story.published_at)}`
+                : ""}
+              {"   "}
+              <Ionicons
+                name="open-outline"
+                size={12}
+                color={palette.textDim}
+              />
+            </Text>
+          </Pressable>
+
+          {/* Story summary */}
+          <View style={styles.insightCard}>
+            <Text style={styles.insight}>
+              {story.summary ?? story.one_liner}
+            </Text>
+          </View>
+
+          {/* How does it affect me? */}
+          {story.life_impact ? (
+            <View style={[styles.insightCard, styles.impactCard]}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="people" size={16} color="#7B68EE" />
+                <Text style={[styles.sectionLabel, { color: "#7B68EE" }]}>
+                  How does it affect me?
+                </Text>
+              </View>
+              <Text style={styles.impactText}>{story.life_impact}</Text>
+            </View>
+          ) : null}
+
+          {/* Wallet impact */}
+          {story.wallet_impact ? (
+            <View style={styles.insightCard}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="sparkles" size={16} color={palette.accent} />
+                <Text style={styles.sectionLabel}>Wallet impact</Text>
+              </View>
+              <Text style={styles.impactText}>{story.wallet_impact}</Text>
+            </View>
+          ) : null}
+
+          {/* Stock chart */}
+          {ticker ? (
+            <View style={styles.stockCard}>
+              <View style={styles.stockHeader}>
+                <View>
+                  <Text style={styles.tickerLabel}>${ticker}</Text>
+                  {companyName ? (
+                    <Text style={styles.company}>{companyName}</Text>
+                  ) : null}
+                </View>
+                {stock ? (
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={styles.price}>
+                      ${stock.latestPrice?.toFixed(2)}
+                    </Text>
                     <Text
                       style={[
-                        styles.rangeTabLabel,
+                        styles.delta,
                         {
-                          color: isActive
-                            ? priceUp
-                              ? palette.positive
-                              : palette.negative
-                            : palette.textMuted,
+                          color: priceUp ? palette.positive : palette.negative,
                         },
                       ]}
                     >
-                      {tab.label}
+                      {activeTab.label} {priceUp ? "▲" : "▼"}{" "}
+                      {pctChange(stock.points[0]?.close, stock.latestPrice)}%
                     </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {stockQuery.isLoading ? (
-              <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
-                <ActivityIndicator color={palette.textMuted} />
+                  </View>
+                ) : null}
               </View>
-            ) : stock ? (
-              <PriceChart
-                points={stock.points}
-                width={chartWidth}
-                height={160}
-                positive={priceUp}
-              />
-            ) : (
-              <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
-                <Text style={styles.chartEmpty}>Price data unavailable</Text>
+
+              <View style={styles.rangeTabs}>
+                {RANGE_TABS.map((tab) => {
+                  const isActive = tab.value === stockRange;
+                  return (
+                    <Pressable
+                      key={tab.value}
+                      onPress={() => handleRangeChange(tab.value)}
+                      style={({ pressed }) => [
+                        styles.rangeTab,
+                        {
+                          backgroundColor: isActive
+                            ? (priceUp ? palette.positive : palette.negative) +
+                              "22"
+                            : "transparent",
+                          borderColor: isActive
+                            ? priceUp
+                              ? palette.positive
+                              : palette.negative
+                            : palette.border,
+                          opacity: pressed ? 0.7 : 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.rangeTabLabel,
+                          {
+                            color: isActive
+                              ? priceUp
+                                ? palette.positive
+                                : palette.negative
+                              : palette.textMuted,
+                          },
+                        ]}
+                      >
+                        {tab.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-            )}
 
-            {stock && story.publishedDate ? (
-              <Text style={styles.chartHint}>
-                <Ionicons
-                  name="time-outline"
-                  size={11}
-                  color={palette.textDim}
-                />{" "}
-                Story posted {formatRelativeTime(story.publishedDate)} — showing{" "}
-                {activeTab.hint}
-              </Text>
-            ) : null}
-          </View>
-        ) : (
-          <View style={styles.noTickerCard}>
-            <Ionicons
-              name="information-circle-outline"
-              size={18}
-              color={palette.textMuted}
-            />
-            <Text style={styles.noTickerText}>
-              No public stock is closely tied to this story.
-            </Text>
-          </View>
-        )}
-
-        {/* ── What are people saying? ──────────────────────────────── */}
-        {hasSocialData ? (
-          <View style={[styles.insightCard, styles.socialCard]}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.xLogo}>𝕏</Text>
-              <Text style={[styles.sectionLabel, { color: "#1DA1F2" }]}>
-                What are people saying?
-              </Text>
-            </View>
-
-            {/* Sentiment badge */}
-            {(story as any).sentiment ? (
-              <View style={styles.sentimentRow}>
-                <View
-                  style={[
-                    styles.sentimentBadge,
-                    {
-                      backgroundColor: sentimentCfg.color + "22",
-                      borderColor: sentimentCfg.color + "55",
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={sentimentCfg.icon}
-                    size={13}
-                    color={sentimentCfg.color}
-                  />
-                  <Text
-                    style={[styles.sentimentLabel, { color: sentimentCfg.color }]}
-                  >
-                    {sentimentCfg.label}
-                  </Text>
+              {stockQuery.isLoading ? (
+                <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
+                  <ActivityIndicator color={palette.textMuted} />
                 </View>
+              ) : stock ? (
+                <PriceChart
+                  points={stock.points}
+                  width={chartWidth}
+                  height={160}
+                  positive={priceUp}
+                />
+              ) : (
+                <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
+                  <Text style={styles.chartEmpty}>Price data unavailable</Text>
+                </View>
+              )}
+
+              {stock && story.published_at ? (
+                <Text style={styles.chartHint}>
+                  <Ionicons
+                    name="time-outline"
+                    size={11}
+                    color={palette.textDim}
+                  />{" "}
+                  Story posted {formatRelativeTime(story.published_at)} —
+                  showing {activeTab.hint}
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.noTickerCard}>
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color={palette.textMuted}
+              />
+              <Text style={styles.noTickerText}>
+                No public stock is closely tied to this story.
+              </Text>
+            </View>
+          )}
+
+          {/* What are people saying? */}
+          {hasSocialData ? (
+            <View style={[styles.insightCard, styles.socialCard]}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.xLogo}>𝕏</Text>
+                <Text style={[styles.sectionLabel, { color: "#1DA1F2" }]}>
+                  What are people saying?
+                </Text>
               </View>
-            ) : null}
 
-            {peopleSay ? (
-              <Text style={styles.peopleSay}>{peopleSay}</Text>
-            ) : null}
-
-            {tweets.length > 0 ? (
-              <View style={styles.tweetList}>
-                {tweets.map((tweet) => (
-                  <Pressable
-                    key={tweet.id}
-                    onPress={() => openTweet(tweet.url)}
-                    style={({ pressed }) => [
-                      styles.tweetCard,
-                      { opacity: pressed ? 0.75 : 1 },
+              {story.sentiment_label ? (
+                <View style={styles.sentimentRow}>
+                  <View
+                    style={[
+                      styles.sentimentBadge,
+                      {
+                        backgroundColor: sentimentCfg.color + "22",
+                        borderColor: sentimentCfg.color + "55",
+                      },
                     ]}
                   >
-                    <View style={styles.tweetHeader}>
-                      <View style={styles.tweetAvatar}>
-                        <Text style={styles.tweetAvatarText}>
-                          {tweet.authorName.charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.tweetAuthorName} numberOfLines={1}>
-                          {tweet.authorName}
-                        </Text>
-                        <Text style={styles.tweetHandle} numberOfLines={1}>
-                          {tweet.author}
-                        </Text>
-                      </View>
-                      <Ionicons
-                        name="open-outline"
-                        size={12}
-                        color={palette.textDim}
-                      />
-                    </View>
-                    <Text style={styles.tweetText} numberOfLines={3}>
-                      {tweet.text}
+                    <Ionicons
+                      name={sentimentCfg.icon as any}
+                      size={13}
+                      color={sentimentCfg.color}
+                    />
+                    <Text
+                      style={[
+                        styles.sentimentLabel,
+                        { color: sentimentCfg.color },
+                      ]}
+                    >
+                      {sentimentCfg.label}
                     </Text>
-                    <View style={styles.tweetStats}>
-                      <View style={styles.tweetStat}>
-                        <Ionicons
-                          name="heart-outline"
-                          size={12}
-                          color={palette.textDim}
-                        />
-                        <Text style={styles.tweetStatText}>
-                          {formatCount(tweet.likes)}
-                        </Text>
-                      </View>
-                      <View style={styles.tweetStat}>
-                        <Ionicons
-                          name="repeat-outline"
-                          size={12}
-                          color={palette.textDim}
-                        />
-                        <Text style={styles.tweetStatText}>
-                          {formatCount(tweet.retweets)}
-                        </Text>
-                      </View>
-                    </View>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-          </View>
-        ) : null}
+                  </View>
+                </View>
+              ) : null}
 
-        {/* ── Read full story ──────────────────────────────────────── */}
-        <Pressable
-          onPress={openSource}
-          style={({ pressed }) => [
-            styles.sourceBtn,
-            { opacity: pressed ? 0.7 : 1 },
-          ]}
-        >
-          <Ionicons name="open-outline" size={16} color={palette.text} />
-          <Text style={styles.sourceBtnText}>
-            Read full story at {story.source}
-          </Text>
-        </Pressable>
-      </View>
-    </ScrollView>
+              {story.people_say ? (
+                <Text style={styles.peopleSay}>{story.people_say}</Text>
+              ) : null}
+            </View>
+          ) : null}
 
-    {/* Floating play/pause — visible when a different story is actively playing */}
-    <Animated.View
-      pointerEvents={showFloat ? "auto" : "none"}
-      style={[
-        styles.floatingPlayBtn,
-        {
-          bottom: insets.bottom + 24,
-          backgroundColor: audioStoryCatColor,
-          opacity: floatAnim,
-          transform: [{ scale: floatAnim }],
-        },
-      ]}
-    >
-      <Pressable
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-          togglePlayPause();
-        }}
-        style={styles.floatingPlayBtnInner}
+          {/* Read full story */}
+          <Pressable
+            onPress={openSource}
+            style={({ pressed }) => [
+              styles.sourceBtn,
+              { opacity: pressed ? 0.7 : 1 },
+            ]}
+          >
+            <Ionicons name="open-outline" size={16} color={palette.text} />
+            <Text style={styles.sourceBtnText}>
+              Read full story at {displaySource}
+            </Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+
+      {/* Floating play/pause — visible when a different story is actively playing */}
+      <Animated.View
+        pointerEvents={showFloat ? "auto" : "none"}
+        style={[
+          styles.floatingPlayBtn,
+          {
+            bottom: insets.bottom + 24,
+            backgroundColor: audioStoryCatColor,
+            opacity: floatAnim,
+            transform: [{ scale: floatAnim }],
+          },
+        ]}
       >
-        <Ionicons
-          name={isPlaying ? "pause" : "play"}
-          size={22}
-          color="#fff"
-          style={isPlaying ? undefined : { marginLeft: 2 }}
-        />
-      </Pressable>
-    </Animated.View>
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+              () => undefined
+            );
+            togglePlayPause();
+          }}
+          style={styles.floatingPlayBtnInner}
+        >
+          <Ionicons
+            name={isPlaying ? "pause" : "play"}
+            size={22}
+            color="#fff"
+            style={isPlaying ? undefined : { marginLeft: 2 }}
+          />
+        </Pressable>
+      </Animated.View>
     </View>
   );
 }
@@ -642,13 +664,6 @@ function formatMs(ms: number): string {
 function pctChange(start?: number, end?: number): string {
   if (!start || !end) return "0.00";
   return (((end - start) / start) * 100).toFixed(2);
-}
-
-function formatCount(n: number | undefined): string {
-  if (!n) return "0";
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
-  return String(n);
 }
 
 function createStyles(palette: ThemeColors) {
@@ -702,11 +717,7 @@ function createStyles(palette: ThemeColors) {
       alignItems: "center",
     },
     actionButtons: { flexDirection: "row", alignItems: "center", gap: 10 },
-    audioRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-    },
+    audioRow: { flexDirection: "row", alignItems: "center", gap: 10 },
     audioPlayBtn: {
       width: 32,
       height: 32,
@@ -791,13 +802,6 @@ function createStyles(palette: ThemeColors) {
       fontSize: 18,
       lineHeight: 24,
       color: palette.text,
-    },
-    explanation: {
-      fontFamily: "Inter_400Regular",
-      fontSize: 14,
-      lineHeight: 21,
-      color: palette.textMuted,
-      marginTop: 4,
     },
     impactText: {
       fontFamily: "Inter_400Regular",
@@ -892,52 +896,6 @@ function createStyles(palette: ThemeColors) {
       fontSize: 14,
       lineHeight: 21,
       color: palette.textMuted,
-    },
-    tweetList: { gap: 10, marginTop: 4 },
-    tweetCard: {
-      backgroundColor: palette.bgElevated,
-      borderRadius: 14,
-      padding: 12,
-      gap: 8,
-      borderWidth: 1,
-      borderColor: palette.border,
-    },
-    tweetHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
-    tweetAvatar: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: "#1DA1F233",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    tweetAvatarText: {
-      fontFamily: "Inter_700Bold",
-      fontSize: 13,
-      color: "#1DA1F2",
-    },
-    tweetAuthorName: {
-      fontFamily: "Inter_600SemiBold",
-      fontSize: 13,
-      color: palette.text,
-    },
-    tweetHandle: {
-      fontFamily: "Inter_400Regular",
-      fontSize: 12,
-      color: palette.textDim,
-    },
-    tweetText: {
-      fontFamily: "Inter_400Regular",
-      fontSize: 13,
-      lineHeight: 19,
-      color: palette.textMuted,
-    },
-    tweetStats: { flexDirection: "row", gap: 16 },
-    tweetStat: { flexDirection: "row", alignItems: "center", gap: 4 },
-    tweetStatText: {
-      fontFamily: "Inter_400Regular",
-      fontSize: 12,
-      color: palette.textDim,
     },
     sourceBtn: {
       flexDirection: "row",

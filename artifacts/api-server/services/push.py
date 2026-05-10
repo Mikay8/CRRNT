@@ -1,7 +1,7 @@
 """Expo Push Notification service.
 
-Stores device push tokens in Replit KV and sends notifications via
-the Expo Push API after ingestion completes.
+Tokens are stored in the push_tokens Supabase table (TEXT rows).
+Falls back gracefully if Supabase is not configured.
 """
 from __future__ import annotations
 
@@ -10,40 +10,52 @@ from typing import Any
 
 import httpx
 
-from services import cache
-
 log = logging.getLogger("crrnt.push")
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
-TOKENS_KEY = "push:tokens"
+
+
+def _db():
+    from services import db
+    return db.get_client()
 
 
 def get_tokens() -> list[str]:
-    return cache.get(TOKENS_KEY) or []
+    try:
+        result = _db().table("push_tokens").select("token").execute()
+        return [r["token"] for r in (result.data or [])]
+    except Exception as exc:
+        log.warning("push.get_tokens failed: %s", exc)
+        return []
 
 
 def add_token(token: str) -> None:
-    tokens = set(get_tokens())
-    tokens.add(token)
-    cache.set(TOKENS_KEY, sorted(tokens))
-    log.info("Push token registered (total: %d)", len(tokens) + 1)
+    try:
+        _db().table("push_tokens").upsert({"token": token}).execute()
+        log.info("Push token registered: %s…", token[:20])
+    except Exception as exc:
+        log.warning("push.add_token failed: %s", exc)
 
 
 def remove_token(token: str) -> None:
-    tokens = set(get_tokens())
-    tokens.discard(token)
-    cache.set(TOKENS_KEY, sorted(tokens))
+    try:
+        _db().table("push_tokens").delete().eq("token", token).execute()
+    except Exception as exc:
+        log.warning("push.remove_token failed: %s", exc)
 
 
 def token_count() -> int:
-    return len(get_tokens())
+    try:
+        result = _db().table("push_tokens").select("token", count="exact").execute()
+        return result.count or 0
+    except Exception:
+        return 0
 
 
 async def send_push(title: str, body: str, data: dict[str, Any] | None = None) -> None:
-    """Send a push notification to all registered devices."""
     tokens = get_tokens()
     if not tokens:
-        log.info("No push tokens registered — skipping notification")
+        log.info("No push tokens — skipping notification")
         return
 
     messages = [
@@ -69,7 +81,6 @@ async def send_push(title: str, body: str, data: dict[str, Any] | None = None) -
                 },
             )
             resp.raise_for_status()
-            result = resp.json()
-            log.info("Push sent to %d device(s): %s", len(tokens), result)
-    except Exception as exc:  # noqa: BLE001
+            log.info("Push sent to %d device(s)", len(tokens))
+    except Exception as exc:
         log.info("Push notification failed: %s", exc)

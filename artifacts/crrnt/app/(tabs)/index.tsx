@@ -17,7 +17,6 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   useListStories,
   useSearchStories,
-  useTriggerIngestion,
   type Story,
 } from "@workspace/api-client-react";
 import StoryCard from "@/components/StoryCard";
@@ -46,7 +45,7 @@ export default function FeedScreen() {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(
       () => setDebouncedQuery(text.trim()),
-      300,
+      300
     );
   };
 
@@ -54,15 +53,13 @@ export default function FeedScreen() {
 
   const { data, isLoading, isFetching, refetch, error } = useListStories(
     category ? { category } : undefined,
-    { query: { staleTime: 60_000, enabled: !isSearchActive } as any },
+    { query: { staleTime: 60_000, enabled: !isSearchActive } as any }
   );
 
   const { data: searchData, isFetching: searchFetching } = useSearchStories(
     { q: debouncedQuery || " " },
-    { query: { staleTime: 30_000, enabled: isSearchActive } as any },
+    { query: { staleTime: 30_000, enabled: isSearchActive } as any }
   );
-
-  const triggerIngestion = useTriggerIngestion();
 
   const rawStories: Story[] = isSearchActive
     ? (searchData?.stories ?? [])
@@ -71,8 +68,8 @@ export default function FeedScreen() {
   const stories = useMemo(() => {
     if (isSearchActive) return rawStories;
     return [...rawStories].sort((a, b) => {
-      const ta = a.publishedDate ? new Date(a.publishedDate).getTime() : 0;
-      const tb = b.publishedDate ? new Date(b.publishedDate).getTime() : 0;
+      const ta = a.published_at ? new Date(a.published_at).getTime() : 0;
+      const tb = b.published_at ? new Date(b.published_at).getTime() : 0;
       return tb - ta;
     });
   }, [rawStories, isSearchActive]);
@@ -81,7 +78,7 @@ export default function FeedScreen() {
 
   const openSearch = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
-      () => undefined,
+      () => undefined
     );
     setSearchVisible(true);
     setSearchQuery("");
@@ -96,17 +93,10 @@ export default function FeedScreen() {
 
   const handleRefresh = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
-      () => undefined,
+      () => undefined
     );
-    if (!stories.length) {
-      try {
-        await triggerIngestion.mutateAsync();
-      } catch {
-        // background ingestion may take a while; ignore client-side error
-      }
-    }
     await refetch();
-  }, [refetch, stories.length, triggerIngestion]);
+  }, [refetch]);
 
   const showLoading =
     isLoading && !isSearchActive
@@ -123,7 +113,7 @@ export default function FeedScreen() {
       paddingLeft: insets.left,
       paddingRight: insets.right,
     }),
-    [insets.top, insets.bottom, insets.left, insets.right],
+    [insets.top, insets.bottom, insets.left, insets.right]
   );
 
   return (
@@ -173,7 +163,9 @@ export default function FeedScreen() {
                 onPress={toggleTheme}
                 hitSlop={10}
                 style={styles.iconBtn}
-                accessibilityLabel={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                accessibilityLabel={
+                  isDark ? "Switch to light mode" : "Switch to dark mode"
+                }
               >
                 <Ionicons
                   name={isDark ? "sunny-outline" : "moon-outline"}
@@ -219,7 +211,7 @@ export default function FeedScreen() {
 
       <FlatList
         data={stories}
-        keyExtractor={(item) => item.articleId}
+        keyExtractor={(item) => item.id}
         renderItem={({ item }) => <StoryCard story={item} />}
         contentContainerStyle={listPadding}
         showsVerticalScrollIndicator={false}
@@ -252,18 +244,14 @@ export default function FeedScreen() {
               <EmptyState
                 icon="newspaper-outline"
                 title={
-                  error
-                    ? "Couldn't load the feed"
-                    : "Today's feed is being prepared"
+                  error ? "Couldn't load the feed" : "Today's feed is being prepared"
                 }
                 message={
                   error
                     ? "Pull to refresh and try again."
-                    : "CRRNT Tap below to fetch the latest batch."
+                    : "Today's stories haven't been loaded yet. Pull down to refresh."
                 }
-                actionLabel={
-                  triggerIngestion.isPending ? "Refreshing…" : "Refresh now"
-                }
+                actionLabel="Refresh now"
                 onAction={handleRefresh}
               />
             )

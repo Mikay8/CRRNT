@@ -40,8 +40,8 @@ function QueueItem({
       onPress={onPlay}
       style={({ pressed }) => [styles.queueItem, { opacity: pressed ? 0.7 : 1 }]}
     >
-      {story.mediaUrl ? (
-        <Image source={{ uri: story.mediaUrl }} style={styles.queueThumb} resizeMode="cover" />
+      {story.media_url ? (
+        <Image source={{ uri: story.media_url }} style={styles.queueThumb} resizeMode="cover" />
       ) : (
         <View style={[styles.queueThumb, styles.thumbPlaceholder]} />
       )}
@@ -147,9 +147,9 @@ export default function QueueScreen({ visible, onClose, barBottom }: QueueScreen
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>NOW PLAYING</Text>
             <View style={styles.nowPlayingRow}>
-              {story.mediaUrl ? (
+              {story.media_url ? (
                 <Image
-                  source={{ uri: story.mediaUrl }}
+                  source={{ uri: story.media_url }}
                   style={styles.nowPlayingThumb}
                   resizeMode="cover"
                 />
@@ -189,7 +189,7 @@ export default function QueueScreen({ visible, onClose, barBottom }: QueueScreen
             </View>
             <FlatList
               data={queue}
-              keyExtractor={(item, idx) => `${item.articleId}-${idx}`}
+              keyExtractor={(item, idx) => `${item.id}-${idx}`}
               renderItem={({ item, index }) => (
                 <QueueItem
                   story={item}

@@ -1,403 +1,219 @@
-"""Daily ingestion orchestration.
+"""Ingestion orchestration — fetch, enrich, store in Supabase.
 
-Fetches news from NewsMesh, enriches with Claude + X API, and stores in cache
-under news:YYYY-MM-DD plus a flat per-article index.
-Sends Expo push notification on successful completion.
+Pipeline:
+  1. NewsMesh fetch (per category)
+  2. Claude Pass 1 — summary, life_impact, wallet_impact, one_liner, stock_note
+  3. X API + Claude Pass 2 — sentiment_label, sentiment_score, people_say
+  4. Insert story row to Supabase (get UUID)
+  5. Fish Audio TTS — upload, set tts_url
+  6. Write ingestion_log row
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import cache, config as config_service, enrichment, fish_audio, news_fetcher, push
-
-ALL_CATEGORIES = news_fetcher.ALL_CATEGORIES
+from services import db, enrichment, fish_audio, news_fetcher
 
 log = logging.getLogger("crrnt.ingestion")
 
+ALL_CATEGORIES = news_fetcher.ALL_CATEGORIES
 _DEFAULT_PER_CATEGORY = 10
-_DEFAULT_TRENDING_LIMIT = 25
-STATUS_KEY = "ingestion:status"
-TRENDING_STATUS_KEY = "ingestion:trending-status"
-NEWS_RETENTION_DAYS = 7
-ARTICLE_RETENTION_DAYS = 14
 _status_lock = asyncio.Lock()
-_trending_lock = asyncio.Lock()
-
-
-def _today() -> str:
-    return date.today().isoformat()
-
-
-def news_key(day: str) -> str:
-    return f"news:{day}"
-
-
-def article_key(article_id: str) -> str:
-    return f"article:{article_id}"
+_ingestion_status: dict[str, Any] = {"state": "idle"}
 
 
 def get_status() -> dict[str, Any]:
-    return cache.get(STATUS_KEY) or {"state": "idle"}
+    return _ingestion_status
 
 
-def _set_status(status: dict[str, Any]) -> None:
-    cache.set(STATUS_KEY, status)
+def _set_status(s: dict[str, Any]) -> None:
+    global _ingestion_status
+    _ingestion_status = s
 
 
-def get_trending_status() -> dict[str, Any]:
-    return cache.get(TRENDING_STATUS_KEY) or {"state": "idle"}
+# ── Expiry helper ─────────────────────────────────────────────────────────────
 
-
-def _set_trending_status(status: dict[str, Any]) -> None:
-    cache.set(TRENDING_STATUS_KEY, status)
-
-
-async def ensure_today_ingested(*, background: bool = True) -> None:
-    """Ensure today's news batch is cached, ingesting in the background if not."""
-    payload = cache.get(news_key(_today()))
-    if payload and payload.get("stories"):
-        log.info("Today's news already cached")
-        return
-    status = get_status()
-    if status.get("state") == "running" and status.get("date") == _today():
-        log.info("Ingestion already running for today")
-        return
-    if background:
-        asyncio.create_task(run_ingestion())
-    else:
-        await run_ingestion()
-
-
-async def run_ingestion() -> dict[str, Any]:
-    """Run the full ingestion pipeline. Safe to call concurrently."""
-    async with _status_lock:
-        today = _today()
-        existing = get_status()
-        if existing.get("state") == "running" and existing.get("date") == today:
-            return existing
-
-        cfg = config_service.get_config()
-        per_category = int(cfg.get("perCategory", _DEFAULT_PER_CATEGORY))
-        selected_categories = cfg.get("selectedCategories", ALL_CATEGORIES)
-
-        status: dict[str, Any] = {
-            "date": today,
-            "state": "running",
-            "storyCount": 0,
-            "perCategory": per_category,
-            "selectedCategories": selected_categories,
-            "startedAt": datetime.utcnow().isoformat() + "Z",
-        }
-        _set_status(status)
-
-    try:
-        log.info("Ingestion starting for %s (perCategory=%d)", today, per_category)
-        raw = await news_fetcher.fetch_all_categories(selected_categories, per_category=per_category)
-        log.info("Fetched %d raw articles", len(raw))
-
-        enriched = await enrichment.enrich_all(raw) if raw else []
-
-        if enriched:
-            existing_payload = cache.get(news_key(today)) or {}
-            existing_stories = existing_payload.get("stories", [])
-            existing_ids = {s.get("articleId") for s in existing_stories if s.get("articleId")}
-            new_stories = [s for s in enriched if s.get("articleId") not in existing_ids]
-            merged = existing_stories + new_stories
-            cache.set(news_key(today), {
-                "date": today,
-                "totalCount": len(merged),
-                "stories": merged,
-            })
-            for story in new_stories:
-                aid = story.get("articleId")
-                if aid:
-                    cache.set(article_key(aid), story)
-        else:
-            log.info("Ingestion produced 0 stories — preserving existing cache if present")
-
-        status = {
-            "date": today,
-            "state": "success" if enriched else "empty",
-            "storyCount": len(enriched),
-            "perCategory": per_category,
-            "selectedCategories": selected_categories,
-            "startedAt": status["startedAt"],
-            "finishedAt": datetime.utcnow().isoformat() + "Z",
-        }
-        _set_status(status)
-        log.info("Ingestion finished: %d stories", len(enriched))
-
+def _expires_at(published_at: Optional[str], days: int = 7) -> str:
+    if published_at:
         try:
-            cleanup_old_cache()
-        except Exception as exc:  # noqa: BLE001
-            log.info("Cache cleanup after ingestion failed: %s", exc)
+            base = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+            return (base + timedelta(days=days)).isoformat()
+        except ValueError:
+            pass
+    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
 
+
+# ── Map enrichment output to Supabase row ─────────────────────────────────────
+
+def _to_story_row(raw: dict[str, Any]) -> dict[str, Any]:
+    """Convert enriched story dict to a stories table row."""
+    ticker = raw.get("ticker")
+    company = raw.get("companyName")
+    stock_note_parts = [p for p in [ticker, f"({company})" if company else None] if p]
+    stock_note = " ".join(stock_note_parts) if stock_note_parts else None
+
+    pub = raw.get("publishedDate") or raw.get("published_at")
+
+    sentiment_label = raw.get("sentimentLabel") or raw.get("sentiment_label")
+    sentiment_score = raw.get("sentimentScore") or raw.get("sentiment_score")
+    if isinstance(sentiment_score, str):
         try:
-            await push.send_push(
-                "Updated News",
-                f"{len(enriched)} fresh stories are ready for you.",
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.info("Push notification after ingestion failed: %s", exc)
+            sentiment_score = float(sentiment_score)
+        except ValueError:
+            sentiment_score = None
 
-        return status
-
-    except Exception as exc:  # noqa: BLE001
-        log.exception("Ingestion failed: %s", exc)
-        status = {
-            "date": _today(),
-            "state": "error",
-            "storyCount": 0,
-            "perCategory": per_category,
-            "selectedCategories": selected_categories,
-            "startedAt": status.get("startedAt") if isinstance(status, dict) else None,
-            "finishedAt": datetime.utcnow().isoformat() + "Z",
-            "message": str(exc),
-        }
-        _set_status(status)
-        return status
-
-
-async def run_trending_ingestion() -> dict[str, Any]:
-    """Fetch from /v1/trending, enrich, and merge into today's news cache."""
-    async with _trending_lock:
-        today = _today()
-        existing = get_trending_status()
-        if existing.get("state") == "running" and existing.get("date") == today:
-            return existing
-
-        cfg = config_service.get_config()
-        trending_limit = int(cfg.get("trendingLimit", _DEFAULT_TRENDING_LIMIT))
-
-        status: dict[str, Any] = {
-            "date": today,
-            "state": "running",
-            "storyCount": 0,
-            "trendingLimit": trending_limit,
-            "startedAt": datetime.utcnow().isoformat() + "Z",
-        }
-        _set_trending_status(status)
-
-    try:
-        log.info("Trending ingestion starting for %s (limit=%d)", today, trending_limit)
-        raw = await news_fetcher.fetch_trending(trending_limit)
-        log.info("Fetched %d trending articles", len(raw))
-
-        enriched = await enrichment.enrich_all(raw) if raw else []
-
-        if enriched:
-            existing_payload = cache.get(news_key(today)) or {}
-            existing_stories = existing_payload.get("stories", [])
-            existing_ids = {s.get("articleId") for s in existing_stories if s.get("articleId")}
-            new_stories = [s for s in enriched if s.get("articleId") not in existing_ids]
-            merged = existing_stories + new_stories
-            cache.set(news_key(today), {
-                "date": today,
-                "totalCount": len(merged),
-                "stories": merged,
-            })
-            for story in new_stories:
-                aid = story.get("articleId")
-                if aid:
-                    cache.set(article_key(aid), story)
-        else:
-            log.info("Trending ingestion produced 0 stories — preserving existing cache")
-
-        status = {
-            "date": today,
-            "state": "success" if enriched else "empty",
-            "storyCount": len(enriched),
-            "trendingLimit": trending_limit,
-            "startedAt": status["startedAt"],
-            "finishedAt": datetime.utcnow().isoformat() + "Z",
-        }
-        _set_trending_status(status)
-        log.info("Trending ingestion finished: %d stories", len(enriched))
-
-        try:
-            cleanup_old_cache()
-        except Exception as exc:  # noqa: BLE001
-            log.info("Cache cleanup after trending ingestion failed: %s", exc)
-
-        try:
-            await push.send_push(
-                "Updated News",
-                f"{len(enriched)} fresh stories are ready for you.",
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.info("Push notification after trending ingestion failed: %s", exc)
-
-        return status
-
-    except Exception as exc:  # noqa: BLE001
-        log.exception("Trending ingestion failed: %s", exc)
-        status = {
-            "date": _today(),
-            "state": "error",
-            "storyCount": 0,
-            "trendingLimit": trending_limit,
-            "startedAt": status.get("startedAt") if isinstance(status, dict) else None,
-            "finishedAt": datetime.utcnow().isoformat() + "Z",
-            "message": str(exc),
-        }
-        _set_trending_status(status)
-        return status
-
-
-def get_today_payload() -> Optional[dict[str, Any]]:
-    return cache.get(news_key(_today()))
-
-
-def get_latest_payload(max_lookback_days: int = NEWS_RETENTION_DAYS) -> Optional[dict[str, Any]]:
-    """Return all stories from the past max_lookback_days, newest-day-first.
-
-    Stories older than NEWS_RETENTION_DAYS are automatically purged by
-    cleanup_old_cache(), so this naturally respects the 7-day window.
-    """
-    today = date.today()
-    today_str = today.isoformat()
-    all_stories: list[dict[str, Any]] = []
-    most_recent_date: Optional[str] = None
-    seen_ids: set[str] = set()
-
-    for offset in range(max_lookback_days + 1):
-        day = (today - timedelta(days=offset)).isoformat()
-        payload = cache.get(news_key(day))
-        if payload and payload.get("stories"):
-            if most_recent_date is None:
-                most_recent_date = day
-            for story in payload["stories"]:
-                aid = story.get("articleId")
-                if aid and aid in seen_ids:
-                    continue
-                if aid:
-                    seen_ids.add(aid)
-                all_stories.append(fish_audio.attach_audio_url(story))
-
-    if not all_stories:
-        return None
-
-    is_stale = most_recent_date != today_str
-    result: dict[str, Any] = {
-        "date": most_recent_date,
-        "totalCount": len(all_stories),
-        "stories": all_stories,
-        "isStale": is_stale,
-    }
-    if is_stale:
-        result["asOfDate"] = most_recent_date
-    return result
-
-
-def get_article(article_id: str) -> Optional[dict[str, Any]]:
-    story = cache.get(article_key(article_id))
-    return fish_audio.attach_audio_url(story) if story else None
-
-
-def cleanup_old_cache() -> dict[str, int]:
-    """Delete cached news/article keys older than the retention window."""
-    today = date.today()
-    keep_news_dates = {
-        (today - timedelta(days=i)).isoformat()
-        for i in range(NEWS_RETENTION_DAYS + 1)
-    }
-
-    deleted_news = 0
-    for key in cache.list_keys("news:"):
-        day = key.split(":", 1)[1] if ":" in key else ""
-        if day and day not in keep_news_dates:
-            cache.delete(key)
-            deleted_news += 1
-
-    valid_article_ids: set[str] = set()
-    for day in keep_news_dates:
-        payload = cache.get(news_key(day))
-        if payload:
-            for s in payload.get("stories", []):
-                aid = s.get("articleId")
-                if aid:
-                    valid_article_ids.add(aid)
-
-    deleted_articles = 0
-    for key in cache.list_keys("article:"):
-        aid = key.split(":", 1)[1] if ":" in key else ""
-        if aid and aid not in valid_article_ids:
-            cache.delete(key)
-            deleted_articles += 1
-
-    log.info(
-        "Cache cleanup: removed %d news entries, %d article entries",
-        deleted_news,
-        deleted_articles,
-    )
-    return {"news": deleted_news, "articles": deleted_articles}
-
-
-def repair_news_batches() -> dict[str, int]:
-    """Prune story entries from news: batches whose article: key has been deleted.
-
-    When an article: key is removed directly (e.g. via the admin panel), the
-    full story object embedded inside the news: batch is left behind.
-    get_latest_payload() reads from those batches, so the story keeps appearing
-    in the feed even though it's been deleted.  This function fixes that by
-    walking every news: batch and dropping references to missing articles.
-    """
-    batches_updated = 0
-    stories_removed = 0
-
-    for batch_key in cache.list_keys("news:"):
-        batch = cache.get(batch_key)
-        if not batch or "stories" not in batch:
-            continue
-        original = batch["stories"]
-        kept = [
-            s for s in original
-            if cache.get(article_key(str(s.get("articleId", "")))) is not None
-        ]
-        removed = len(original) - len(kept)
-        if removed > 0:
-            batch["stories"] = kept
-            batch["totalCount"] = len(kept)
-            cache.set(batch_key, batch)
-            batches_updated += 1
-            stories_removed += removed
-
-    log.info(
-        "Batch repair: removed %d stale stories from %d batches",
-        stories_removed,
-        batches_updated,
-    )
-    return {"batchesUpdated": batches_updated, "storiesRemoved": stories_removed}
-
-
-def delete_all_stories() -> dict[str, int]:
-    """Delete all story-related cache entries (news + articles). Config and tokens preserved."""
-    deleted_news = 0
-    for key in cache.list_keys("news:"):
-        cache.delete(key)
-        deleted_news += 1
-
-    deleted_articles = 0
-    for key in cache.list_keys("article:"):
-        cache.delete(key)
-        deleted_articles += 1
-
-    log.info("Admin: deleted %d news + %d article cache entries", deleted_news, deleted_articles)
-    return {"news": deleted_news, "articles": deleted_articles}
-
-
-def get_cache_stats() -> dict[str, int]:
-    news_count = len(cache.list_keys("news:"))
-    articles_count = len(cache.list_keys("article:"))
-    stocks_count = len(cache.list_keys("stock:"))
-    push_tokens = push.token_count()
     return {
-        "stories": articles_count,
-        "newsBatches": news_count,
-        "articles": articles_count,
-        "stocks": stocks_count,
-        "pushTokens": push_tokens,
+        "external_id": raw.get("articleId") or raw.get("external_id"),
+        "title": raw.get("title"),
+        "category": raw.get("category"),
+        "tier": "free",
+        "published_at": pub,
+        "source_url": raw.get("link") or raw.get("source_url"),
+        "media_url": raw.get("mediaUrl") or raw.get("media_url"),
+        "summary": raw.get("storySummary") or raw.get("summary"),
+        "life_impact": raw.get("lifeImpact") or raw.get("life_impact"),
+        "wallet_impact": raw.get("walletImpact") or raw.get("wallet_impact"),
+        "stock_note": stock_note,
+        "one_liner": raw.get("insight") or raw.get("one_liner"),
+        "sentiment_label": sentiment_label,
+        "sentiment_score": sentiment_score,
+        "people_say": raw.get("peopleSay") or raw.get("people_say"),
+        "expires_at": _expires_at(pub),
     }
+
+
+# ── Main ingestion run ────────────────────────────────────────────────────────
+
+async def run_ingestion(
+    per_category: int = _DEFAULT_PER_CATEGORY,
+    categories: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """Full ingestion pipeline. Returns a status dict."""
+    async with _status_lock:
+        if _ingestion_status.get("state") == "running":
+            return _ingestion_status
+        _set_status({
+            "state": "running",
+            "startedAt": datetime.now(timezone.utc).isoformat(),
+            "storyCount": 0,
+        })
+
+    started_at = datetime.now(timezone.utc)
+    fetched_count = 0
+    enriched_count = 0
+    tts_count = 0
+    error_count = 0
+
+    try:
+        selected = categories or ALL_CATEGORIES
+        log.info("Ingestion starting (per_category=%d, categories=%s)", per_category, selected)
+
+        raw = await news_fetcher.fetch_all_categories(selected, per_category=per_category)
+        fetched_count = len(raw)
+        log.info("Fetched %d raw articles", fetched_count)
+
+        if not raw:
+            _set_status({"state": "empty", "storyCount": 0, "startedAt": started_at.isoformat()})
+            _write_log(fetched_count, 0, 0, 0, "partial", "No articles fetched")
+            return _ingestion_status
+
+        enriched = await enrichment.enrich_all(raw)
+        log.info("Enriched %d stories", len(enriched))
+
+        for story in enriched:
+            try:
+                row = _to_story_row(story)
+                external_id = row.get("external_id")
+
+                # Skip duplicates
+                if external_id and db.get_story_by_external_id(external_id):
+                    log.info("Skipping duplicate: %s", external_id)
+                    continue
+
+                # Remove None external_id to avoid constraint errors
+                if not external_id:
+                    row.pop("external_id", None)
+
+                inserted = db.insert_story(row)
+                story_id = inserted["id"]
+                enriched_count += 1
+
+                # Wire TTS audio
+                tts_url = await fish_audio.synthesize_and_store(story, story_id)
+                if tts_url:
+                    db.update_story(story_id, {"tts_url": tts_url})
+                    tts_count += 1
+
+            except Exception as exc:
+                log.exception("Failed to store story: %s", exc)
+                error_count += 1
+
+        log.info(
+            "Ingestion done: fetched=%d enriched=%d tts=%d errors=%d",
+            fetched_count, enriched_count, tts_count, error_count,
+        )
+        status_str = "success" if error_count == 0 else "partial"
+        _set_status({
+            "state": status_str,
+            "storyCount": enriched_count,
+            "startedAt": started_at.isoformat(),
+            "finishedAt": datetime.now(timezone.utc).isoformat(),
+        })
+        _write_log(fetched_count, enriched_count, tts_count, error_count, status_str)
+        return _ingestion_status
+
+    except Exception as exc:
+        log.exception("Ingestion pipeline failed: %s", exc)
+        error_count += 1
+        _set_status({
+            "state": "error",
+            "storyCount": enriched_count,
+            "startedAt": started_at.isoformat(),
+            "finishedAt": datetime.now(timezone.utc).isoformat(),
+            "message": str(exc),
+        })
+        _write_log(fetched_count, enriched_count, tts_count, error_count, "failed", str(exc))
+        return _ingestion_status
+
+
+def _write_log(
+    fetched: int, enriched: int, tts: int, errors: int,
+    status: str, notes: Optional[str] = None,
+) -> None:
+    try:
+        db.insert_ingestion_log({
+            "stories_fetched": fetched,
+            "stories_enriched": enriched,
+            "tts_generated": tts,
+            "errors": errors,
+            "status": status,
+            "notes": notes,
+        })
+    except Exception as exc:
+        log.warning("Failed to write ingestion log: %s", exc)
+
+
+# ── Story expiry cleanup ──────────────────────────────────────────────────────
+
+async def run_cleanup() -> dict[str, int]:
+    """Delete expired stories unless saved; extend if saved."""
+    expired = db.get_expired_stories()
+    deleted = 0
+    extended = 0
+
+    for row in expired:
+        story_id = row["id"]
+        save_count = db.saved_story_count(story_id)
+        if save_count == 0:
+            db.delete_story(story_id)
+            deleted += 1
+        else:
+            db.extend_story_expiry(story_id, days=30)
+            extended += 1
+
+    log.info("Cleanup: deleted=%d extended=%d", deleted, extended)
+    _write_log(0, 0, 0, 0, "success", f"Cleanup: deleted={deleted} extended={extended}")
+    return {"deleted": deleted, "extended": extended}

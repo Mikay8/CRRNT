@@ -2,20 +2,18 @@ openapi: 3.1.0
 info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: CRRNT API — news, stocks, and investment simulation
+  version: 2.0.0
+  description: CRRNT API — personalized news, stocks, auth, and subscriptions
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
-  - name: news
-    description: Daily enriched news stories
+  - name: auth
+  - name: stories
+  - name: onboarding
+  - name: subscriptions
   - name: stocks
-    description: Stock price data
-  - name: admin
-    description: Ingestion / admin controls
 paths:
   /healthz:
     get:
@@ -29,60 +27,139 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
-  /news:
+
+  # ── Auth ──────────────────────────────────────────────────────────────────
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthRequest"
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Log in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthRequest"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Log out
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required: [message]
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user profile
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+
+  # ── Stories ───────────────────────────────────────────────────────────────
+  /stories/daily:
     get:
       operationId: listStories
-      tags: [news]
-      summary: List today's enriched stories
+      tags: [stories]
+      summary: Get personalized daily story feed
+      security:
+        - BearerAuth: []
       parameters:
         - name: category
           in: query
           required: false
           schema:
             $ref: "#/components/schemas/Category"
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
       responses:
         "200":
-          description: List of stories
+          description: Personalized feed
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/StoriesResponse"
-  /news/{articleId}:
+
+  /stories/breaking:
     get:
-      operationId: getStory
-      tags: [news]
-      summary: Get a single enriched story by id
-      parameters:
-        - name: articleId
-          in: path
-          required: true
-          schema:
-            type: string
+      operationId: getBreakingNews
+      tags: [stories]
+      summary: Get active breaking news alert
+      security:
+        - BearerAuth: []
       responses:
         "200":
-          description: Story
+          description: Breaking news
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Story"
-        "404":
-          description: Not found
+                $ref: "#/components/schemas/BreakingNewsResponse"
+
+  /stories/saved:
+    get:
+      operationId: getSavedStories
+      tags: [stories]
+      summary: Get user's saved stories
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Saved stories
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /search:
+                $ref: "#/components/schemas/StoriesResponse"
+
+  /stories/search:
     get:
       operationId: searchStories
-      tags: [news]
-      summary: Full-text search across today's stories
+      tags: [stories]
+      summary: Full-text search across active stories
+      security:
+        - BearerAuth: []
       parameters:
         - name: q
           in: query
@@ -91,7 +168,6 @@ paths:
             type: string
             minLength: 1
             maxLength: 200
-          description: Search query (matches title, description, insight, ticker, source)
         - name: limit
           in: query
           required: false
@@ -107,11 +183,168 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SearchResponse"
+
+  /stories/{id}:
+    get:
+      operationId: getStory
+      tags: [stories]
+      summary: Get a single story by id
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Story detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Story"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /stories/{id}/save:
+    post:
+      operationId: saveStory
+      tags: [stories]
+      summary: Save a story
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required: [message]
+    delete:
+      operationId: unsaveStory
+      tags: [stories]
+      summary: Remove a saved story
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required: [message]
+
+  # ── Onboarding ────────────────────────────────────────────────────────────
+  /onboarding/quiz:
+    post:
+      operationId: saveOnboardingQuiz
+      tags: [onboarding]
+      summary: Save onboarding quiz answers
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuizPayload"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizResponse"
+    get:
+      operationId: getOnboardingQuiz
+      tags: [onboarding]
+      summary: Get current onboarding preferences
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizResponse"
+
+  # ── Subscriptions ─────────────────────────────────────────────────────────
+  /subscriptions/status:
+    get:
+      operationId: getSubscriptionStatus
+      tags: [subscriptions]
+      summary: Get subscription status
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Subscription status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionStatus"
+
+  /subscriptions/revenuecat/identify:
+    post:
+      operationId: identifyRevenueCat
+      tags: [subscriptions]
+      summary: Link RevenueCat customer ID
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                revenuecat_customer_id:
+                  type: string
+              required: [revenuecat_customer_id]
+      responses:
+        "200":
+          description: Linked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required: [message]
+
+  # ── Stocks ────────────────────────────────────────────────────────────────
   /stock/{ticker}:
     get:
       operationId: getStockHistory
       tags: [stocks]
-      summary: Get cached daily price history for a ticker
+      summary: Get stock price history
       parameters:
         - name: ticker
           in: path
@@ -137,6 +370,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
   /simulate:
     post:
       operationId: simulateInvestment
@@ -155,17 +389,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SimulateResponse"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+
   /push-token:
     post:
       operationId: registerPushToken
-      tags: [admin]
-      summary: Register an Expo push token for a device
+      tags: [health]
+      summary: Register Expo push token
       requestBody:
         required: true
         content:
@@ -174,204 +403,105 @@ paths:
               $ref: "#/components/schemas/PushTokenRequest"
       responses:
         "200":
-          description: Token registered
+          description: Registered
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  ok:
-                    type: boolean
-                required:
-                  - ok
-  /admin/status:
-    get:
-      operationId: getIngestionStatus
-      tags: [admin]
-      summary: Get the latest ingestion status
-      responses:
-        "200":
-          description: Ingestion status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IngestionStatus"
-  /admin/refresh:
-    post:
-      operationId: triggerIngestion
-      tags: [admin]
-      summary: Trigger ingestion of today's news (runs in background)
-      responses:
-        "202":
-          description: Ingestion accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IngestionStatus"
-  /admin/config:
-    get:
-      operationId: getAdminConfig
-      tags: [admin]
-      summary: Get current ingestion config
-      responses:
-        "200":
-          description: Config
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IngestionConfig"
-    post:
-      operationId: setAdminConfig
-      tags: [admin]
-      summary: Update ingestion config
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/IngestionConfig"
-      responses:
-        "200":
-          description: Updated config
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IngestionConfig"
-  /admin/stats:
-    get:
-      operationId: getAdminStats
-      tags: [admin]
-      summary: Get KV cache stats
-      responses:
-        "200":
-          description: Stats
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CacheStats"
-  /admin/stories:
-    delete:
-      operationId: deleteAllStories
-      tags: [admin]
-      summary: Delete all cached story data
-      responses:
-        "200":
-          description: Deletion result
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                  deleted:
-                    type: object
-                required:
-                  - ok
-                  - deleted
+                  status:
+                    type: string
+                required: [status]
+
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
+
     Category:
       type: string
       enum: [celebrity, tech, government, sports, business, science, entertainment]
-      description: CRRNT's editorial category
-    Tweet:
+
+    Story:
       type: object
       properties:
         id:
           type: string
-        text:
-          type: string
-        author:
-          type: string
-          description: "@handle"
-        authorName:
-          type: string
-        url:
-          type: string
-        likes:
-          type: integer
-        retweets:
-          type: integer
-        createdAt:
-          type: string
-      required:
-        - id
-        - text
-        - author
-        - authorName
-        - url
-    Story:
-      type: object
-      properties:
-        articleId:
+        external_id:
           type: string
         title:
           type: string
-        description:
-          type: string
-        link:
-          type: string
-        mediaUrl:
-          type: string
-        publishedDate:
-          type: string
-        source:
-          type: string
         category:
           $ref: "#/components/schemas/Category"
-        ticker:
+        tier:
           type: string
-          description: Primary stock ticker mentioned or implied (null if none)
-        companyName:
+          enum: [free, paid]
+        published_at:
           type: string
-        insight:
+        source_url:
           type: string
-          description: One-line insight written by Claude
-        walletImpact:
+        media_url:
           type: string
-          description: How this news affects everyday finances (prices, jobs, wages)
-        lifeImpact:
+          nullable: true
+        summary:
           type: string
-          description: How this news directly affects the reader's life
-        storySummary:
+          description: AI-generated story summary
+        life_impact:
           type: string
-          description: AI-generated summary of the core news story
-        peopleSay:
+          description: How this story directly affects the reader's life
+        wallet_impact:
           type: string
-          description: AI-generated summary of what people are saying on social media
-        sentiment:
+          description: Everyday money ripple effect
+        stock_note:
           type: string
-          enum: [concerned, hopeful, angry, divided, unbothered, mixed]
-          description: Overall social media sentiment
-        tweets:
-          type: array
-          items:
-            $ref: "#/components/schemas/Tweet"
-          description: Top tweets related to this story
-        audioUrl:
+          nullable: true
+          description: Ticker and company context (e.g. "AAPL (Apple)")
+        one_liner:
           type: string
-          description: Relative path to pre-generated Fish Audio MP3 (e.g. /api/news/{id}/audio)
+          description: Punchy one-line insight
+        tts_url:
+          type: string
+          nullable: true
+          description: URL to pre-generated audio narration
+        sentiment_label:
+          type: string
+          nullable: true
+          enum: [mostly positive, mostly frustrated, split, surprisingly calm, not enough data]
+        sentiment_score:
+          type: number
+          nullable: true
+          minimum: -1
+          maximum: 1
+        people_say:
+          type: string
+          nullable: true
+          description: AI-generated social sentiment summary
+        expires_at:
+          type: string
+        created_at:
+          type: string
+        saved_at:
+          type: string
+          nullable: true
       required:
-        - articleId
+        - id
         - title
-        - link
-        - publishedDate
-        - source
         - category
-        - insight
-        - walletImpact
+
     StoriesResponse:
       type: object
       properties:
-        date:
+        tier:
           type: string
         totalCount:
           type: integer
@@ -379,14 +509,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Story"
-        isStale:
-          type: boolean
-        asOfDate:
-          type: string
-      required:
-        - date
-        - totalCount
-        - stories
+      required: [totalCount, stories]
+
     SearchResponse:
       type: object
       properties:
@@ -398,10 +522,174 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Story"
-      required:
-        - query
-        - totalCount
-        - stories
+      required: [query, totalCount, stories]
+
+    BreakingNewsResponse:
+      type: object
+      properties:
+        breaking:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+            headline:
+              type: string
+            link:
+              type: string
+            expires_at:
+              type: string
+          required: [id, headline]
+      required: [breaking]
+
+    AuthRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+      required: [email, password]
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        tier:
+          type: string
+          enum: [free, paid]
+        subscription_status:
+          type: string
+        subscription_expires_at:
+          type: string
+          nullable: true
+        onboarding_complete:
+          type: boolean
+        notification_consent:
+          type: boolean
+        created_at:
+          type: string
+      required: [id, email, tier, onboarding_complete]
+
+    SessionInfo:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+      required: [access_token]
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/UserProfile"
+        session:
+          $ref: "#/components/schemas/SessionInfo"
+      required: [user, session]
+
+    MeResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/UserProfile"
+        preferences:
+          $ref: "#/components/schemas/UserPreferences"
+          nullable: true
+      required: [user]
+
+    UserPreferences:
+      type: object
+      properties:
+        job_type:
+          type: string
+          nullable: true
+        housing_status:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        financial_goals:
+          type: array
+          items:
+            type: string
+          nullable: true
+        life_stage:
+          type: string
+          nullable: true
+        interests:
+          type: array
+          items:
+            type: string
+          nullable: true
+        income_bracket:
+          type: string
+          nullable: true
+
+    QuizPayload:
+      type: object
+      properties:
+        job_type:
+          type: string
+          nullable: true
+        housing_status:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        financial_goals:
+          type: array
+          items:
+            type: string
+          nullable: true
+        life_stage:
+          type: string
+          nullable: true
+        interests:
+          type: array
+          items:
+            type: string
+          nullable: true
+        income_bracket:
+          type: string
+          nullable: true
+
+    QuizResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        preferences:
+          $ref: "#/components/schemas/UserPreferences"
+          nullable: true
+      required: [preferences]
+
+    SubscriptionStatus:
+      type: object
+      properties:
+        tier:
+          type: string
+          enum: [free, paid]
+        subscription_status:
+          type: string
+        subscription_expires_at:
+          type: string
+          nullable: true
+        revenuecat_customer_id:
+          type: string
+          nullable: true
+      required: [tier, subscription_status]
+
     StockPricePoint:
       type: object
       properties:
@@ -409,9 +697,8 @@ components:
           type: string
         close:
           type: number
-      required:
-        - date
-        - close
+      required: [date, close]
+
     StockHistory:
       type: object
       properties:
@@ -431,11 +718,8 @@ components:
           type: number
         cachedAt:
           type: string
-      required:
-        - ticker
-        - range
-        - points
-        - cachedAt
+      required: [ticker, range, points, cachedAt]
+
     SimulateRequest:
       type: object
       properties:
@@ -445,11 +729,8 @@ components:
           type: number
         startDate:
           type: string
-          description: ISO date YYYY-MM-DD when the investment was made
-      required:
-        - ticker
-        - amount
-        - startDate
+      required: [ticker, amount, startDate]
+
     SimulateResponse:
       type: object
       properties:
@@ -471,69 +752,15 @@ components:
           type: number
         percentChange:
           type: number
-      required:
-        - ticker
-        - startDate
-        - amount
-        - startPrice
-        - currentPrice
-        - sharesPurchased
-        - currentValue
-        - profitLoss
-        - percentChange
-    IngestionStatus:
-      type: object
-      properties:
-        date:
-          type: string
-        state:
-          type: string
-          enum: [idle, running, success, error]
-        storyCount:
-          type: integer
-        startedAt:
-          type: string
-        finishedAt:
-          type: string
-        message:
-          type: string
-      required:
-        - state
-    IngestionConfig:
-      type: object
-      properties:
-        perCategory:
-          type: integer
-          minimum: 1
-          maximum: 25
-      required:
-        - perCategory
-    CacheStats:
-      type: object
-      properties:
-        stories:
-          type: integer
-        newsBatches:
-          type: integer
-        articles:
-          type: integer
-        stocks:
-          type: integer
-        pushTokens:
-          type: integer
-      required:
-        - stories
-        - newsBatches
-        - articles
-        - stocks
-        - pushTokens
+      required: [ticker, startDate, amount, startPrice, currentPrice, sharesPurchased, currentValue, profitLoss, percentChange]
+
     PushTokenRequest:
       type: object
       properties:
         token:
           type: string
-      required:
-        - token
+      required: [token]
+
     ErrorResponse:
       type: object
       properties:
@@ -541,5 +768,4 @@ components:
           type: string
         code:
           type: string
-      required:
-        - message
+      required: [message]

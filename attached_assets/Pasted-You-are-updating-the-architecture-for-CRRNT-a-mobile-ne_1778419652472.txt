@@ -1,0 +1,453 @@
+You are updating the architecture for CRRNT, a mobile news app built with 
+Expo React Native (frontend) and FastAPI (Python backend) hosted on Replit.
+
+## STACK
+
+- Expo React Native frontend
+- FastAPI Python backend on Replit
+- Supabase (PostgreSQL) for ALL data storage — users, stories, 
+  preferences, saved stories, breaking news, ingestion logs
+- Fish Audio API for TTS (already integrated — needs table column wired up)
+- X API for sentiment (already integrated — needs table columns wired up)
+- NewsMesh for news aggregation
+- Claude API for story enrichment
+- RevenueCat for subscriptions (Apple + Google)
+
+NO Replit DB. NO KV store. Everything lives in Supabase.
+
+---
+
+## SUPABASE SCHEMA (FULL)
+
+Run all of the following as SQL migrations in Supabase.
+
+---
+
+### users
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  tier TEXT DEFAULT 'free',          -- 'free' | 'paid'
+  subscription_status TEXT DEFAULT 'none',
+    -- 'none' | 'trialing' | 'active' | 'cancelled' | 'expired' | 'billing_issue'
+  subscription_expires_at TIMESTAMP,
+  revenuecat_customer_id TEXT,
+  notification_consent BOOLEAN DEFAULT FALSE,
+  onboarding_complete BOOLEAN DEFAULT FALSE
+);
+
+---
+
+### user_preferences
+CREATE TABLE user_preferences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  job_type TEXT,
+  housing_status TEXT,
+  city TEXT,
+  financial_goals TEXT[],
+  life_stage TEXT,
+  interests TEXT[],
+  income_bracket TEXT,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+---
+
+### stories
+CREATE TABLE stories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  external_id TEXT UNIQUE,
+  title TEXT,
+  category TEXT,         -- 'celebrity' | 'tech' | 'politics' | 'sports'
+  tier TEXT DEFAULT 'free',  -- 'free' | 'paid'
+  published_at TIMESTAMP,
+  source_url TEXT,
+
+  -- Claude enrichment fields
+  summary TEXT,
+  life_impact TEXT,
+  wallet_impact TEXT,
+  stock_note TEXT,
+  one_liner TEXT,
+
+  -- Fish Audio TTS (already integrated — wire to this column)
+  tts_url TEXT,
+
+  -- X API sentiment (already integrated — wire to these columns)
+  sentiment_label TEXT,  
+    -- 'mostly positive' | 'mostly frustrated' | 'split' | 
+    -- 'surprisingly calm' | 'not enough data'
+  sentiment_score FLOAT,   -- -1.0 to 1.0
+  people_say TEXT,         -- nullable, skipped if fewer than 10 tweets
+
+  expires_at TIMESTAMP,    -- published_at + 7 days, set on insert
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+---
+
+### saved_stories
+CREATE TABLE saved_stories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  story_id UUID REFERENCES stories(id),
+  saved_at TIMESTAMP DEFAULT NOW()
+);
+
+---
+
+### breaking_news
+CREATE TABLE breaking_news (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  headline TEXT,
+  link TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP DEFAULT NOW() + INTERVAL '6 hours'
+);
+
+---
+
+### ingestion_logs
+CREATE TABLE ingestion_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_at TIMESTAMP DEFAULT NOW(),
+  stories_fetched INT DEFAULT 0,
+  stories_enriched INT DEFAULT 0,
+  tts_generated INT DEFAULT 0,
+  errors INT DEFAULT 0,
+  status TEXT  -- 'success' | 'partial' | 'failed'
+);
+
+---
+
+## RLS POLICIES
+
+Enable RLS on all tables. Apply the following policies:
+
+-- users: read/update own row only
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "users_self" ON users
+  USING (auth.uid() = id);
+
+-- user_preferences: read/write own row only
+ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "prefs_self" ON user_preferences
+  USING (auth.uid() = user_id);
+
+-- stories: free stories readable by all auth users
+--          paid stories readable only by paid users
+ALTER TABLE stories ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "stories_free" ON stories
+  FOR SELECT USING (tier = 'free');
+CREATE POLICY "stories_paid" ON stories
+  FOR SELECT USING (
+    tier = 'paid' AND auth.uid() IN (
+      SELECT id FROM users WHERE tier = 'paid'
+    )
+  );
+
+-- saved_stories: own rows only
+ALTER TABLE saved_stories ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "saved_self" ON saved_stories
+  USING (auth.uid() = user_id);
+
+-- breaking_news: readable by all authenticated users
+ALTER TABLE breaking_news ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "breaking_read" ON breaking_news
+  FOR SELECT USING (auth.role() = 'authenticated');
+
+-- ingestion_logs: service role only (admin)
+ALTER TABLE ingestion_logs ENABLE ROW LEVEL SECURITY;
+
+-- All INSERT/DELETE on stories, breaking_news, ingestion_logs
+-- restricted to service role key only.
+
+---
+
+## FISH AUDIO (ALREADY INTEGRATED)
+
+No new integration work. Just wire the returned audio URL 
+into stories.tts_url on each story insert.
+
+Flow:
+- After Claude enrichment completes, call Fish Audio with story summary
+- On success: store URL in stories.tts_url
+- On failure: log error, set tts_url = NULL, do not block story publish
+- Use FISH_AUDIO_VOICE_ID env var for consistent voice across all stories
+- Server-side only. Never called from the frontend.
+
+---
+
+## X API SENTIMENT (ALREADY INTEGRATED)
+
+No new integration work. Just wire results into the 
+three sentiment columns on stories.
+
+Flow:
+- Query X API for tweets mentioning story headline keywords (last 24h)
+- Collect up to 100 tweets
+- Send to Claude for analysis
+- Claude returns:
+    sentiment_label, sentiment_score, people_say
+- If fewer than 10 tweets returned:
+    sentiment_label = 'not enough data'
+    sentiment_score = NULL
+    people_say = NULL
+- Store all three in stories table on insert
+
+---
+
+## STORY EXPIRY LOGIC
+
+- stories.expires_at is set to published_at + 7 days on insert
+- Daily cleanup job (Replit scheduled task):
+    1. Query stories WHERE expires_at < NOW()
+    2. For each: check if story_id exists in saved_stories
+    3. If no saves → DELETE story
+    4. If saves exist → extend expires_at by 30 days, do not delete
+    5. Log results to ingestion_logs (or a separate cleanup_logs table)
+- If a user unsaves a story and no other user has saved it,
+  it becomes eligible for deletion on next cleanup run
+
+---
+
+## FASTAPI BACKEND ROUTES
+
+All routes except /auth/register and /auth/login 
+require Authorization: Bearer <jwt> header.
+
+### Auth
+POST   /auth/register         — create Supabase user, insert into users
+POST   /auth/login            — return JWT via Supabase auth
+POST   /auth/logout
+GET    /auth/me               — return user profile + tier
+
+### Onboarding
+POST   /onboarding/quiz       — save user_preferences, 
+                                set onboarding_complete = true
+GET    /onboarding/quiz       — return saved preferences
+
+### Stories
+GET    /stories/daily         — return stories filtered and ranked by tier
+                                Free: 5 stories | Paid: 15 stories
+                                Personalized using user_preferences
+GET    /stories/{id}          — single story detail
+GET    /stories/breaking      — active breaking_news card if exists
+POST   /stories/{id}/save     — add to saved_stories
+DELETE /stories/{id}/save     — remove from saved_stories
+GET    /stories/saved         — return user's saved stories
+
+### Subscriptions
+POST   /subscriptions/revenuecat/webhook   — handle RC events
+POST   /subscriptions/revenuecat/identify  — link RC customer to user
+GET    /subscriptions/status               — return tier, status, expires_at
+
+### Admin (service role only, Basic Auth protected)
+POST   /admin/stories/ingest   — trigger NewsMesh pull + enrichment + store
+POST   /admin/breaking         — post breaking news card
+DELETE /admin/stories/expired  — manually trigger cleanup job
+GET    /admin/logs             — return ingestion_logs
+
+---
+
+## REVENUECAT SUBSCRIPTION LOGIC
+
+Products:
+- com.crrnt.pro.monthly  →  $3.99/month, 7-day free trial
+- com.crrnt.pro.annual   →  $34.99/year
+
+Webhook event handling (POST /subscriptions/revenuecat/webhook):
+- INITIAL_PURCHASE | RENEWAL
+    → tier = 'paid', status = 'active', update expires_at
+- CANCELLATION
+    → status = 'cancelled', keep tier = 'paid' until expires_at
+- EXPIRATION
+    → tier = 'free', status = 'expired'
+- BILLING_ISSUE
+    → status = 'billing_issue', send push notification
+
+RevenueCat is source of truth. Supabase mirrors state via webhook only.
+
+---
+
+## PERSONALIZATION (stories/daily scoring)
+
+Score each story against user_preferences before returning:
++2  story category matches user interests[]
++2  wallet_impact mentions user job_type
++1  story references user city (keyword match)
++1  story relates to financial_goals (keyword match)
+
+Free users: return top 5 scored stories 
+            (at least 1 per category where available)
+Paid users: return top 15 scored stories
+
+Paid story content is NEVER sent to free users — gated at API level.
+Frontend blur is UX only.
+
+---
+
+## ADMIN PORTAL
+
+Served by FastAPI at /admin using Jinja2 + TailwindCSS CDN.
+Protected by HTTP Basic Auth (ADMIN_USERNAME / ADMIN_PASSWORD env vars).
+All admin routes are isolated — never exposed to the mobile API.
+
+Nav: Dashboard | Stories | Users | Breaking News | Settings
+
+---
+
+### /admin — Dashboard
+
+Stat cards (pull from Supabase):
+- Total Stories Today
+- Free Stories Live
+- Paid Stories Live
+- Total Active Subscribers
+
+Left column — Ingestion Log:
+- Last 10 rows from ingestion_logs table
+- Columns: timestamp, fetched, enriched, TTS generated, errors, status badge
+
+Right column — Quick Actions:
+- "Trigger New Ingestion" button
+    → POST /admin/stories/ingest
+    → spinner during run
+    → returns summary on completion
+    → auto-refreshes ingestion log
+- "Run Cleanup Job" button
+    → triggers /admin/stories/expired
+    → returns: X deleted, X retained
+- "Post Breaking News" button
+    → inline form: headline + link + TTL selector
+    → POSTs to /admin/breaking
+    → success toast on completion
+
+---
+
+### /admin/stories — Stories
+
+Filter bar: category | tier | date range | title search
+
+Table columns:
+- Title (60 char truncation)
+- Category badge
+- Tier badge (Free = grey | Paid = orange)
+- Published date
+- Expires date
+- Saved by (count)
+- Sentiment label
+- TTS ✓ / ✗
+- Actions: View | Delete
+
+View opens detail modal:
+- All story fields displayed
+- sentiment_score shown as visual bar
+- Audio player if tts_url exists
+- Manual tier flip (free ↔ paid)
+- Extend expiry +7 days button
+
+---
+
+### /admin/users — Users
+
+Two tabs: Free Users | Paid Users
+
+Table columns (both tabs):
+- Email
+- Joined date
+- Tier badge
+- Subscription status badge
+- Subscription expires
+- Saved stories count
+- Onboarding complete ✓ / ✗
+- Actions: View | Manage
+
+View modal:
+- Full profile + preferences summary
+- Saved stories list with dates
+- Subscription status history
+
+Manage modal:
+- Set tier manually
+- Set subscription_status manually
+- Extend subscription_expires_at
+- Revoke access immediately
+- Delete account (hard delete with confirmation)
+
+Paid Users tab also shows:
+- RevenueCat customer ID
+- Direct link to RevenueCat dashboard for that customer
+
+---
+
+### /admin/breaking — Breaking News
+
+Active card display (if live record exists):
+- Headline, link, posted at, expires at
+- Dismiss Early button (deletes record)
+
+Post new form:
+- Headline (max 120 chars, live counter)
+- Link (URL input)
+- TTL: 2h | 4h | 6h | 12h
+- Submit
+
+Recent log: last 10 posts
+- Columns: headline | posted at | expired at | dismissed early
+
+---
+
+### /admin/settings — Settings
+
+Env var status panel:
+- Each required var listed as SET ✓ or MISSING ✗
+- Never shows values
+
+Ingestion schedule:
+- Current cron time display
+- Option to update time
+
+Story defaults:
+- Default tier toggle (Free / Paid)
+- Max free stories per day (slider 1–10)
+- Max paid stories per day (slider 5–20)
+
+Subscription config (read-only display):
+- Provider: RevenueCat
+- Monthly price
+- Annual price
+- Free trial duration
+
+---
+
+## ENVIRONMENT VARIABLES
+
+SUPABASE_URL=
+SUPABASE_SERVICE_KEY=
+SUPABASE_ANON_KEY=
+FISH_AUDIO_API_KEY=
+FISH_AUDIO_VOICE_ID=
+NEWSMESH_API_KEY=
+ANTHROPIC_API_KEY=
+XAPI_KEY=
+REVENUECAT_API_KEY=
+REVENUECAT_WEBHOOK_SECRET=
+ADMIN_USERNAME=
+ADMIN_PASSWORD=
+
+---
+
+## IMPLEMENTATION RULES
+
+- SUPABASE_SERVICE_KEY never exposed to frontend
+- All Claude calls server-side only
+- All Fish Audio calls server-side only
+- Paid story content never sent to free users — enforced at API level
+- RevenueCat is subscription source of truth; Supabase mirrors via webhook
+- All Claude prompts live in prompts.py
+- All SQL uses parameterized queries
+- Write README.md covering: all routes, env vars, 
+  subscription flow, admin portal usage, cleanup job schedule

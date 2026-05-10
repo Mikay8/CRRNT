@@ -76,8 +76,8 @@ function QueueItem({
       onPress={onPlay}
       style={({ pressed }) => [queueItemStyles.item, { opacity: pressed ? 0.7 : 1 }]}
     >
-      {story.mediaUrl ? (
-        <Image source={{ uri: story.mediaUrl }} style={queueItemStyles.thumb} resizeMode="cover" />
+      {story.media_url ? (
+        <Image source={{ uri: story.media_url }} style={queueItemStyles.thumb} resizeMode="cover" />
       ) : (
         <View style={[queueItemStyles.thumb, { backgroundColor: palette.border }]} />
       )}
@@ -354,8 +354,8 @@ export default function MiniAudioBar() {
               <View style={styles.queueSection}>
                 <Text style={styles.sectionLabel}>NOW PLAYING</Text>
                 <View style={styles.nowPlayingRow}>
-                  {story.mediaUrl ? (
-                    <Image source={{ uri: story.mediaUrl }} style={styles.nowPlayingThumb} resizeMode="cover" />
+                  {story.media_url ? (
+                    <Image source={{ uri: story.media_url }} style={styles.nowPlayingThumb} resizeMode="cover" />
                   ) : (
                     <View style={[styles.nowPlayingThumb, { backgroundColor: palette.border }]} />
                   )}
@@ -387,7 +387,7 @@ export default function MiniAudioBar() {
                 </View>
                 <FlatList
                   data={queue}
-                  keyExtractor={(item, idx) => `${item.articleId}-${idx}`}
+                  keyExtractor={(item, idx) => `${item.id}-${idx}`}
                   renderItem={({ item, index }) => (
                     <QueueItem
                       story={item}

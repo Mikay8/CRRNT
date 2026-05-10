@@ -1,10 +1,11 @@
 """Claude-powered enrichment for news stories.
 
 Pass 1 — Claude extracts per story:
-  ticker, companyName, insight, walletImpact, lifeImpact, category
+  storySummary, lifeImpact, walletImpact, insight, stock_note,
+  ticker, companyName, category
 
-Pass 2 — For stories with tweets from GetXAPI:
-  peopleSay, sentiment  (via a second, lightweight Claude call)
+Pass 2 — Tweet sentiment (X API data):
+  sentimentLabel, sentimentScore, peopleSay
 """
 from __future__ import annotations
 
@@ -42,100 +43,70 @@ SYSTEM_PROMPT = (
     "CRRNT covers pop culture, tech, government, sports, business, and science.\n\n"
     "Your job is not to explain markets. Your job is to make the news feel "
     "personally relevant — like a smart, culturally aware friend breaking it "
-    "down over text. Even heavy, serious stories should feel accessible and "
-    "human — never dry, never preachy, never like a textbook.\n\n"
+    "down over text.\n\n"
     "Write STORYSUMMARY (4-6 sentences, max 800 characters): tell the story "
-    "like you're explaining it to a friend who just asked 'wait, what happened?' "
-    "Lead with the most interesting or surprising part. Give enough context that "
-    "someone with zero background on this story fully understands what's going on "
-    "and why people are talking about it. Use plain conversational language — "
-    "short sentences, active voice, zero jargon. It's okay to have a little "
-    "personality here. Make them want to keep reading. No financial angle. "
-    "Just the story, told well.\n\n"
+    "like you're explaining it to a friend. Lead with the most interesting part. "
+    "Plain conversational language, short sentences, active voice, zero jargon.\n\n"
     "Write LIFEIMPACT (3-4 sentences, max 500 characters): how does this "
-    "directly affect the reader's actual life — their rent, job, groceries, "
-    "career, relationships, mental load, or future. Be specific and concrete. "
-    "Don't just say 'this could affect jobs' — say which jobs, in what way, "
-    "and roughly when. Start with 'You' or 'If you' when possible. Give enough "
-    "detail that the reader walks away knowing exactly what to pay attention to "
-    "in their own life. This is the heart of CRRNT — make it hit.\n\n"
-    "Write WALLETIMPACT (3-4 sentences, max 500 characters): two things in one "
-    "section. First, explain the everyday money ripple effect — name the specific "
-    "thing that costs more or less, the job category that takes a hit, the bill "
-    "that changes. Be concrete: 'groceries' not 'consumer goods', 'your rent' "
-    "not 'housing costs'. No econ-speak. No 'market volatility.' Just real talk "
-    "about real costs. If the impact is genuinely uncertain, say that honestly — "
-    "'nobody really knows yet, but here's what to watch.' "
-    "Second, briefly explain what this might mean for the related stock if one "
-    "exists — will this likely push the stock up or down and why, in one plain "
-    "sentence. If no stock is clearly relevant, skip the stock note entirely. "
-    "Never use trading language — just say 'this could push [company] stock up' "
-    "or 'investors might get nervous about [company]' in plain terms.\n\n"
-    "Write INSIGHT (1 sentence, under 110 characters): a punchy, memorable "
-    "one-liner that captures why this story matters to a young adult right now. "
-    "Hook them in. Make it feel urgent and real.\n\n"
-    "TICKER: Optionally identify the most relevant publicly traded US stock "
-    "ticker if one is clearly central to the story (e.g. AAPL, TSLA, META). "
-    "This is secondary context — not the focus. Return null if not clearly relevant.\n\n"
-    "CATEGORY REFINEMENT: When the input category is 'celebrity', classify "
-    "further. Set 'category' to 'celebrity' if the story is about a famous "
-    "person's life, relationships, or personal drama. Set 'category' to "
-    "'entertainment' if the story is about a movie, show, music release, "
-    "streaming platform, or media franchise. Omit 'category' for all others.\n\n"
-    "TONE OVERALL: Think Vox meets group chat. Informed but never stuffy. "
-    "Honest about uncertainty. Never fear-mongering. Never dismissive. "
-    "If a story is genuinely scary or heavy, it's okay to acknowledge that — "
-    "but always land on clarity, not anxiety.\n\n"
+    "directly affect the reader's actual life — rent, job, groceries, career, "
+    "relationships. Be specific. Start with 'You' or 'If you' when possible.\n\n"
+    "Write WALLETIMPACT (3-4 sentences, max 500 characters): the everyday money "
+    "ripple effect — name the specific cost, job category, or bill that changes. "
+    "If a stock is clearly relevant, add one plain sentence about direction. "
+    "No econ-speak.\n\n"
+    "Write INSIGHT (1 sentence, under 110 characters): a punchy one-liner "
+    "capturing why this story matters to a young adult right now.\n\n"
+    "TICKER: Optionally the most relevant publicly traded US ticker (e.g. AAPL). "
+    "Return null if not clearly relevant.\n\n"
+    "CATEGORY REFINEMENT: When input category is 'celebrity', set to 'celebrity' "
+    "for personal drama, or 'entertainment' for movie/show/music content. "
+    "Omit for all others.\n\n"
     "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
-    "with keys: storySummary (string), lifeImpact (string), walletImpact (string), "
-    "insight (string), ticker (string|null), companyName (string|null), "
-    "category (string, optional)."
+    "with keys: storySummary, lifeImpact, walletImpact, insight, "
+    "ticker (string|null), companyName (string|null), category (string, optional)."
 )
 
 SENTIMENT_SYSTEM_PROMPT = (
-    "You analyze social media sentiment about news stories for CRRNT — an app "
-    "for young adults who want to understand what the world actually thinks "
-    "about what's happening.\n\n"
-    "Given a news story and posts from Twitter, write a casual honest summary "
-    "of how real people feel — not Wall Street, not pundits. "
-    "How are everyday people actually reacting? Angry? Worried? Hopeful? "
-    "Cynical? Unbothered? Be direct. Avoid corporate tone entirely.\n\n"
-    "ALWAYS reply with a single JSON object — no prose, no markdown fences — "
-    "with keys: sentiment ('concerned'|'hopeful'|'angry'|'divided'|'unbothered'|'mixed'), "
-    "peopleSay (string, 2-3 sentences, max 280 characters, casual conversational tone)."
+    "You analyze social media sentiment about news stories for CRRNT.\n\n"
+    "Given a news story and tweets, write a casual honest summary of how real "
+    "people feel — not Wall Street, not pundits. Be direct. Avoid corporate tone.\n\n"
+    "sentimentLabel must be exactly one of: "
+    "'mostly positive' | 'mostly frustrated' | 'split' | 'surprisingly calm' | 'not enough data'\n\n"
+    "sentimentScore is a float from -1.0 (very negative) to 1.0 (very positive).\n\n"
+    "peopleSay: 2-3 sentences, max 280 characters, casual conversational tone. "
+    "Skip if fewer than 10 tweets.\n\n"
+    "ALWAYS reply with a single JSON object — no prose, no markdown — "
+    "with keys: sentimentLabel (string), sentimentScore (float), peopleSay (string|null)."
 )
 
 
 async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
-    """Pass 1: Enrich a single story with Claude. Returns story dict updated in-place."""
+    """Pass 1: Claude enrichment."""
     title = story.get("title") or ""
     description = story.get("description") or ""
     category = story.get("category") or ""
     source = story.get("source") or ""
 
     user_prompt = (
-        f"Category: {category}\n"
-        f"Source: {source}\n"
-        f"Headline: {title}\n"
-        f"Summary: {description}\n\n"
-        "Reply with the JSON object only."
+        f"Category: {category}\nSource: {source}\n"
+        f"Headline: {title}\nSummary: {description}\n\nReply with the JSON object only."
     )
 
     try:
         client = _get_client()
-        log.info("Claude pass 1: enriching '%s'", title[:70])
+        log.info("Claude pass 1: '%s'", title[:70])
         msg = await client.messages.create(
             model=MODEL,
-            max_tokens=600,
+            max_tokens=700,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
         )
         text = "".join(
-            block.text for block in msg.content if getattr(block, "type", "") == "text"
+            b.text for b in msg.content if getattr(b, "type", "") == "text"
         )
         parsed = _parse_json(text)
-    except Exception as exc:  # noqa: BLE001
-        log.info("Claude enrichment failed for %s: %s", title[:60], exc)
+    except Exception as exc:
+        log.warning("Claude pass 1 failed for '%s': %s", title[:60], exc)
         parsed = {}
 
     ticker = parsed.get("ticker")
@@ -154,54 +125,47 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
 
     insight = (parsed.get("insight") or "").strip()
     if not insight:
-        insight = _fallback_insight(category, title)
+        topic = (title or "this story").strip()
+        insight = f"A fresh {category} headline worth watching: {topic[:77]}..."
 
     wallet_impact = (parsed.get("walletImpact") or "").strip()
     if not wallet_impact:
         wallet_impact = (
-            "This story may ripple through everyday finances — "
-            "from prices at the checkout to hiring in the industry. "
-            "Keep an eye on how it develops."
+            "This story may ripple through everyday finances. Keep an eye on how it develops."
         )
 
     life_impact = (parsed.get("lifeImpact") or "").strip()
     if not life_impact:
-        life_impact = (
-            "This story may have real effects on everyday life — "
-            "from your job to your wallet to your community. "
-            "Keep an eye on how it develops."
-        )
+        life_impact = "This story may have real effects on everyday life. Keep an eye on how it develops."
 
     story_summary = (parsed.get("storySummary") or "").strip()
     if not story_summary:
         story_summary = (description or title or "").strip() or None
 
-    # Refine category for celebrity→entertainment split
     refined_cat = (parsed.get("category") or "").strip().lower()
     if refined_cat in ("celebrity", "entertainment") and story.get("category") == "celebrity":
         story["category"] = refined_cat
 
-    story["ticker"] = ticker
-    story["companyName"] = company_name
-    story["insight"] = insight
-    story["walletImpact"] = wallet_impact
-    story["lifeImpact"] = life_impact
-    story["storySummary"] = story_summary
-    # Tweet fields — populated in Pass 2 if tweets are found
-    story.setdefault("peopleSay", None)
-    story.setdefault("sentiment", None)
-    story.setdefault("tweets", [])
-    log.info(
-        "Claude pass 1 done: '%s' → ticker=%s category=%s",
-        title[:60],
-        ticker or "none",
-        story.get("category", category),
-    )
+    story.update({
+        "ticker": ticker,
+        "companyName": company_name,
+        "insight": insight,
+        "walletImpact": wallet_impact,
+        "lifeImpact": life_impact,
+        "storySummary": story_summary,
+        "peopleSay": None,
+        "sentimentLabel": None,
+        "sentimentScore": None,
+        "tweets": [],
+    })
+    log.info("Pass 1 done: '%s' ticker=%s", title[:60], ticker or "none")
     return story
 
 
-async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]]) -> dict[str, Any]:
-    """Pass 2: Analyze tweet sentiment with Claude. Mutates story in-place."""
+async def enrich_story_tweets(
+    story: dict[str, Any], tweets: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Pass 2: tweet sentiment analysis."""
     if not tweets:
         return story
 
@@ -209,21 +173,20 @@ async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]
     ticker = story.get("ticker", "")
     summary = story.get("storySummary") or story.get("description") or ""
     tweets_text = "\n".join(
-        f"- @{t.get('authorName', '?')}: {t.get('text', '')} [♥{t.get('likes', 0)} 🔁{t.get('retweets', 0)}]"
+        f"- @{t.get('authorName','?')}: {t.get('text','')} "
+        f"[♥{t.get('likes',0)} 🔁{t.get('retweets',0)}]"
         for t in tweets[:8]
     )
+    tweet_count = len(tweets)
 
     user_prompt = (
-        f"Article: {title}\n"
-        f"Ticker: {ticker or 'N/A'}\n"
-        f"Summary: {summary[:300]}\n\n"
-        f"Tweets:\n{tweets_text}\n\n"
-        "Reply with JSON only."
+        f"Article: {title}\nTicker: {ticker or 'N/A'}\n"
+        f"Summary: {summary[:300]}\nTweet count: {tweet_count}\n\n"
+        f"Tweets:\n{tweets_text}\n\nReply with JSON only."
     )
 
     try:
         client = _get_client()
-        log.info("Claude pass 2: sentiment for '%s' (%d tweet(s))", title[:60], len(tweets))
         msg = await client.messages.create(
             model=MODEL,
             max_tokens=300,
@@ -231,18 +194,35 @@ async def enrich_story_tweets(story: dict[str, Any], tweets: list[dict[str, Any]
             messages=[{"role": "user", "content": user_prompt}],
         )
         text = "".join(
-            block.text for block in msg.content if getattr(block, "type", "") == "text"
+            b.text for b in msg.content if getattr(b, "type", "") == "text"
         )
         parsed = _parse_json(text)
-    except Exception as exc:  # noqa: BLE001
-        log.info("Tweet sentiment failed for %s: %s", title[:60], exc)
+    except Exception as exc:
+        log.warning("Tweet sentiment failed for '%s': %s", title[:60], exc)
         parsed = {}
 
-    # Tweets always attach — they came from a targeted person+topic search so
-    # they're relevant by construction. Claude only adds the summary/sentiment.
-    story["tweets"] = tweets
-    story["sentiment"] = parsed.get("sentiment") or "mixed"
-    story["peopleSay"] = (parsed.get("peopleSay") or "").strip() or None
+    # If fewer than 10 tweets, force "not enough data"
+    if tweet_count < 10:
+        story.update({
+            "tweets": tweets,
+            "sentimentLabel": "not enough data",
+            "sentimentScore": None,
+            "peopleSay": None,
+        })
+    else:
+        score = parsed.get("sentimentScore")
+        if score is not None:
+            try:
+                score = max(-1.0, min(1.0, float(score)))
+            except (TypeError, ValueError):
+                score = None
+
+        story.update({
+            "tweets": tweets,
+            "sentimentLabel": parsed.get("sentimentLabel") or "split",
+            "sentimentScore": score,
+            "peopleSay": (parsed.get("peopleSay") or "").strip() or None,
+        })
     return story
 
 
@@ -267,13 +247,6 @@ def _parse_json(text: str) -> dict[str, Any]:
     return {}
 
 
-def _fallback_insight(category: str, title: str) -> str:
-    topic = (title or "this story").strip()
-    if len(topic) > 80:
-        topic = topic[:77] + "..."
-    return f"A fresh {category} headline worth watching: {topic}"
-
-
 def _is_buzzfeed_quiz(story: dict[str, Any]) -> bool:
     source = (story.get("source") or "").strip().lower()
     title = (story.get("title") or "").strip().lower()
@@ -282,37 +255,28 @@ def _is_buzzfeed_quiz(story: dict[str, Any]) -> bool:
 
 async def enrich_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Run both enrichment passes for all stories."""
-    from services import xapi  # avoid circular at module level
+    from services import xapi
 
-    # Pass 1: Claude enrichment (ticker, insight, walletImpact, lifeImpact)
     sem1 = asyncio.Semaphore(MAX_CONCURRENCY)
 
-    async def _bounded_enrich(story: dict[str, Any]) -> dict[str, Any]:
+    async def _bounded_enrich(s: dict[str, Any]) -> dict[str, Any]:
         async with sem1:
-            return await enrich_story(story)
+            return await enrich_story(s)
 
-    enriched = await asyncio.gather(*[_bounded_enrich(s) for s in stories])
+    enriched = list(await asyncio.gather(*[_bounded_enrich(s) for s in stories]))
 
-    # Pass 2: Tweet fetch + sentiment — skip BuzzFeed quizzes
     sem2 = asyncio.Semaphore(MAX_CONCURRENCY_TWEETS)
 
-    async def _bounded_tweets(story: dict[str, Any]) -> dict[str, Any]:
-        if _is_buzzfeed_quiz(story):
-            return story
-        if not story.get("people"):
-            return story
+    async def _bounded_tweets(s: dict[str, Any]) -> dict[str, Any]:
+        if _is_buzzfeed_quiz(s):
+            return s
+        if not (s.get("ticker") or s.get("people") or s.get("topics")):
+            return s
         async with sem2:
-            tweets = await xapi.fetch_story_tweets(story)
+            tweets = await xapi.fetch_story_tweets(s)
             if tweets:
-                return await enrich_story_tweets(story, tweets)
-            return story
+                return await enrich_story_tweets(s, tweets)
+            return s
 
-    enriched = await asyncio.gather(*[_bounded_tweets(s) for s in enriched])
-
-    # Pass 3: Fish Audio TTS — skip BuzzFeed quizzes
-    from services import fish_audio  # avoid circular at module level
-    non_quiz = [s for s in enriched if not _is_buzzfeed_quiz(s)]
-    quiz_stories = [s for s in enriched if _is_buzzfeed_quiz(s)]
-    synthesized = await fish_audio.synthesize_all(non_quiz)
-
-    return list(synthesized) + quiz_stories
+    enriched = list(await asyncio.gather(*[_bounded_tweets(s) for s in enriched]))
+    return enriched

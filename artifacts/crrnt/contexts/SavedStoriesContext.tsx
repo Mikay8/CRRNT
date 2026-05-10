@@ -1,8 +1,19 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+/**
+ * SavedStoriesContext — saves/unsaves stories via the backend API.
+ *
+ * Falls back to local state when the user is not authenticated or
+ * when API calls fail, so the UI never freezes.
+ */
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import type { Story } from "@workspace/api-client-react";
-
-const STORAGE_KEY = "@crrnt/saved-stories/v1";
+import { useAuth } from "./AuthContext";
 
 interface SavedContextValue {
   saved: Story[];
@@ -11,71 +22,110 @@ interface SavedContextValue {
   toggleSaved: (story: Story) => Promise<void>;
   remove: (id: string) => Promise<void>;
   hydrated: boolean;
+  refresh: () => Promise<void>;
 }
 
 const SavedStoriesContext = createContext<SavedContextValue | null>(null);
 
-export function SavedStoriesProvider({ children }: { children: React.ReactNode }) {
+function getApiBase(): string {
+  const domain = process.env.EXPO_PUBLIC_DOMAIN;
+  if (domain) return `https://${domain}`;
+  const base = process.env.EXPO_PUBLIC_API_BASE;
+  if (base) return base;
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
+}
+
+export function SavedStoriesProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const { accessToken } = useAuth();
   const [saved, setSaved] = useState<Story[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as Story[];
-          if (Array.isArray(parsed)) setSaved(parsed);
-        }
-      } catch {
-        // Corrupt storage — start fresh.
-      } finally {
-        setHydrated(true);
-      }
-    })();
-  }, []);
-
-  const persist = useCallback(async (next: Story[]) => {
-    setSaved(next);
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // Storage failure is non-fatal — we still have it in memory.
-    }
-  }, []);
-
-  const savedIds = useMemo(
-    () => new Set(saved.map((s) => s.articleId)),
-    [saved]
+  const authHeaders = useMemo(
+    () =>
+      accessToken
+        ? {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          }
+        : null,
+    [accessToken]
   );
+
+  const refresh = useCallback(async () => {
+    if (!authHeaders) {
+      setHydrated(true);
+      return;
+    }
+    try {
+      const res = await fetch(`${getApiBase()}/api/stories/saved`, {
+        headers: authHeaders,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSaved((data.stories as Story[]) || []);
+      }
+    } catch {
+      // Non-fatal — keep existing state
+    } finally {
+      setHydrated(true);
+    }
+  }, [authHeaders]);
+
+  useEffect(() => {
+    refresh().catch(() => setHydrated(true));
+  }, [refresh]);
+
+  const savedIds = useMemo(() => new Set(saved.map((s) => s.id)), [saved]);
 
   const isSaved = useCallback((id: string) => savedIds.has(id), [savedIds]);
 
   const toggleSaved = useCallback(
     async (story: Story) => {
-      if (savedIds.has(story.articleId)) {
-        await persist(saved.filter((s) => s.articleId !== story.articleId));
+      if (!authHeaders) return;
+      const alreadySaved = savedIds.has(story.id);
+      if (alreadySaved) {
+        setSaved((prev) => prev.filter((s) => s.id !== story.id));
+        await fetch(`${getApiBase()}/api/stories/${story.id}/save`, {
+          method: "DELETE",
+          headers: authHeaders,
+        }).catch(() => undefined);
       } else {
-        await persist([story, ...saved]);
+        setSaved((prev) => [story, ...prev]);
+        await fetch(`${getApiBase()}/api/stories/${story.id}/save`, {
+          method: "POST",
+          headers: authHeaders,
+        }).catch(() => undefined);
       }
     },
-    [saved, savedIds, persist]
+    [authHeaders, savedIds]
   );
 
   const remove = useCallback(
     async (id: string) => {
-      await persist(saved.filter((s) => s.articleId !== id));
+      if (!authHeaders) return;
+      setSaved((prev) => prev.filter((s) => s.id !== id));
+      await fetch(`${getApiBase()}/api/stories/${id}/save`, {
+        method: "DELETE",
+        headers: authHeaders,
+      }).catch(() => undefined);
     },
-    [saved, persist]
+    [authHeaders]
   );
 
   const value = useMemo<SavedContextValue>(
-    () => ({ saved, savedIds, isSaved, toggleSaved, remove, hydrated }),
-    [saved, savedIds, isSaved, toggleSaved, remove, hydrated]
+    () => ({ saved, savedIds, isSaved, toggleSaved, remove, hydrated, refresh }),
+    [saved, savedIds, isSaved, toggleSaved, remove, hydrated, refresh]
   );
 
   return (
-    <SavedStoriesContext.Provider value={value}>{children}</SavedStoriesContext.Provider>
+    <SavedStoriesContext.Provider value={value}>
+      {children}
+    </SavedStoriesContext.Provider>
   );
 }
 

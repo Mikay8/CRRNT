@@ -13,7 +13,7 @@ interface SaveButtonProps {
 export function SaveButton({ story, size = 22 }: SaveButtonProps) {
   const { isSaved, toggleSaved } = useSavedStories();
   const { theme: palette } = useThemeContext();
-  const saved = isSaved(story.articleId);
+  const saved = isSaved(story.id);
 
   return (
     <Pressable

@@ -318,16 +318,58 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       let audioStarted = false;
 
       if (audioUrl) {
-        // Audio endpoint is publicly streamable (free stories use UUID-based URLs).
-        // Stream directly — no auth headers needed on any platform.
         const fullUrl = `${getBaseUrl() ?? ""}${audioUrl}`;
         await configureAudioSession();
-        if (blobUrlRef.current) {
-          URL.revokeObjectURL(blobUrlRef.current);
-          blobUrlRef.current = null;
+
+        if (typeof document !== "undefined") {
+          // Web: fetch manually so we can decode base64 and pre-load duration.
+          // Server currently returns base64 text instead of binary MP3 (PostgREST BYTEA quirk).
+          if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+          try {
+            const res = await fetch(fullUrl);
+            if (res.ok) {
+              const rawBlob = await res.blob();
+              // Detect base64 response: if first char is ASCII printable (not 0xFF), decode it
+              const header = await rawBlob.slice(0, 1).arrayBuffer();
+              const firstByte = new Uint8Array(header)[0];
+              let audioBlob: Blob;
+              if (firstByte < 0x80) {
+                // Base64 text — decode to binary MP3
+                const b64 = await rawBlob.text();
+                const binary = Uint8Array.from(atob(b64.trim()), (c) => c.charCodeAt(0));
+                audioBlob = new Blob([binary], { type: "audio/mpeg" });
+              } else {
+                audioBlob = new Blob([await rawBlob.arrayBuffer()], { type: "audio/mpeg" });
+              }
+              const blobUrl = URL.createObjectURL(audioBlob);
+              blobUrlRef.current = blobUrl;
+              // Pre-load duration via HTML5 Audio — expo-audio web reports it late
+              const probeEl = document.createElement("audio");
+              const probeDur = await new Promise<number>((resolve) => {
+                probeEl.onloadedmetadata = () => resolve((probeEl as any).duration as number);
+                probeEl.onerror = () => resolve(0);
+                probeEl.src = blobUrl;
+              });
+              if (probeDur > 0 && isFinite(probeDur)) {
+                const ms = Math.round(probeDur * 1000);
+                audioDurationMsRef.current = ms;
+                setAudioDurationMs(ms);
+              }
+              player.replace({ uri: blobUrl });
+              audioStarted = true;
+            }
+          } catch {
+            // fall through to speech synthesis
+          }
+        } else {
+          // Native: stream directly (native media player handles it efficiently)
+          if (blobUrlRef.current) {
+            URL.revokeObjectURL(blobUrlRef.current);
+            blobUrlRef.current = null;
+          }
+          player.replace({ uri: fullUrl });
+          audioStarted = true;
         }
-        player.replace({ uri: fullUrl });
-        audioStarted = true;
       }
 
       if (audioStarted) {

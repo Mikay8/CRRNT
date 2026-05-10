@@ -90,6 +90,9 @@ def _to_story_row(raw: dict[str, Any]) -> dict[str, Any]:
 async def run_ingestion(
     per_category: int = _DEFAULT_PER_CATEGORY,
     categories: Optional[list[str]] = None,
+    mode: str = "category",
+    per_category_map: Optional[dict[str, int]] = None,
+    trending_count: int = 25,
 ) -> dict[str, Any]:
     """Full ingestion pipeline. Returns a status dict."""
     async with _status_lock:
@@ -108,10 +111,17 @@ async def run_ingestion(
     error_count = 0
 
     try:
-        selected = categories or ALL_CATEGORIES
-        log.info("Ingestion starting (per_category=%d, categories=%s)", per_category, selected)
-
-        raw = await news_fetcher.fetch_all_categories(selected, per_category=per_category)
+        if mode == "trending":
+            log.info("Ingestion starting (mode=trending, count=%d)", trending_count)
+            raw = await news_fetcher.fetch_trending(limit=trending_count)
+        elif per_category_map:
+            # Per-category counts — fetch each separately
+            log.info("Ingestion starting (mode=category, per_category_map=%s)", per_category_map)
+            raw = await news_fetcher.fetch_categories_with_map(per_category_map)
+        else:
+            selected = categories or ALL_CATEGORIES
+            log.info("Ingestion starting (per_category=%d, categories=%s)", per_category, selected)
+            raw = await news_fetcher.fetch_all_categories(selected, per_category=per_category)
         fetched_count = len(raw)
         log.info("Fetched %d raw articles", fetched_count)
 

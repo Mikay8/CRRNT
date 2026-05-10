@@ -240,4 +240,46 @@ async def fetch_trending(limit: int = 25) -> list[dict[str, Any]]:
     return normalized
 
 
-__all__ = ["fetch_category", "fetch_all_categories", "fetch_trending", "ALL_CATEGORIES", "TRENDING_CATEGORY_MAP", "NewsmeshError"]
+async def fetch_categories_with_map(
+    per_category_map: dict[str, int],
+) -> list[dict[str, Any]]:
+    """Fetch categories using individual per-category counts.
+
+    per_category_map: { "celebrity": 5, "tech": 10, ... }
+    Only categories in the map are fetched.
+    """
+    import asyncio
+
+    results: list[list[dict[str, Any]]] = []
+    cats = list(per_category_map.items())
+    for idx, (cat, count) in enumerate(cats):
+        if idx > 0:
+            await asyncio.sleep(1.0)
+        try:
+            results.append(await fetch_category(cat, limit=count))
+        except Exception as exc:
+            log.info("Failed to fetch category %s: %s", cat, exc)
+            results.append([])
+
+    flattened: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for batch in results:
+        for art in batch:
+            aid = art.get("articleId") or art.get("link")
+            if not aid or aid in seen:
+                continue
+            seen.add(aid)
+            flattened.append(art)
+    log.info("NewsMesh: fetch_categories_with_map complete — %d unique articles", len(flattened))
+    return flattened
+
+
+__all__ = [
+    "fetch_category",
+    "fetch_all_categories",
+    "fetch_categories_with_map",
+    "fetch_trending",
+    "ALL_CATEGORIES",
+    "TRENDING_CATEGORY_MAP",
+    "NewsmeshError",
+]

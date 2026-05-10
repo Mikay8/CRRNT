@@ -12,11 +12,13 @@
     </div>
     <div class="flex gap-2">
       <form method="POST" action="/admin/ingest">
-        <input type="hidden" name="per_category" value="10"/>
         <button type="submit" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg transition-colors">
           ⚡ Trigger Ingest
         </button>
       </form>
+      <a href="/admin/settings" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium rounded-lg transition-colors">
+        ⚙ Config
+      </a>
       <form method="POST" action="/admin/cleanup">
         <button type="submit" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
           🧹 Run Cleanup

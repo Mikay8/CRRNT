@@ -8,7 +8,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from services import ingestion
+from services import ingestion, ingest_config
 
 log = logging.getLogger("crrnt.scheduler")
 
@@ -16,7 +16,9 @@ _scheduler: AsyncIOScheduler | None = None
 
 
 async def _daily_ingest() -> None:
-    await ingestion.run_ingestion()
+    params = ingest_config.get_run_params()
+    log.info("Scheduled ingestion starting with params: %s", params)
+    await ingestion.run_ingestion(**params)
 
 
 async def _daily_cleanup() -> None:

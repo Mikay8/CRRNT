@@ -17,6 +17,7 @@ Actions (POST, redirect back):
   POST /admin/stories/{id}/tier
   POST /admin/settings/save
 """
+
 from __future__ import annotations
 
 import os
@@ -30,7 +31,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from services import db, ingestion, log_buffer, metrics
+from services import db, ingestion, ingest_config, log_buffer, metrics
 
 log = logging.getLogger("crrnt.admin")
 
@@ -42,6 +43,7 @@ _basic = HTTPBasic(auto_error=False)
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
+
 
 def _verify_admin(
     creds: Optional[HTTPBasicCredentials] = Depends(_basic),
@@ -74,6 +76,7 @@ def _verify_admin(
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _safe_db(fn, default):
     try:
         return fn()
@@ -89,6 +92,7 @@ def _ingestion_cfg() -> dict[str, Any]:
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
+
 @router.get("", response_class=RedirectResponse)
 @router.get("/", response_class=RedirectResponse)
 async def admin_root(_: None = Depends(_verify_admin)):
@@ -98,32 +102,37 @@ async def admin_root(_: None = Depends(_verify_admin)):
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: None = Depends(_verify_admin)):
     total_stories = _safe_db(lambda: db.count_stories(), 0)
-    free_stories  = _safe_db(lambda: db.count_stories(tier="free"), 0)
-    paid_stories  = _safe_db(lambda: db.count_stories(tier="paid"), 0)
-    total_users   = _safe_db(lambda: db.count_users(), 0)
-    paid_users    = _safe_db(lambda: db.count_users(tier="paid"), 0)
-    active_subs   = _safe_db(lambda: db.get_active_subscribers_count(), 0)
-    ingest_logs   = _safe_db(lambda: db.get_ingestion_logs(limit=5), [])
-    breaking      = _safe_db(lambda: db.get_active_breaking_news(), None)
+    free_stories = _safe_db(lambda: db.count_stories(tier="free"), 0)
+    paid_stories = _safe_db(lambda: db.count_stories(tier="paid"), 0)
+    total_users = _safe_db(lambda: db.count_users(), 0)
+    paid_users = _safe_db(lambda: db.count_users(tier="paid"), 0)
+    active_subs = _safe_db(lambda: db.get_active_subscribers_count(), 0)
+    ingest_logs = _safe_db(lambda: db.get_ingestion_logs(limit=5), [])
+    breaking = _safe_db(lambda: db.get_active_breaking_news(), None)
     ingest_status = ingestion.get_status()
-    recent_logs   = log_buffer.get_logs()
+    recent_logs = log_buffer.get_logs()
 
-    return templates.TemplateResponse(request, "admin/dashboard.html", {
-        "page": "dashboard",
-        "total_stories": total_stories,
-        "free_stories": free_stories,
-        "paid_stories": paid_stories,
-        "total_users": total_users,
-        "paid_users": paid_users,
-        "active_subs": active_subs,
-        "ingest_logs": ingest_logs,
-        "breaking": breaking,
-        "ingest_status": ingest_status,
-        "recent_logs": recent_logs,
-    })
+    return templates.TemplateResponse(
+        request,
+        "admin/dashboard.html",
+        {
+            "page": "dashboard",
+            "total_stories": total_stories,
+            "free_stories": free_stories,
+            "paid_stories": paid_stories,
+            "total_users": total_users,
+            "paid_users": paid_users,
+            "active_subs": active_subs,
+            "ingest_logs": ingest_logs,
+            "breaking": breaking,
+            "ingest_status": ingest_status,
+            "recent_logs": recent_logs,
+        },
+    )
 
 
 # ── Stories ───────────────────────────────────────────────────────────────────
+
 
 @router.get("/stories", response_class=HTMLResponse)
 async def admin_stories(
@@ -137,14 +146,26 @@ async def admin_stories(
         [],
     )
     total = _safe_db(lambda: db.count_stories(), 0)
-    return templates.TemplateResponse(request, "admin/stories.html", {
-        "page": "stories",
-        "stories": stories,
-        "total": total,
-        "filter_category": category or "",
-        "filter_tier": tier or "",
-        "categories": ["celebrity", "tech", "government", "sports", "business", "science", "entertainment"],
-    })
+    return templates.TemplateResponse(
+        request,
+        "admin/stories.html",
+        {
+            "page": "stories",
+            "stories": stories,
+            "total": total,
+            "filter_category": category or "",
+            "filter_tier": tier or "",
+            "categories": [
+                "celebrity",
+                "tech",
+                "government",
+                "sports",
+                "business",
+                "science",
+                "entertainment",
+            ],
+        },
+    )
 
 
 @router.post("/stories/{story_id}/delete")
@@ -166,6 +187,7 @@ async def change_tier(
 
 # ── Users ─────────────────────────────────────────────────────────────────────
 
+
 @router.get("/users", response_class=HTMLResponse)
 async def admin_users(
     request: Request,
@@ -177,27 +199,36 @@ async def admin_users(
         [],
     )
     total = _safe_db(lambda: db.count_users(), 0)
-    paid  = _safe_db(lambda: db.count_users(tier="paid"), 0)
-    return templates.TemplateResponse(request, "admin/users.html", {
-        "page": "users",
-        "users": users,
-        "total": total,
-        "paid_count": paid,
-        "filter_tier": tier or "",
-    })
+    paid = _safe_db(lambda: db.count_users(tier="paid"), 0)
+    return templates.TemplateResponse(
+        request,
+        "admin/users.html",
+        {
+            "page": "users",
+            "users": users,
+            "total": total,
+            "paid_count": paid,
+            "filter_tier": tier or "",
+        },
+    )
 
 
 # ── Breaking news ─────────────────────────────────────────────────────────────
 
+
 @router.get("/breaking", response_class=HTMLResponse)
 async def admin_breaking(request: Request, _: None = Depends(_verify_admin)):
-    active  = _safe_db(lambda: db.get_active_breaking_news(), None)
-    recent  = _safe_db(lambda: db.get_recent_breaking_news(limit=10), [])
-    return templates.TemplateResponse(request, "admin/breaking.html", {
-        "page": "breaking",
-        "active": active,
-        "recent": recent,
-    })
+    active = _safe_db(lambda: db.get_active_breaking_news(), None)
+    recent = _safe_db(lambda: db.get_recent_breaking_news(limit=10), [])
+    return templates.TemplateResponse(
+        request,
+        "admin/breaking.html",
+        {
+            "page": "breaking",
+            "active": active,
+            "recent": recent,
+        },
+    )
 
 
 @router.post("/breaking/create")
@@ -219,9 +250,10 @@ async def dismiss_breaking(record_id: str, _: None = Depends(_verify_admin)):
 
 # ── Settings ──────────────────────────────────────────────────────────────────
 
+
 @router.get("/settings", response_class=HTMLResponse)
 async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
-    cfg = _ingestion_cfg()
+    cfg = ingest_config.get()
     env_status = {
         "SUPABASE_URL": bool(os.environ.get("SUPABASE_URL")),
         "SUPABASE_SERVICE_KEY": bool(os.environ.get("SUPABASE_SERVICE_KEY")),
@@ -232,56 +264,127 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
         "REVENUECAT_WEBHOOK_SECRET": bool(os.environ.get("REVENUECAT_WEBHOOK_SECRET")),
         "ADMIN_PASSWORD": bool(os.environ.get("ADMIN_PASSWORD")),
     }
-    return templates.TemplateResponse(request, "admin/settings.html", {
-        "page": "settings",
-        "cfg": cfg,
-        "env_status": env_status,
-    })
+    system_info = [
+        {"label": "Schedule", "value": "08:00 America/New_York (daily)"},
+        {"label": "Cleanup", "value": "03:00 America/New_York (daily)"},
+        {"label": "Story expiry", "value": "7 days (extended 30d if saved)"},
+        {"label": "Free feed limit", "value": "5 stories"},
+        {"label": "Paid feed limit", "value": "15 stories"},
+        {"label": "NewsMesh daily quota", "value": "25 requests/day"},
+    ]
+    return templates.TemplateResponse(
+        request,
+        "admin/settings.html",
+        {
+            "page": "settings",
+            "cfg": cfg,
+            "env_status": env_status,
+            "system_info": system_info,
+        },
+    )
+
+
+def _parse_ingest_config(form: dict) -> dict:
+    """Parse submitted form data into an ingest_config dict."""
+    mode = form.get("mode", "category")
+    categories = {}
+    for cat in ingest_config.ALL_CATEGORIES:
+        enabled = form.get(f"cat_enabled_{cat}") == "1"
+        try:
+            count = max(1, min(10, int(form.get(f"cat_count_{cat}", 10))))
+        except (TypeError, ValueError):
+            count = 10
+        categories[cat] = {"enabled": enabled, "count": count}
+    try:
+        trending_count = max(1, min(25, int(form.get("trending_count", 25))))
+    except (TypeError, ValueError):
+        trending_count = 25
+    return {"mode": mode, "categories": categories, "trending_count": trending_count}
+
+
+@router.post("/ingest-config/save")
+async def save_ingest_config(request: Request, _: None = Depends(_verify_admin)):
+    form = dict(await request.form())
+    cfg = _parse_ingest_config(form)
+    ingest_config.save(cfg)
+    return RedirectResponse(url="/admin/settings", status_code=302)
+
+
+@router.post("/ingest-config/save-and-run")
+async def save_and_run_ingest(request: Request, _: None = Depends(_verify_admin)):
+    import asyncio
+    form = dict(await request.form())
+    cfg = _parse_ingest_config(form)
+    ingest_config.save(cfg)
+    params = ingest_config.get_run_params()
+    asyncio.create_task(ingestion.run_ingestion(**params))
+    return RedirectResponse(url="/admin/dashboard", status_code=302)
 
 
 # ── Service logs ──────────────────────────────────────────────────────────────
 
+
 @router.get("/logs", response_class=HTMLResponse)
 async def admin_logs(request: Request, _: None = Depends(_verify_admin)):
-    return templates.TemplateResponse(request, "admin/logs.html", {
-        "page": "logs",
-        "logs": log_buffer.get_logs(),
-    })
+    return templates.TemplateResponse(
+        request,
+        "admin/logs.html",
+        {
+            "page": "logs",
+            "logs": log_buffer.get_logs(),
+        },
+    )
 
 
 # ── API usage ─────────────────────────────────────────────────────────────────
+
 
 def _dashboard_links() -> list[dict]:
     return [
         {
             "name": "Anthropic (Claude)",
             "description": "Token usage, cost, rate limits for Claude enrichment",
-            "url": os.environ.get("ANTHROPIC_DASHBOARD_URL", "https://console.anthropic.com/settings/usage"),
+            "url": os.environ.get(
+                "ANTHROPIC_DASHBOARD_URL",
+                "https://console.anthropic.com/settings/usage",
+            ),
         },
         {
             "name": "Supabase",
             "description": "Database, Auth, Storage usage and billing",
-            "url": os.environ.get("SUPABASE_DASHBOARD_URL", "https://supabase.com/dashboard/project/gdgqbneacjirwlkbgnyb"),
+            "url": os.environ.get(
+                "SUPABASE_DASHBOARD_URL",
+                "https://supabase.com/dashboard/project/gdgqbneacjirwlkbgnyb",
+            ),
         },
         {
             "name": "RevenueCat",
             "description": "Subscription analytics, webhook logs, customer lookup",
-            "url": os.environ.get("REVENUECAT_DASHBOARD_URL", "https://app.revenuecat.com"),
+            "url": os.environ.get(
+                "REVENUECAT_DASHBOARD_URL",
+                "https://app.revenuecat.com/projects/7335007e/overview",
+            ),
         },
         {
             "name": "NewsMesh",
             "description": "Daily request quota and news API usage",
-            "url": os.environ.get("NEWSMESH_DASHBOARD_URL", "https://newsmesh.com/dashboard"),
+            "url": os.environ.get(
+                "NEWSMESH_DASHBOARD_URL", "https://newsmesh.co/dashboard"
+            ),
         },
         {
             "name": "GetXAPI (Twitter/X)",
             "description": "Tweet search quota and API usage",
-            "url": os.environ.get("XAPI_DASHBOARD_URL", "https://getxapi.com/dashboard"),
+            "url": os.environ.get(
+                "XAPI_DASHBOARD_URL", "https://getxapi.com/dashboard"
+            ),
         },
         {
             "name": "Fish Audio (TTS)",
             "description": "TTS character usage and billing",
-            "url": os.environ.get("FISH_AUDIO_DASHBOARD_URL", "https://fish.audio/dashboard"),
+            "url": os.environ.get(
+                "FISH_AUDIO_DASHBOARD_URL", "https://fish.audio/app/"
+            ),
         },
     ]
 
@@ -292,15 +395,19 @@ async def admin_usage(request: Request, _: None = Depends(_verify_admin)):
     total_calls = sum(r["calls"] for r in rows)
     total_errors = sum(r["errors"] for r in rows)
     error_rate = round(total_errors / total_calls * 100, 1) if total_calls else 0
-    return templates.TemplateResponse(request, "admin/usage.html", {
-        "page": "usage",
-        "rows": rows,
-        "total_calls": total_calls,
-        "total_errors": total_errors,
-        "error_rate": error_rate,
-        "endpoints": len(rows),
-        "dashboards": _dashboard_links(),
-    })
+    return templates.TemplateResponse(
+        request,
+        "admin/usage.html",
+        {
+            "page": "usage",
+            "rows": rows,
+            "total_calls": total_calls,
+            "total_errors": total_errors,
+            "error_rate": error_rate,
+            "endpoints": len(rows),
+            "dashboards": _dashboard_links(),
+        },
+    )
 
 
 @router.post("/usage/reset")
@@ -311,18 +418,19 @@ async def reset_usage(_: None = Depends(_verify_admin)):
 
 # ── Ingestion actions ─────────────────────────────────────────────────────────
 
+
 @router.post("/ingest")
-async def trigger_ingest(
-    per_category: int = Form(10),
-    _: None = Depends(_verify_admin),
-):
+async def trigger_ingest(_: None = Depends(_verify_admin)):
     import asyncio
-    asyncio.create_task(ingestion.run_ingestion(per_category=per_category))
+
+    params = ingest_config.get_run_params()
+    asyncio.create_task(ingestion.run_ingestion(**params))
     return RedirectResponse(url="/admin/dashboard", status_code=302)
 
 
 @router.post("/cleanup")
 async def trigger_cleanup(_: None = Depends(_verify_admin)):
     import asyncio
+
     asyncio.create_task(ingestion.run_cleanup())
     return RedirectResponse(url="/admin/dashboard", status_code=302)

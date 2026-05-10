@@ -6,10 +6,151 @@
 
   <div>
     <h1 class="text-2xl font-bold text-white">Settings</h1>
-    <p class="text-gray-500 text-sm mt-0.5">Environment status and ingestion configuration</p>
+    <p class="text-gray-500 text-sm mt-0.5">Ingestion configuration and environment status</p>
   </div>
 
-  <!-- Environment secrets status -->
+  <!-- ── Ingestion config form ──────────────────────────────────────────── -->
+  <form method="POST" action="/admin/ingest-config/save" class="space-y-5">
+
+    <!-- Mode toggle -->
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-white mb-4">Fetch Mode</h2>
+      <div class="flex gap-3">
+        <label class="flex items-center gap-3 flex-1 cursor-pointer rounded-xl border p-4 transition-colors
+          {% if cfg.mode == 'category' %}border-cyan-500 bg-cyan-950/30{% else %}border-gray-600 hover:border-gray-500{% endif %}">
+          <input type="radio" name="mode" value="category"
+            {% if cfg.mode == 'category' %}checked{% endif %}
+            class="accent-cyan-400"
+            onchange="document.getElementById('category-section').classList.remove('hidden'); document.getElementById('trending-section').classList.add('hidden');">
+          <div>
+            <div class="text-sm font-semibold text-white">Category mode</div>
+            <div class="text-xs text-gray-400 mt-0.5">Fetch stories per category. Control which categories run and how many per category.</div>
+          </div>
+        </label>
+        <label class="flex items-center gap-3 flex-1 cursor-pointer rounded-xl border p-4 transition-colors
+          {% if cfg.mode == 'trending' %}border-cyan-500 bg-cyan-950/30{% else %}border-gray-600 hover:border-gray-500{% endif %}">
+          <input type="radio" name="mode" value="trending"
+            {% if cfg.mode == 'trending' %}checked{% endif %}
+            class="accent-cyan-400"
+            onchange="document.getElementById('trending-section').classList.remove('hidden'); document.getElementById('category-section').classList.add('hidden');">
+          <div>
+            <div class="text-sm font-semibold text-white">Trending mode</div>
+            <div class="text-xs text-gray-400 mt-0.5">Fetch top trending stories across all topics. NewsMesh picks the hottest content.</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- Category mode settings -->
+    <div id="category-section" {% if cfg.mode == 'trending' %}class="hidden"{% endif %}>
+      <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-700 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-white">Categories &amp; Story Counts</h2>
+          <span class="text-xs text-gray-500">Max 10 per category (NewsMesh free tier)</span>
+        </div>
+        <div class="divide-y divide-gray-700/50">
+          {% set cat_icons = {
+            'celebrity': '🌟',
+            'tech': '💻',
+            'government': '🏛️',
+            'sports': '🏆',
+            'business': '💼',
+            'science': '🔬'
+          } %}
+          {% for cat, catcfg in cfg.categories.items() %}
+          <div class="px-5 py-4 flex items-center gap-4">
+            <!-- Enable toggle -->
+            <label class="relative inline-flex items-center cursor-pointer shrink-0">
+              <input type="checkbox" name="cat_enabled_{{ cat }}" value="1"
+                {% if catcfg.enabled %}checked{% endif %}
+                class="sr-only peer"
+                id="toggle-{{ cat }}"
+                onchange="document.getElementById('count-row-{{ cat }}').style.opacity = this.checked ? '1' : '0.3';">
+              <div class="w-10 h-5 bg-gray-600 rounded-full peer peer-checked:bg-cyan-500 transition-colors"></div>
+              <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5"></div>
+            </label>
+
+            <!-- Category label -->
+            <div class="w-28 shrink-0">
+              <span class="text-sm font-medium text-white capitalize">{{ cat_icons.get(cat, '📰') }} {{ cat }}</span>
+            </div>
+
+            <!-- Count slider -->
+            <div id="count-row-{{ cat }}" class="flex-1 flex items-center gap-3 transition-opacity" style="opacity: {% if catcfg.enabled %}1{% else %}0.3{% endif %}">
+              <input
+                type="range"
+                name="cat_count_{{ cat }}"
+                min="1" max="10"
+                value="{{ catcfg.count }}"
+                class="flex-1 accent-cyan-400 cursor-pointer"
+                id="slider-{{ cat }}"
+                oninput="document.getElementById('count-{{ cat }}').textContent = this.value">
+              <span id="count-{{ cat }}" class="text-cyan-400 font-bold text-sm w-6 text-right">{{ catcfg.count }}</span>
+              <span class="text-gray-500 text-xs">stories</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="px-5 py-3 bg-gray-800/50 border-t border-gray-700 flex items-center justify-between text-xs text-gray-500">
+          <span>Total estimated API calls:
+            <span id="total-calls" class="text-white font-semibold">
+              {{ cfg.categories.values() | selectattr('enabled') | map(attribute='count') | sum }}
+            </span>
+            / 25 daily quota
+          </span>
+          <button type="button" onclick="resetAll()" class="text-gray-500 hover:text-gray-300 transition-colors">Reset all to 10</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trending mode settings -->
+    <div id="trending-section" {% if cfg.mode == 'category' %}class="hidden"{% endif %}>
+      <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-white mb-4">Trending Stories</h2>
+        <div class="flex items-center gap-4">
+          <span class="text-gray-400 text-sm w-40">Total trending stories</span>
+          <input
+            type="range"
+            name="trending_count"
+            min="1" max="25"
+            value="{{ cfg.trending_count }}"
+            class="flex-1 accent-cyan-400 cursor-pointer"
+            oninput="document.getElementById('trending-count-display').textContent = this.value">
+          <span id="trending-count-display" class="text-cyan-400 font-bold text-sm w-6 text-right">{{ cfg.trending_count }}</span>
+          <span class="text-gray-500 text-xs">stories</span>
+        </div>
+        <p class="text-gray-600 text-xs mt-3">NewsMesh trending endpoint — returns the most-searched stories across all topics right now.</p>
+      </div>
+    </div>
+
+    <!-- Save + Run -->
+    <div class="flex flex-wrap items-center gap-3">
+      <button type="submit"
+        class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-lg transition-colors">
+        💾 Save Configuration
+      </button>
+      <button type="submit" formaction="/admin/ingest-config/save-and-run"
+        class="px-5 py-2.5 bg-green-700 hover:bg-green-600 text-white text-sm font-semibold rounded-lg transition-colors">
+        ⚡ Save &amp; Run Ingestion Now
+      </button>
+    </div>
+
+  </form>
+
+  <!-- ── System info (read-only) ───────────────────────────────────────── -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
+    <h2 class="text-sm font-semibold text-white mb-4">System Defaults</h2>
+    <div class="space-y-3">
+      {% for row in system_info %}
+      <div class="flex items-center justify-between text-sm">
+        <span class="text-gray-400">{{ row.label }}</span>
+        <span class="text-white font-mono">{{ row.value }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Environment secrets ───────────────────────────────────────────── -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
     <div class="px-5 py-3 border-b border-gray-700">
       <h2 class="text-sm font-semibold text-white">Environment Secrets</h2>
@@ -34,48 +175,10 @@
     </div>
   </div>
 
-  <!-- Ingestion config -->
+  <!-- ── Quick actions ─────────────────────────────────────────────────── -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
-    <h2 class="text-sm font-semibold text-white mb-4">Ingestion Configuration</h2>
-    <div class="space-y-4">
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-gray-400">Stories per category</span>
-        <span class="text-white font-semibold">{{ cfg.per_category }}</span>
-      </div>
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-gray-400">Schedule</span>
-        <span class="text-white font-mono">08:00 America/New_York (daily)</span>
-      </div>
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-gray-400">Cleanup</span>
-        <span class="text-white font-mono">03:00 America/New_York (daily)</span>
-      </div>
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-gray-400">Story expiry</span>
-        <span class="text-white font-mono">7 days (extended 30d if saved)</span>
-      </div>
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-gray-400">Free feed limit</span>
-        <span class="text-white font-mono">5 stories</span>
-      </div>
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-gray-400">Paid feed limit</span>
-        <span class="text-white font-mono">15 stories</span>
-      </div>
-    </div>
-    <p class="text-gray-600 text-xs mt-4">To change per_category, set the INGESTION_PER_CATEGORY environment variable and restart the server.</p>
-  </div>
-
-  <!-- Quick actions -->
-  <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
-    <h2 class="text-sm font-semibold text-white mb-4">Quick Actions</h2>
+    <h2 class="text-sm font-semibold text-white mb-4">Other Actions</h2>
     <div class="flex flex-wrap gap-3">
-      <form method="POST" action="/admin/ingest">
-        <input type="hidden" name="per_category" value="{{ cfg.per_category }}"/>
-        <button type="submit" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg transition-colors">
-          ⚡ Trigger Full Ingest
-        </button>
-      </form>
       <form method="POST" action="/admin/cleanup">
         <button type="submit" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
           🧹 Run Story Cleanup
@@ -85,4 +188,36 @@
   </div>
 
 </div>
+
+<script>
+function resetAll() {
+  document.querySelectorAll('input[type=range][name^=cat_count_]').forEach(s => {
+    s.value = 10;
+    const cat = s.name.replace('cat_count_', '');
+    const el = document.getElementById('count-' + cat);
+    if (el) el.textContent = '10';
+  });
+  updateTotal();
+}
+
+function updateTotal() {
+  let total = 0;
+  document.querySelectorAll('input[type=range][name^=cat_count_]').forEach(s => {
+    const cat = s.name.replace('cat_count_', '');
+    const enabled = document.getElementById('toggle-' + cat);
+    if (!enabled || enabled.checked) total += parseInt(s.value || 0);
+  });
+  const el = document.getElementById('total-calls');
+  if (el) {
+    el.textContent = total;
+    el.className = total > 25 ? 'text-red-400 font-semibold' : total > 20 ? 'text-yellow-400 font-semibold' : 'text-white font-semibold';
+  }
+}
+
+// Wire up all sliders and toggles to update the total
+document.querySelectorAll('input[type=range][name^=cat_count_], input[type=checkbox][name^=cat_enabled_]').forEach(el => {
+  el.addEventListener('input', updateTotal);
+  el.addEventListener('change', updateTotal);
+});
+</script>
 {% endblock %}

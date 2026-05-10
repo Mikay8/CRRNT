@@ -36,8 +36,16 @@ export default function RegisterScreen() {
     }
     setLoading(true);
     try {
-      await register(email.trim().toLowerCase(), password);
-      router.replace("/onboarding" as any);
+      const { requiresConfirmation } = await register(email.trim().toLowerCase(), password);
+      if (requiresConfirmation) {
+        Alert.alert(
+          "Check your email",
+          "We sent you a confirmation link. Please verify your email then sign in.",
+          [{ text: "OK", onPress: () => router.replace("/auth/login" as any) }]
+        );
+      } else {
+        router.replace("/onboarding" as any);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Registration failed";
       Alert.alert("Registration failed", msg);

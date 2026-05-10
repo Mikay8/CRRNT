@@ -43,11 +43,27 @@ async def register(body: RegisterRequest) -> dict[str, Any]:
     if not user:
         user = db.create_user(res.user.id, body.email)
 
+    session = res.session
+
+    # If Supabase email-confirmation is enabled, sign_up returns no session.
+    # Immediately sign in so the app can proceed without an extra step.
+    if not session:
+        try:
+            login_res = client.auth.sign_in_with_password(
+                {"email": body.email, "password": body.password}
+            )
+            session = login_res.session
+        except Exception:
+            pass  # Email confirmation truly required — handled by frontend
+
+    requires_confirmation = session is None
+
     return {
         "user": user,
+        "requires_confirmation": requires_confirmation,
         "session": {
-            "access_token": res.session.access_token if res.session else None,
-            "refresh_token": res.session.refresh_token if res.session else None,
+            "access_token": session.access_token if session else None,
+            "refresh_token": session.refresh_token if session else None,
         },
     }
 
@@ -77,6 +93,27 @@ async def login(body: LoginRequest) -> dict[str, Any]:
             "expires_in": res.session.expires_in,
         },
     }
+
+
+# ── Forgot password ───────────────────────────────────────────────────────────
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+@router.post("/forgot-password", status_code=200)
+async def forgot_password(body: ForgotPasswordRequest) -> dict[str, str]:
+    redirect_to = os.environ.get("APP_RESET_PASSWORD_URL", "")
+    client = db.get_client()
+    try:
+        opts: dict[str, Any] = {}
+        if redirect_to:
+            opts["redirect_to"] = redirect_to
+        client.auth.reset_password_for_email(body.email, opts)
+    except Exception as exc:
+        log.warning("reset_password_for_email error: %s", exc)
+    # Always return success to avoid email enumeration
+    return {"message": "If that email is registered you will receive a reset link."}
 
 
 # ── Logout ────────────────────────────────────────────────────────────────────

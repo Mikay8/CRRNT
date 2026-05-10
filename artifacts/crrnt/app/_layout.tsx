@@ -189,6 +189,10 @@ function ThemedApp() {
                           options={{ headerShown: false }}
                         />
                         <Stack.Screen
+                          name="auth/forgot-password"
+                          options={{ headerShown: false }}
+                        />
+                        <Stack.Screen
                           name="onboarding"
                           options={{ headerShown: false, gestureEnabled: false }}
                         />

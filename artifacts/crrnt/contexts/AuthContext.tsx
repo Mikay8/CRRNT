@@ -35,9 +35,10 @@ interface AuthContextValue {
   accessToken: string | null;
   hydrated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<{ requiresConfirmation: boolean }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
   getAuthHeader: () => Record<string, string>;
   isPaid: boolean;
 }
@@ -136,7 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   }, [_persistSession]);
 
-  const register = useCallback(async (email: string, password: string) => {
+  const register = useCallback(async (email: string, password: string): Promise<{ requiresConfirmation: boolean }> => {
     const res = await apiFetch("/api/auth/register", {
       method: "POST",
       body: JSON.stringify({ email, password }),
@@ -153,7 +154,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         data.user as CrrntUser
       );
     }
+    return { requiresConfirmation: !!data.requires_confirmation };
   }, [_persistSession]);
+
+  const forgotPassword = useCallback(async (email: string): Promise<void> => {
+    const res = await apiFetch("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.detail ?? "Request failed");
+    }
+  }, []);
 
   const logout = useCallback(async () => {
     if (accessToken) {
@@ -198,10 +211,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       register,
       logout,
       refreshUser,
+      forgotPassword,
       getAuthHeader,
       isPaid,
     }),
-    [user, accessToken, hydrated, login, register, logout, refreshUser, getAuthHeader, isPaid]
+    [user, accessToken, hydrated, login, register, logout, refreshUser, forgotPassword, getAuthHeader, isPaid]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

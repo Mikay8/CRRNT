@@ -108,8 +108,7 @@ async def dashboard(request: Request, _: None = Depends(_verify_admin)):
     ingest_status = ingestion.get_status()
     recent_logs   = log_buffer.get_logs()
 
-    return templates.TemplateResponse("admin/dashboard.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "admin/dashboard.html", {
         "page": "dashboard",
         "total_stories": total_stories,
         "free_stories": free_stories,
@@ -138,8 +137,7 @@ async def admin_stories(
         [],
     )
     total = _safe_db(lambda: db.count_stories(), 0)
-    return templates.TemplateResponse("admin/stories.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "admin/stories.html", {
         "page": "stories",
         "stories": stories,
         "total": total,
@@ -180,8 +178,7 @@ async def admin_users(
     )
     total = _safe_db(lambda: db.count_users(), 0)
     paid  = _safe_db(lambda: db.count_users(tier="paid"), 0)
-    return templates.TemplateResponse("admin/users.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "admin/users.html", {
         "page": "users",
         "users": users,
         "total": total,
@@ -196,8 +193,7 @@ async def admin_users(
 async def admin_breaking(request: Request, _: None = Depends(_verify_admin)):
     active  = _safe_db(lambda: db.get_active_breaking_news(), None)
     recent  = _safe_db(lambda: db.get_recent_breaking_news(limit=10), [])
-    return templates.TemplateResponse("admin/breaking.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "admin/breaking.html", {
         "page": "breaking",
         "active": active,
         "recent": recent,
@@ -236,8 +232,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
         "REVENUECAT_WEBHOOK_SECRET": bool(os.environ.get("REVENUECAT_WEBHOOK_SECRET")),
         "ADMIN_PASSWORD": bool(os.environ.get("ADMIN_PASSWORD")),
     }
-    return templates.TemplateResponse("admin/settings.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "admin/settings.html", {
         "page": "settings",
         "cfg": cfg,
         "env_status": env_status,

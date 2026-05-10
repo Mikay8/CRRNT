@@ -24,7 +24,7 @@ def _verify_rc_signature(body: bytes, signature: Optional[str]) -> bool:
     if not secret or not signature:
         return not secret  # if no secret configured, allow all
     expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, signature)
+    return hmac.compare_digest(expected, signature.lower())
 
 
 @router.post("/revenuecat/webhook")

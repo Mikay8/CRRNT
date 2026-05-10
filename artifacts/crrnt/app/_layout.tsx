@@ -148,8 +148,8 @@ function ThemedApp() {
       <KeyboardProvider>
         <SafeAreaProvider>
           <ErrorBoundary>
-            <QueryClientProvider client={queryClient}>
-              <AuthProvider>
+            <AuthProvider>
+              <QueryClientProvider client={queryClient}>
                 <AuthTokenWirer />
                 <AuthGate />
                 <SubscriptionProvider>
@@ -201,8 +201,8 @@ function ThemedApp() {
                     </AudioProvider>
                   </SavedStoriesProvider>
                 </SubscriptionProvider>
-              </AuthProvider>
-            </QueryClientProvider>
+              </QueryClientProvider>
+            </AuthProvider>
           </ErrorBoundary>
         </SafeAreaProvider>
       </KeyboardProvider>

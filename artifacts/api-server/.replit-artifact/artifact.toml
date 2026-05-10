@@ -7,7 +7,7 @@ id = "3B4_FFSkEVBkAeYMFRJ2e"
 [[services]]
 localPort = 8080
 name = "API Server"
-paths = ["/api"]
+paths = ["/api", "/admin"]
 
 [services.development]
 run = "python -m uvicorn main:app --host 0.0.0.0 --port $PORT --reload --app-dir artifacts/api-server"

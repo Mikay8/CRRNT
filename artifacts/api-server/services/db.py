@@ -113,7 +113,10 @@ def get_stories_for_feed(published_since_days: int = 7) -> list[dict[str, Any]]:
 # ── Story audio ────────────────────────────────────────────────────────────────
 
 def store_audio(story_id: str, mp3_bytes: bytes) -> None:
-    """Upsert raw MP3 bytes for a story."""
+    """Upsert raw MP3 bytes for a story.
+
+    PostgREST expects BYTEA as a base64-encoded string in JSON payloads.
+    """
     import base64
     get_client().table("story_audio").upsert(
         {"story_id": story_id, "mp3_data": base64.b64encode(mp3_bytes).decode()}
@@ -121,19 +124,34 @@ def store_audio(story_id: str, mp3_bytes: bytes) -> None:
 
 
 def get_audio(story_id: str) -> Optional[bytes]:
+    """Retrieve MP3 bytes for a story.
+
+    PostgREST may return BYTEA as base64 (newer) or \\x<hex> (older).
+    Both formats are handled.
+    """
     import base64
-    result = (
-        get_client().table("story_audio")
-        .select("mp3_data")
-        .eq("story_id", story_id)
-        .execute()
-    )
+    try:
+        result = (
+            get_client().table("story_audio")
+            .select("mp3_data")
+            .eq("story_id", story_id)
+            .execute()
+        )
+    except Exception:
+        log.warning("story_audio query failed for %s", story_id)
+        return None
     if not result.data:
         return None
     raw = result.data[0].get("mp3_data")
     if not raw:
         return None
-    return base64.b64decode(raw)
+    if isinstance(raw, (bytes, bytearray)):
+        return bytes(raw)
+    if isinstance(raw, str):
+        if raw.startswith("\\x"):
+            return bytes.fromhex(raw[2:])
+        return base64.b64decode(raw)
+    return None
 
 
 # ── Saved stories ─────────────────────────────────────────────────────────────

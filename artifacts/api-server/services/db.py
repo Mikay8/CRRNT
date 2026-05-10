@@ -146,7 +146,11 @@ def get_audio(story_id: str) -> Optional[bytes]:
     if not raw:
         return None
     if isinstance(raw, (bytes, bytearray)):
-        return bytes(raw)
+        # Supabase client returns BYTEA as bytes of the stored base64 text — decode it
+        try:
+            return base64.b64decode(raw)
+        except Exception:
+            return bytes(raw)
     if isinstance(raw, str):
         if raw.startswith("\\x"):
             return bytes.fromhex(raw[2:])

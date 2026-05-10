@@ -137,3 +137,15 @@ async def logout(user: dict = Depends(get_current_user)) -> dict[str, str]:
 async def me(user: dict = Depends(get_current_user)) -> dict[str, Any]:
     prefs = db.get_preferences(user["id"])
     return {"user": user, "preferences": prefs}
+
+
+# ── Delete account ────────────────────────────────────────────────────────────
+
+@router.delete("/account", status_code=204)
+async def delete_account(user: dict = Depends(get_current_user)) -> None:
+    """Permanently delete the authenticated user's account and all associated data."""
+    try:
+        db.delete_user_account(user["id"])
+    except Exception as exc:
+        log.error("Failed to delete account for user %s: %s", user["id"], exc)
+        raise HTTPException(status_code=500, detail="Account deletion failed")

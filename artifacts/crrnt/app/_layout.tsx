@@ -197,6 +197,10 @@ function ThemedApp() {
                           options={{ headerShown: false, gestureEnabled: false }}
                         />
                         <Stack.Screen
+                          name="settings/preferences"
+                          options={{ headerShown: false, presentation: "card" }}
+                        />
+                        <Stack.Screen
                           name="+not-found"
                           options={{ title: "Not found" }}
                         />

@@ -24,6 +24,7 @@ import CategoryFilter from "@/components/CategoryFilter";
 import EmptyState from "@/components/EmptyState";
 import type { Category } from "@/constants/categories";
 import { useThemeContext } from "@/contexts/ThemeContext";
+import { useAuth } from "@/contexts/AuthContext";
 import type { ThemeColors } from "@/constants/theme";
 
 const LOGO_DARK = require("@/assets/images/full-logo-dark.png") as number;
@@ -32,6 +33,7 @@ const LOGO_LIGHT = require("@/assets/images/full-logo-light.png") as number;
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const { isDark, theme: palette, toggleTheme } = useThemeContext();
+  const { accessToken } = useAuth();
   const [category, setCategory] = useState<Category | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -53,7 +55,7 @@ export default function FeedScreen() {
 
   const { data, isLoading, isFetching, refetch, error } = useListStories(
     category ? { category } : undefined,
-    { query: { staleTime: 60_000, enabled: !isSearchActive } as any }
+    { query: { staleTime: 60_000, enabled: !!accessToken && !isSearchActive } as any }
   );
 
   const { data: searchData, isFetching: searchFetching } = useSearchStories(

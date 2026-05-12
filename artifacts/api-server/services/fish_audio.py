@@ -30,6 +30,7 @@ def build_audio_text(story: dict[str, Any]) -> str:
     life = (story.get("lifeImpact") or story.get("life_impact") or "").strip()
     if life:
         parts.append("[break] Here's how it affects you. " + life)
+    insight = (story.get("insight") or story.get("one_liner") or "").strip()
     wallet = (story.get("walletImpact") or story.get("wallet_impact") or "").strip()
     wallet_line = " ".join(filter(None, [insight, wallet]))
     if wallet_line:
@@ -46,6 +47,7 @@ async def synthesize_and_store(story: dict[str, Any], story_id: str) -> Optional
 
     api_key = os.environ.get("FISH_AUDIO_API_KEY")
     if not api_key:
+        log.warning("FISH_AUDIO_API_KEY not set — skipping TTS for story %s", story_id)
         return None
 
     # Skip if already stored

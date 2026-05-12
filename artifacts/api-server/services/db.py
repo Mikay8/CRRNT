@@ -98,11 +98,12 @@ def get_stories_for_feed(published_since_days: int = 7) -> list[dict[str, Any]]:
     from datetime import datetime, timedelta, timezone
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=published_since_days)).isoformat()
+    now_str = datetime.now(timezone.utc).isoformat()
     result = (
         get_client().table("stories")
         .select("*")
         .gte("published_at", cutoff)
-        .gt("expires_at", datetime.now(timezone.utc).isoformat())
+        .or_(f"expires_at.is.null,expires_at.gt.{now_str}")
         .order("published_at", desc=True)
         .limit(200)
         .execute()

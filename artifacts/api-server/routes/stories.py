@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -108,9 +108,32 @@ async def search(
 
 # ── Story detail ──────────────────────────────────────────────────────────────
 
+async def _generate_audio_bg(
+    story: dict[str, Any],
+    story_id: str,
+    user_id: str,
+    personalized_text: Optional[str],
+    is_paid: bool,
+) -> None:
+    """Background task: generate and cache per-user audio on story open."""
+    try:
+        if db.get_user_audio(user_id, story_id):
+            return  # already cached
+        await fish_audio.synthesize_for_user(
+            story,
+            story_id,
+            user_id,
+            personalized_text=personalized_text,
+            include_wallet=is_paid,
+        )
+    except Exception as exc:
+        log.warning("Background audio generation failed story=%s user=%s: %s", story_id, user_id, exc)
+
+
 @router.get("/{story_id}")
 async def get_story(
     story_id: str,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     story = db.get_story(story_id)
@@ -124,7 +147,10 @@ async def get_story(
             detail="This story requires a CRRNT Pro subscription",
         )
 
-    if user.get("tier") != "paid":
+    is_paid = user.get("tier") == "paid"
+    personalized_text: Optional[str] = None
+
+    if not is_paid:
         story = _strip_paid_fields(story)
     else:
         try:
@@ -132,7 +158,8 @@ async def get_story(
             if prefs:
                 cached = db.get_personalization(user["id"], story_id)
                 if cached:
-                    story["personalized_life_impact"] = cached["personalized_text"]
+                    personalized_text = cached["personalized_text"]
+                    story["personalized_life_impact"] = personalized_text
                 else:
                     text = await enrichment.personalize_life_impact(story, prefs)
                     if text:
@@ -140,9 +167,15 @@ async def get_story(
                             db.store_personalization(user["id"], story_id, text)
                         except Exception as e:
                             log.warning("Failed to cache personalization for %s: %s", story_id, e)
+                        personalized_text = text
                         story["personalized_life_impact"] = text
         except Exception as e:
             log.warning("Personalization block failed for story %s: %s", story_id, e)
+
+    # Kick off audio generation in the background so it's ready when user taps play
+    background_tasks.add_task(
+        _generate_audio_bg, story, story_id, user["id"], personalized_text, is_paid
+    )
 
     return story
 

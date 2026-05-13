@@ -177,7 +177,8 @@ async def save_story(
         raise HTTPException(status_code=404, detail="Story not found")
     if story.get("tier") == "paid" and user.get("tier") != "paid":
         raise HTTPException(status_code=403, detail="Cannot save paid story on free tier")
-    if user.get("tier") != "paid" and db.count_saved_stories(user["id"]) >= 5:
+    save_limit = 15 if user.get("tier") == "paid" else 5
+    if db.count_saved_stories(user["id"]) >= save_limit:
         raise HTTPException(status_code=403, detail="save_limit_reached")
     result = db.save_story(user["id"], story_id)
     return {"message": "Story saved", "saved": result}

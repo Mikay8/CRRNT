@@ -189,6 +189,13 @@ async def run_ingestion(
             "finishedAt": datetime.now(timezone.utc).isoformat(),
         })
         _write_log(fetched_count, enriched_count, error_count, status_str)
+
+        # Run cleanup after each ingestion to remove expired stories
+        try:
+            await run_cleanup()
+        except Exception as exc:
+            log.warning("Post-ingestion cleanup failed: %s", exc)
+
         return _ingestion_status
 
     except Exception as exc:
@@ -201,7 +208,7 @@ async def run_ingestion(
             "finishedAt": datetime.now(timezone.utc).isoformat(),
             "message": str(exc),
         })
-        _write_log(fetched_count, enriched_count, tts_count, error_count, "failed", str(exc))
+        _write_log(fetched_count, enriched_count, error_count, "failed", str(exc))
         return _ingestion_status
 
 
@@ -240,5 +247,5 @@ async def run_cleanup() -> dict[str, int]:
             extended += 1
 
     log.info("Cleanup: deleted=%d extended=%d", deleted, extended)
-    _write_log(0, 0, 0, 0, "success", f"Cleanup: deleted={deleted} extended={extended}")
+    _write_log(0, 0, 0, "success", f"Cleanup: deleted={deleted} extended={extended}")
     return {"deleted": deleted, "extended": extended}

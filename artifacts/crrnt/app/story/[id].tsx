@@ -342,6 +342,19 @@ export default function StoryDetailScreen() {
                   <Text style={styles.proBadgeText}>PRO</Text>
                 </View>
               )}
+              {(() => {
+                const days = daysRemaining(story.expires_at);
+                if (days === null) return null;
+                const urgent = days <= 2;
+                return (
+                  <View style={[styles.expiryBadge, urgent && styles.expiryBadgeUrgent]}>
+                    <Ionicons name="time-outline" size={9} color={urgent ? "#EF4444" : palette.textMuted} />
+                    <Text style={[styles.expiryBadgeText, urgent && styles.expiryBadgeTextUrgent]}>
+                      {days === 0 ? "Expires today" : `${days}d left`}
+                    </Text>
+                  </View>
+                );
+              })()}
             </View>
             <View style={styles.actionButtons}>
               <SaveButton story={story} size={26} />
@@ -713,6 +726,12 @@ export default function StoryDetailScreen() {
   );
 }
 
+function daysRemaining(expiresAt?: string | null): number | null {
+  if (!expiresAt) return null;
+  const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
+  return days > 0 ? days : 0;
+}
+
 function formatMs(ms: number): string {
   if (!isFinite(ms) || ms < 0) return "0:00";
   const s = Math.floor(ms / 1000);
@@ -792,6 +811,29 @@ function createStyles(palette: ThemeColors) {
       letterSpacing: 0.5,
     },
     actionButtons: { flexDirection: "row", alignItems: "center", gap: 10 },
+    expiryBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 3,
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 10,
+      backgroundColor: palette.surface,
+      borderWidth: 1,
+      borderColor: palette.border,
+    },
+    expiryBadgeUrgent: {
+      backgroundColor: "#EF444418",
+      borderColor: "#EF444440",
+    },
+    expiryBadgeText: {
+      fontSize: 10,
+      fontFamily: "Inter_500Medium",
+      color: palette.textMuted,
+    },
+    expiryBadgeTextUrgent: {
+      color: "#EF4444",
+    },
     audioRow: { flexDirection: "row", alignItems: "center", gap: 10 },
     audioPlayBtn: {
       width: 32,

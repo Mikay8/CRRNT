@@ -36,7 +36,8 @@ def _extract_token(request: Request) -> Optional[str]:
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         return auth[7:].strip()
-    return None
+    # Fallback for native media players that can't set headers (e.g. expo-audio streaming)
+    return request.query_params.get("token") or None
 
 
 async def get_current_user(

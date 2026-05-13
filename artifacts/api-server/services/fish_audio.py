@@ -1,8 +1,8 @@
 """Fish Audio TTS service.
 
-Synthesizes story audio at ingestion time.
-MP3 bytes are stored in the story_audio Supabase table.
-tts_url points to /api/stories/{story_id}/audio on our API.
+Generates per-user story audio on first play request.
+MP3 bytes are cached in the user_story_audio Supabase table.
+Paid users get a personalized full audio; free users get a generic version.
 """
 from __future__ import annotations
 
@@ -19,51 +19,66 @@ FISH_AUDIO_URL = "https://api.fish.audio/v1/tts"
 MAX_CONCURRENCY = 2
 
 
-def build_audio_text(story: dict[str, Any]) -> str:
-    # NOTE: life_impact is included here as a generic section for all users.
-    # Paid users additionally get a separate personalized clip via synthesize_personalized()
-    # which uses a distinct prefix to avoid sounding like a repeat.
+def build_full_audio_text(
+    story: dict[str, Any],
+    personalized_text: Optional[str] = None,
+    include_wallet: bool = False,
+) -> str:
+    """Build full story audio text for per-user generation.
+
+    personalized_text: if provided, replaces generic life_impact.
+    include_wallet: True for paid users (wallet_impact + one_liner section).
+    """
     parts: list[str] = []
     title = (story.get("title") or "").strip()
     if title:
         parts.append(title + ".")
-    summary = (story.get("storySummary") or story.get("summary") or "").strip()
+    summary = (story.get("summary") or "").strip()
     if summary:
         parts.append("[break]" + summary)
-    life = (story.get("lifeImpact") or story.get("life_impact") or "").strip()
-    if life:
-        parts.append("[break] Here's how it affects you. " + life)
-    insight = (story.get("insight") or story.get("one_liner") or "").strip()
-    wallet = (story.get("walletImpact") or story.get("wallet_impact") or "").strip()
-    wallet_line = " ".join(filter(None, [insight, wallet]))
-    if wallet_line:
-        parts.append("[break] How does this affect your wallet? " + wallet_line)
-    people_say = (story.get("peopleSay") or story.get("people_say") or "").strip()
+
+    if personalized_text and personalized_text.strip():
+        parts.append("[break] Based on your profile. " + personalized_text.strip())
+    else:
+        life = (story.get("life_impact") or "").strip()
+        if life:
+            parts.append("[break] Here's how it affects you. " + life)
+
+    if include_wallet:
+        insight = (story.get("one_liner") or "").strip()
+        wallet = (story.get("wallet_impact") or "").strip()
+        wallet_line = " ".join(filter(None, [insight, wallet]))
+        if wallet_line:
+            parts.append("[break] How does this affect your wallet? " + wallet_line)
+
+    people_say = (story.get("people_say") or "").strip()
     if people_say:
         parts.append("[break] What people are saying. " + people_say)
     return " ".join(parts)
 
 
-async def synthesize_and_store(story: dict[str, Any], story_id: str) -> Optional[str]:
-    """Synthesize TTS, store bytes in Supabase, return tts_url or None on failure."""
+
+
+async def synthesize_for_user(
+    story: dict[str, Any],
+    story_id: str,
+    user_id: str,
+    personalized_text: Optional[str] = None,
+    include_wallet: bool = False,
+) -> Optional[bytes]:
+    """Generate full per-user audio, cache in user_story_audio, return MP3 bytes."""
     from services import db as db_svc
 
     api_key = os.environ.get("FISH_AUDIO_API_KEY")
     if not api_key:
-        log.warning("FISH_AUDIO_API_KEY not set — skipping TTS for story %s", story_id)
+        log.warning("FISH_AUDIO_API_KEY not set — skipping audio for user %s story %s", user_id, story_id)
         return None
 
-    # Skip if already stored
-    existing = db_svc.get_audio(story_id)
-    if existing:
-        return f"/api/stories/{story_id}/audio"
-
-    text = build_audio_text(story)
+    text = build_full_audio_text(story, personalized_text=personalized_text, include_wallet=include_wallet)
     if not text.strip():
         return None
 
     voice_id = os.environ.get("FISH_AUDIO_VOICE_ID")
-
     payload: dict[str, Any] = {
         "text": text,
         "format": "mp3",
@@ -92,74 +107,12 @@ async def synthesize_and_store(story: dict[str, Any], story_id: str) -> Optional
             resp.raise_for_status()
             audio_bytes = resp.content
     except Exception as exc:
-        log.warning("Fish Audio synthesis failed for story %s: %s", story_id, exc)
+        log.warning("synthesize_for_user failed story=%s: %s", story_id, exc)
         return None
 
     try:
-        db_svc.store_audio(story_id, audio_bytes)
-        log.info("Audio stored for story %s (%d bytes)", story_id, len(audio_bytes))
+        db_svc.store_user_audio(user_id, story_id, audio_bytes)
     except Exception as exc:
-        log.warning("Failed to store audio for story %s: %s", story_id, exc)
-        return None
+        log.warning("Failed to store user audio story=%s: %s", story_id, exc)
 
-    return f"/api/stories/{story_id}/audio"
-
-
-async def synthesize_personalized(
-    text: str, user_id: str, story_id: str
-) -> Optional[str]:
-    """Synthesize a short personalized impact clip and cache it in story_personalizations.
-
-    Uses a distinct prefix from build_audio_text so paid users don't hear
-    'Here's how it affects you' twice when playing both the main story and this clip.
-    """
-    from services import db as db_svc
-
-    api_key = os.environ.get("FISH_AUDIO_API_KEY")
-    if not api_key:
-        log.warning("FISH_AUDIO_API_KEY not set — skipping personalized TTS")
-        return None
-
-    if not text.strip():
-        return None
-
-    audio_text = "Based on your profile. " + text
-    voice_id = os.environ.get("FISH_AUDIO_VOICE_ID")
-
-    payload: dict[str, Any] = {
-        "text": audio_text,
-        "format": "mp3",
-        "mp3_bitrate": 128,
-        "normalize": True,
-        "temperature": 0.7,
-        "top_p": 0.7,
-        "prosody": {"speed": 1, "normalize_loudness": True},
-        "latency": "normal",
-        "chunk_length": 300,
-    }
-    if voice_id:
-        payload["reference_id"] = voice_id
-
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                FISH_AUDIO_URL,
-                headers={
-                    "model": "s2-pro",
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            resp.raise_for_status()
-            audio_bytes = resp.content
-    except Exception as exc:
-        log.warning("Personalized TTS failed for story %s: %s", story_id, exc)
-        return None
-
-    try:
-        db_svc.store_personalization_audio(user_id, story_id, audio_bytes)
-        return f"/api/stories/{story_id}/personalized-audio"
-    except Exception as exc:
-        log.warning("Failed to store personalized audio for story %s: %s", story_id, exc)
-        return None
+    return audio_bytes

@@ -349,8 +349,8 @@ export default function StoryDetailScreen() {
 
           <Text style={styles.title}>{story.title}</Text>
 
-          {/* Audio player row — Pro only */}
-          {isPro && (
+          {/* Audio player row */}
+          {(
             <View style={styles.audioRow}>
               <Pressable
                 onPress={toggleAudio}
@@ -442,19 +442,6 @@ export default function StoryDetailScreen() {
                 <Text style={[styles.sectionLabel, { color: "#7B68EE" }]}>
                   How does it affect me?
                 </Text>
-                {isPro && story.personalized_audio_url ? (
-                  <Pressable
-                    onPress={() => {
-                      const baseUrl = (story as any)._baseUrl ?? "";
-                      const url = baseUrl + story.personalized_audio_url;
-                      Linking.openURL(url).catch(() => undefined);
-                    }}
-                    style={styles.personalizedPlayBtn}
-                    accessibilityLabel="Play personalized audio"
-                  >
-                    <Ionicons name="play" size={11} color="#7B68EE" />
-                  </Pressable>
-                ) : null}
               </View>
               <Text style={styles.impactText}>
                 {isPro && story.personalized_life_impact
@@ -686,8 +673,8 @@ export default function StoryDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Floating play/pause — Pro only, visible when a different story is actively playing */}
-      {isPro && <Animated.View
+      {/* Floating play/pause — visible when a different story is actively playing */}
+      {<Animated.View
         pointerEvents={showFloat ? "auto" : "none"}
         style={[
           styles.floatingPlayBtn,

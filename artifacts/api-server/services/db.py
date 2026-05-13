@@ -111,54 +111,6 @@ def get_stories_for_feed(published_since_days: int = 7) -> list[dict[str, Any]]:
     return result.data or []
 
 
-# ── Story audio ────────────────────────────────────────────────────────────────
-
-def store_audio(story_id: str, mp3_bytes: bytes) -> None:
-    """Upsert raw MP3 bytes for a story.
-
-    PostgREST expects BYTEA as a base64-encoded string in JSON payloads.
-    """
-    import base64
-    get_client().table("story_audio").upsert(
-        {"story_id": story_id, "mp3_data": base64.b64encode(mp3_bytes).decode()}
-    ).execute()
-
-
-def get_audio(story_id: str) -> Optional[bytes]:
-    """Retrieve MP3 bytes for a story.
-
-    PostgREST may return BYTEA as base64 (newer) or \\x<hex> (older).
-    Both formats are handled.
-    """
-    import base64
-    try:
-        result = (
-            get_client().table("story_audio")
-            .select("mp3_data")
-            .eq("story_id", story_id)
-            .execute()
-        )
-    except Exception:
-        log.warning("story_audio query failed for %s", story_id)
-        return None
-    if not result.data:
-        return None
-    raw = result.data[0].get("mp3_data")
-    if not raw:
-        return None
-    if isinstance(raw, (bytes, bytearray)):
-        # Supabase client returns BYTEA as bytes of the stored base64 text — decode it
-        try:
-            return base64.b64decode(raw)
-        except Exception:
-            return bytes(raw)
-    if isinstance(raw, str):
-        if raw.startswith("\\x"):
-            return bytes.fromhex(raw[2:])
-        return base64.b64decode(raw)
-    return None
-
-
 # ── Saved stories ─────────────────────────────────────────────────────────────
 
 def save_story(user_id: str, story_id: str) -> dict[str, Any]:
@@ -468,3 +420,36 @@ def get_personalization_audio(user_id: str, story_id: str) -> Optional[bytes]:
             return bytes.fromhex(raw[2:])
         return base64.b64decode(raw)
     return bytes(raw)
+
+
+# ── Per-user full story audio ─────────────────────────────────────────────────
+
+def get_user_audio(user_id: str, story_id: str) -> Optional[bytes]:
+    import base64
+    try:
+        result = (
+            get_client().table("user_story_audio")
+            .select("mp3_data")
+            .eq("user_id", user_id)
+            .eq("story_id", story_id)
+            .execute()
+        )
+    except Exception:
+        return None
+    if not result.data or not result.data[0].get("mp3_data"):
+        return None
+    raw = result.data[0]["mp3_data"]
+    if isinstance(raw, str):
+        if raw.startswith("\\x"):
+            return bytes.fromhex(raw[2:])
+        return base64.b64decode(raw)
+    return bytes(raw)
+
+
+def store_user_audio(user_id: str, story_id: str, mp3_bytes: bytes) -> None:
+    import base64
+    get_client().table("user_story_audio").upsert({
+        "user_id": user_id,
+        "story_id": story_id,
+        "mp3_data": base64.b64encode(mp3_bytes).decode(),
+    }).execute()

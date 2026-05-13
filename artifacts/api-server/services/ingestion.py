@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import db, enrichment, fish_audio, news_fetcher
+from services import db, enrichment, news_fetcher
 
 log = logging.getLogger("crrnt.ingestion")
 
@@ -108,7 +108,6 @@ async def run_ingestion(
     started_at = datetime.now(timezone.utc)
     fetched_count = 0
     enriched_count = 0
-    tts_count = 0
     error_count = 0
 
     try:
@@ -172,22 +171,15 @@ async def run_ingestion(
                     row.pop("external_id", None)
 
                 inserted = db.insert_story(row)
-                story_id = inserted["id"]
                 enriched_count += 1
-
-                # Wire TTS audio
-                tts_url = await fish_audio.synthesize_and_store(story, story_id)
-                if tts_url:
-                    db.update_story(story_id, {"tts_url": tts_url})
-                    tts_count += 1
 
             except Exception as exc:
                 log.exception("Failed to store story: %s", exc)
                 error_count += 1
 
         log.info(
-            "Ingestion done: fetched=%d enriched=%d tts=%d errors=%d",
-            fetched_count, enriched_count, tts_count, error_count,
+            "Ingestion done: fetched=%d enriched=%d errors=%d",
+            fetched_count, enriched_count, error_count,
         )
         status_str = "success" if error_count == 0 else "partial"
         _set_status({
@@ -196,7 +188,7 @@ async def run_ingestion(
             "startedAt": started_at.isoformat(),
             "finishedAt": datetime.now(timezone.utc).isoformat(),
         })
-        _write_log(fetched_count, enriched_count, tts_count, error_count, status_str)
+        _write_log(fetched_count, enriched_count, error_count, status_str)
         return _ingestion_status
 
     except Exception as exc:
@@ -214,14 +206,13 @@ async def run_ingestion(
 
 
 def _write_log(
-    fetched: int, enriched: int, tts: int, errors: int,
+    fetched: int, enriched: int, errors: int,
     status: str, notes: Optional[str] = None,
 ) -> None:
     try:
         db.insert_ingestion_log({
             "stories_fetched": fetched,
             "stories_enriched": enriched,
-            "tts_generated": tts,
             "errors": errors,
             "status": status,
             "notes": notes,

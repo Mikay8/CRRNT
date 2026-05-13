@@ -4,6 +4,7 @@ import {
   setAudioModeAsync,
 } from "expo-audio";
 import * as Speech from "expo-speech";
+import { Platform } from "react-native";
 import { getBaseUrl } from "@workspace/api-client-react";
 import type { Story } from "@workspace/api-client-react";
 import React, {
@@ -15,6 +16,7 @@ import React, {
   useState,
 } from "react";
 import { updateNowPlayingInfo, registerRemoteControls } from "@/utils/nowPlaying";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface AudioContextType {
   story: Story | null;
@@ -61,6 +63,7 @@ async function configureAudioSession() {
 }
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
+  const { getAuthHeader, accessToken } = useAuth();
   const [story, setStory] = useState<Story | null>(null);
   const storyRef = useRef<Story | null>(null);
   const [isBarVisible, setIsBarVisible] = useState(false);
@@ -314,19 +317,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       audioDurationMsRef.current = 0;
       setAudioPositionMs(0);
 
-      const audioUrl = newStory.tts_url;
+      // Always derive the audio URL — on-demand generation means tts_url may be unset
+      const audioPath = newStory.tts_url ?? `/api/stories/${newStory.id}/audio`;
+      const baseUrl = getBaseUrl() ?? "";
       let audioStarted = false;
 
-      if (audioUrl) {
-        const fullUrl = `${getBaseUrl() ?? ""}${audioUrl}`;
+      if (audioPath) {
         await configureAudioSession();
 
         if (typeof document !== "undefined") {
-          // Web: fetch manually so we can decode base64 and pre-load duration.
-          // Server currently returns base64 text instead of binary MP3 (PostgREST BYTEA quirk).
+          // Web: fetch with auth header; decode base64 if needed (PostgREST BYTEA quirk)
+          const fullUrl = `${baseUrl}${audioPath}`;
           if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
           try {
-            const res = await fetch(fullUrl);
+            const res = await fetch(fullUrl, { headers: getAuthHeader() });
             if (res.ok) {
               const rawBlob = await res.blob();
               // Detect base64 response: if first char is ASCII printable (not 0xFF), decode it
@@ -362,12 +366,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             // fall through to speech synthesis
           }
         } else {
-          // Native: stream directly (native media player handles it efficiently)
+          // Native: pass token as query param since native media player can't set headers
           if (blobUrlRef.current) {
             URL.revokeObjectURL(blobUrlRef.current);
             blobUrlRef.current = null;
           }
-          player.replace({ uri: fullUrl });
+          const nativeUrl = accessToken
+            ? `${baseUrl}${audioPath}?token=${encodeURIComponent(accessToken)}`
+            : `${baseUrl}${audioPath}`;
+          player.replace({ uri: nativeUrl });
           audioStarted = true;
         }
       }

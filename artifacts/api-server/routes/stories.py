@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from services import db, enrichment, fish_audio, personalization
-from services.auth_middleware import get_current_user, get_current_user_optional
+from services import db, enrichment, fish_audio, personalization  # fish_audio used in audio endpoint
+from services.auth_middleware import get_current_user
 
 log = logging.getLogger("crrnt.stories")
 router = APIRouter(prefix="/api/stories", tags=["stories"])
@@ -132,16 +132,11 @@ async def get_story(
             cached = db.get_personalization(user["id"], story_id)
             if cached:
                 story["personalized_life_impact"] = cached["personalized_text"]
-                story["personalized_audio_url"] = cached.get("audio_url")
             else:
                 text = await enrichment.personalize_life_impact(story, prefs)
                 if text:
-                    audio_url = await fish_audio.synthesize_personalized(
-                        text, user["id"], story_id
-                    )
-                    db.store_personalization(user["id"], story_id, text, audio_url)
+                    db.store_personalization(user["id"], story_id, text)
                     story["personalized_life_impact"] = text
-                    story["personalized_audio_url"] = audio_url
 
     return story
 
@@ -175,27 +170,8 @@ async def unsave_story(
 
 # ── Audio ─────────────────────────────────────────────────────────────────────
 
-@router.get("/{story_id}/audio")
-async def get_story_audio(
-    story_id: str,
-    request: Request,
-    user: dict = Depends(get_current_user_optional),
-) -> Response:
-    story = db.get_story(story_id)
-    if not story:
-        raise HTTPException(status_code=404, detail="Story not found")
-    # Paid audio requires auth; free audio is publicly streamable (UUIDs are unguessable)
-    if story.get("tier") == "paid":
-        if not user or user.get("tier") != "paid":
-            raise HTTPException(status_code=403, detail="Requires Pro subscription")
-
-    audio_bytes = db.get_audio(story_id)
-    if not audio_bytes:
-        raise HTTPException(status_code=404, detail="Audio not available for this story")
-
+def _serve_audio(audio_bytes: bytes, range_header: Optional[str]) -> Response:
     total = len(audio_bytes)
-    range_header = request.headers.get("range")
-
     if range_header:
         try:
             units, _, ranges = range_header.partition("=")
@@ -208,7 +184,6 @@ async def get_story_audio(
             end = max(start, min(end, total - 1))
         except ValueError:
             return Response(status_code=416, headers={"Content-Range": f"bytes */{total}"})
-
         chunk = audio_bytes[start : end + 1]
         return Response(
             content=chunk,
@@ -220,7 +195,6 @@ async def get_story_audio(
                 "Content-Length": str(len(chunk)),
             },
         )
-
     return Response(
         content=audio_bytes,
         media_type="audio/mpeg",
@@ -228,20 +202,39 @@ async def get_story_audio(
     )
 
 
-# ── Personalized audio ────────────────────────────────────────────────────────
-
-@router.get("/{story_id}/personalized-audio")
-async def get_personalized_audio(
+@router.get("/{story_id}/audio")
+async def get_story_audio(
     story_id: str,
+    request: Request,
     user: dict = Depends(get_current_user),
 ) -> Response:
-    if user.get("tier") != "paid":
-        raise HTTPException(status_code=403, detail="Requires Pro subscription")
-    audio_bytes = db.get_personalization_audio(user["id"], story_id)
-    if not audio_bytes:
-        raise HTTPException(status_code=404, detail="No personalized audio for this story")
-    return Response(
-        content=audio_bytes,
-        media_type="audio/mpeg",
-        headers={"Accept-Ranges": "bytes", "Content-Length": str(len(audio_bytes))},
+    story = db.get_story(story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    user_id = user["id"]
+    is_paid = user.get("tier") == "paid"
+
+    # Check per-user cache first
+    cached = db.get_user_audio(user_id, story_id)
+    if cached:
+        return _serve_audio(cached, request.headers.get("range"))
+
+    # Generate full audio for this user
+    personalized_text: Optional[str] = None
+    if is_paid:
+        p = db.get_personalization(user_id, story_id)
+        if p:
+            personalized_text = p.get("personalized_text")
+
+    audio_bytes = await fish_audio.synthesize_for_user(
+        story,
+        story_id,
+        user_id,
+        personalized_text=personalized_text,
+        include_wallet=is_paid,
     )
+    if not audio_bytes:
+        raise HTTPException(status_code=404, detail="Audio generation failed")
+
+    return _serve_audio(audio_bytes, request.headers.get("range"))

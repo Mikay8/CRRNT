@@ -440,128 +440,166 @@ export default function StoryDetailScreen() {
           ) : null}
 
           {/* Wallet impact */}
-          {story.wallet_impact ? (
-            <View style={styles.insightCard}>
+          {isPro ? (
+            story.wallet_impact ? (
+              <View style={styles.insightCard}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="sparkles" size={16} color={palette.accent} />
+                  <Text style={styles.sectionLabel}>Wallet impact</Text>
+                </View>
+                <Text style={styles.impactText}>{story.wallet_impact}</Text>
+              </View>
+            ) : null
+          ) : (
+            <Pressable
+              onPress={() => router.push("/subscription/manage")}
+              style={[styles.insightCard, styles.lockedCard]}
+            >
               <View style={styles.sectionHeader}>
                 <Ionicons name="sparkles" size={16} color={palette.accent} />
                 <Text style={styles.sectionLabel}>Wallet impact</Text>
               </View>
-              <Text style={styles.impactText}>{story.wallet_impact}</Text>
-            </View>
-          ) : null}
+              <Text style={styles.lockedPlaceholder}>
+                {"██████████████████████████\n█████████████████"}
+              </Text>
+              <View style={styles.lockedBadge}>
+                <Ionicons name="lock-closed" size={12} color={palette.accent} />
+                <Text style={styles.lockedBadgeText}>Unlock with CRRNT Pro</Text>
+              </View>
+            </Pressable>
+          )}
 
           {/* Stock chart */}
-          {ticker ? (
-            <View style={styles.stockCard}>
-              <View style={styles.stockHeader}>
-                <View>
-                  <Text style={styles.tickerLabel}>${ticker}</Text>
-                  {companyName ? (
-                    <Text style={styles.company}>{companyName}</Text>
-                  ) : null}
-                </View>
-                {stock ? (
-                  <View style={{ alignItems: "flex-end" }}>
-                    <Text style={styles.price}>
-                      ${stock.latestPrice?.toFixed(2)}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.delta,
-                        {
-                          color: priceUp ? palette.positive : palette.negative,
-                        },
-                      ]}
-                    >
-                      {activeTab.label} {priceUp ? "▲" : "▼"}{" "}
-                      {pctChange(stock.points[0]?.close, stock.latestPrice)}%
-                    </Text>
+          {isPro ? (
+            ticker ? (
+              <View style={styles.stockCard}>
+                <View style={styles.stockHeader}>
+                  <View>
+                    <Text style={styles.tickerLabel}>${ticker}</Text>
+                    {companyName ? (
+                      <Text style={styles.company}>{companyName}</Text>
+                    ) : null}
                   </View>
-                ) : null}
-              </View>
-
-              <View style={styles.rangeTabs}>
-                {RANGE_TABS.map((tab) => {
-                  const isActive = tab.value === stockRange;
-                  return (
-                    <Pressable
-                      key={tab.value}
-                      onPress={() => handleRangeChange(tab.value)}
-                      style={({ pressed }) => [
-                        styles.rangeTab,
-                        {
-                          backgroundColor: isActive
-                            ? (priceUp ? palette.positive : palette.negative) +
-                              "22"
-                            : "transparent",
-                          borderColor: isActive
-                            ? priceUp
-                              ? palette.positive
-                              : palette.negative
-                            : palette.border,
-                          opacity: pressed ? 0.7 : 1,
-                        },
-                      ]}
-                    >
+                  {stock ? (
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={styles.price}>
+                        ${stock.latestPrice?.toFixed(2)}
+                      </Text>
                       <Text
                         style={[
-                          styles.rangeTabLabel,
+                          styles.delta,
                           {
-                            color: isActive
-                              ? priceUp
-                                ? palette.positive
-                                : palette.negative
-                              : palette.textMuted,
+                            color: priceUp ? palette.positive : palette.negative,
                           },
                         ]}
                       >
-                        {tab.label}
+                        {activeTab.label} {priceUp ? "▲" : "▼"}{" "}
+                        {pctChange(stock.points[0]?.close, stock.latestPrice)}%
                       </Text>
-                    </Pressable>
-                  );
-                })}
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.rangeTabs}>
+                  {RANGE_TABS.map((tab) => {
+                    const isActive = tab.value === stockRange;
+                    return (
+                      <Pressable
+                        key={tab.value}
+                        onPress={() => handleRangeChange(tab.value)}
+                        style={({ pressed }) => [
+                          styles.rangeTab,
+                          {
+                            backgroundColor: isActive
+                              ? (priceUp ? palette.positive : palette.negative) +
+                                "22"
+                              : "transparent",
+                            borderColor: isActive
+                              ? priceUp
+                                ? palette.positive
+                                : palette.negative
+                              : palette.border,
+                            opacity: pressed ? 0.7 : 1,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.rangeTabLabel,
+                            {
+                              color: isActive
+                                ? priceUp
+                                  ? palette.positive
+                                  : palette.negative
+                                : palette.textMuted,
+                            },
+                          ]}
+                        >
+                          {tab.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {stockQuery.isLoading ? (
+                  <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
+                    <ActivityIndicator color={palette.textMuted} />
+                  </View>
+                ) : stock ? (
+                  <PriceChart
+                    points={stock.points}
+                    width={chartWidth}
+                    height={160}
+                    positive={priceUp}
+                  />
+                ) : (
+                  <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
+                    <Text style={styles.chartEmpty}>Price data unavailable</Text>
+                  </View>
+                )}
+
+                {stock && story.published_at ? (
+                  <Text style={styles.chartHint}>
+                    <Ionicons
+                      name="time-outline"
+                      size={11}
+                      color={palette.textDim}
+                    />{" "}
+                    Story posted {formatRelativeTime(story.published_at)} —
+                    showing {activeTab.hint}
+                  </Text>
+                ) : null}
               </View>
-
-              {stockQuery.isLoading ? (
-                <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
-                  <ActivityIndicator color={palette.textMuted} />
-                </View>
-              ) : stock ? (
-                <PriceChart
-                  points={stock.points}
-                  width={chartWidth}
-                  height={160}
-                  positive={priceUp}
+            ) : (
+              <View style={styles.noTickerCard}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={18}
+                  color={palette.textMuted}
                 />
-              ) : (
-                <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
-                  <Text style={styles.chartEmpty}>Price data unavailable</Text>
-                </View>
-              )}
-
-              {stock && story.published_at ? (
-                <Text style={styles.chartHint}>
-                  <Ionicons
-                    name="time-outline"
-                    size={11}
-                    color={palette.textDim}
-                  />{" "}
-                  Story posted {formatRelativeTime(story.published_at)} —
-                  showing {activeTab.hint}
+                <Text style={styles.noTickerText}>
+                  No public stock is closely tied to this story.
                 </Text>
-              ) : null}
-            </View>
+              </View>
+            )
           ) : (
-            <View style={styles.noTickerCard}>
-              <Ionicons
-                name="information-circle-outline"
-                size={18}
-                color={palette.textMuted}
-              />
-              <Text style={styles.noTickerText}>
-                No public stock is closely tied to this story.
-              </Text>
-            </View>
+            <Pressable
+              onPress={() => router.push("/subscription/manage")}
+              style={[styles.stockCard, styles.lockedCard]}
+            >
+              <View style={styles.sectionHeader}>
+                <Ionicons name="bar-chart-outline" size={16} color={palette.accent} />
+                <Text style={styles.sectionLabel}>Stock data</Text>
+              </View>
+              <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
+                <Ionicons name="lock-closed" size={22} color={palette.textMuted} />
+              </View>
+              <View style={styles.lockedBadge}>
+                <Ionicons name="lock-closed" size={12} color={palette.accent} />
+                <Text style={styles.lockedBadgeText}>Unlock with CRRNT Pro</Text>
+              </View>
+            </Pressable>
           )}
 
           {/* What are people saying? */}
@@ -883,6 +921,34 @@ function createStyles(palette: ThemeColors) {
       fontSize: 13,
       color: palette.textMuted,
       flex: 1,
+    },
+    lockedCard: {
+      borderColor: palette.accent + "33",
+    },
+    lockedPlaceholder: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 15,
+      lineHeight: 22,
+      color: palette.textMuted,
+      opacity: 0.25,
+      letterSpacing: -1,
+    },
+    lockedBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      alignSelf: "flex-start",
+      backgroundColor: palette.accent + "18",
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: palette.accent + "44",
+    },
+    lockedBadgeText: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 12,
+      color: palette.accent,
     },
     sentimentRow: { flexDirection: "row", alignItems: "center" },
     sentimentBadge: {

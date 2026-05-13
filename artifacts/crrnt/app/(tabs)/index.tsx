@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import {
   useListStories,
   useSearchStories,
@@ -25,6 +26,7 @@ import EmptyState from "@/components/EmptyState";
 import type { Category } from "@/constants/categories";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePurchases } from "@/contexts/PurchasesContext";
 import type { ThemeColors } from "@/constants/theme";
 
 const LOGO_DARK = require("@/assets/images/full-logo-dark.png") as number;
@@ -34,6 +36,8 @@ export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const { isDark, theme: palette, toggleTheme } = useThemeContext();
   const { accessToken } = useAuth();
+  const { isPro } = usePurchases();
+  const router = useRouter();
   const [category, setCategory] = useState<Category | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -218,6 +222,28 @@ export default function FeedScreen() {
         contentContainerStyle={listPadding}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          !isPro && !isSearchActive ? (
+            <Pressable
+              onPress={() => router.push("/subscription/manage")}
+              style={({ pressed }) => [
+                styles.upsellBanner,
+                { opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <View style={styles.upsellLeft}>
+                <Ionicons name="sparkles" size={16} color="#fff" />
+                <View>
+                  <Text style={styles.upsellTitle}>Upgrade to CRRNT Pro</Text>
+                  <Text style={styles.upsellSub}>
+                    Wallet impact, stock data &amp; more
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#ffffff99" />
+            </Pressable>
+          ) : null
+        }
         refreshControl={
           !isSearchActive ? (
             <RefreshControl
@@ -324,6 +350,32 @@ function createStyles(palette: ThemeColors) {
       fontFamily: "Inter_500Medium",
       color: palette.textMuted,
       fontSize: 13,
+    },
+    upsellBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      backgroundColor: palette.accent,
+      borderRadius: 14,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      marginBottom: 8,
+    },
+    upsellLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    upsellTitle: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 14,
+      color: "#fff",
+    },
+    upsellSub: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 12,
+      color: "#ffffff99",
+      marginTop: 1,
     },
   });
 }

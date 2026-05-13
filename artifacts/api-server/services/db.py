@@ -202,6 +202,16 @@ def saved_story_count(story_id: str) -> int:
     return result.count or 0
 
 
+def count_saved_stories(user_id: str) -> int:
+    result = (
+        get_client().table("saved_stories")
+        .select("id", count="exact")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return result.count or 0
+
+
 def is_story_saved(user_id: str, story_id: str) -> bool:
     result = (
         get_client().table("saved_stories")

@@ -14,6 +14,13 @@ from services.auth_middleware import get_current_user, get_current_user_optional
 log = logging.getLogger("crrnt.stories")
 router = APIRouter(prefix="/api/stories", tags=["stories"])
 
+_FREE_STRIP = {"wallet_impact", "stock_note"}
+
+
+def _strip_paid_fields(story: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in story.items() if k not in _FREE_STRIP}
+
+
 ALLOWED_CATEGORIES = {
     "celebrity", "tech", "government", "sports",
     "business", "science", "entertainment",
@@ -48,6 +55,7 @@ async def daily_feed(
     # Strip paid content from free users (belt-and-suspenders)
     if tier != "paid":
         ranked = [s for s in ranked if s.get("tier") == "free"]
+        ranked = [_strip_paid_fields(s) for s in ranked]
 
     return {
         "tier": tier,
@@ -93,6 +101,8 @@ async def search(
             s.get("wallet_impact"), s.get("stock_note"), s.get("category"),
         ])).lower()
     ]
+    if tier != "paid":
+        results = [_strip_paid_fields(s) for s in results]
     return {"query": q, "totalCount": len(results), "stories": results[:limit]}
 
 
@@ -114,6 +124,9 @@ async def get_story(
             detail="This story requires a CRRNT Pro subscription",
         )
 
+    if user.get("tier") != "paid":
+        story = _strip_paid_fields(story)
+
     return story
 
 
@@ -129,6 +142,8 @@ async def save_story(
         raise HTTPException(status_code=404, detail="Story not found")
     if story.get("tier") == "paid" and user.get("tier") != "paid":
         raise HTTPException(status_code=403, detail="Cannot save paid story on free tier")
+    if user.get("tier") != "paid" and db.count_saved_stories(user["id"]) >= 5:
+        raise HTTPException(status_code=403, detail="save_limit_reached")
     result = db.save_story(user["id"], story_id)
     return {"message": "Story saved", "saved": result}
 

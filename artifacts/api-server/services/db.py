@@ -379,17 +379,11 @@ def get_personalization(user_id: str, story_id: str) -> Optional[dict[str, Any]]
     return result.data[0] if result.data else None
 
 
-def store_personalization(
-    user_id: str,
-    story_id: str,
-    text: str,
-    audio_url: Optional[str] = None,
-) -> None:
+def store_personalization(user_id: str, story_id: str, text: str) -> None:
     get_client().table("story_personalizations").upsert({
         "user_id": user_id,
         "story_id": story_id,
         "personalized_text": text,
-        "audio_url": audio_url,
     }).execute()
 
 

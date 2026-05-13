@@ -127,16 +127,22 @@ async def get_story(
     if user.get("tier") != "paid":
         story = _strip_paid_fields(story)
     else:
-        prefs = db.get_preferences(user["id"])
-        if prefs:
-            cached = db.get_personalization(user["id"], story_id)
-            if cached:
-                story["personalized_life_impact"] = cached["personalized_text"]
-            else:
-                text = await enrichment.personalize_life_impact(story, prefs)
-                if text:
-                    db.store_personalization(user["id"], story_id, text)
-                    story["personalized_life_impact"] = text
+        try:
+            prefs = db.get_preferences(user["id"])
+            if prefs:
+                cached = db.get_personalization(user["id"], story_id)
+                if cached:
+                    story["personalized_life_impact"] = cached["personalized_text"]
+                else:
+                    text = await enrichment.personalize_life_impact(story, prefs)
+                    if text:
+                        try:
+                            db.store_personalization(user["id"], story_id, text)
+                        except Exception as e:
+                            log.warning("Failed to cache personalization for %s: %s", story_id, e)
+                        story["personalized_life_impact"] = text
+        except Exception as e:
+            log.warning("Personalization block failed for story %s: %s", story_id, e)
 
     return story
 

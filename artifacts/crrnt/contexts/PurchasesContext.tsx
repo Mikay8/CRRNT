@@ -142,8 +142,11 @@ export function PurchasesProvider({
 
   // ── Derived state ────────────────────────────────────────────────────────────
 
+  // Fall back to Supabase tier so content gating works in Expo Go / dev builds
+  // where RevenueCat runs in Preview Mode and entitlements may not be populated.
   const isPro = Boolean(
-    customerInfo?.entitlements.active[PRO_ENTITLEMENT]
+    customerInfo?.entitlements.active[PRO_ENTITLEMENT] ||
+    user?.tier === "paid"
   );
 
   // ── Actions ──────────────────────────────────────────────────────────────────

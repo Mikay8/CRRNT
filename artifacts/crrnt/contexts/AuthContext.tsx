@@ -41,7 +41,6 @@ interface AuthContextValue {
   updateUser: (fields: Partial<CrrntUser>) => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   getAuthHeader: () => Record<string, string>;
-  isPaid: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -208,8 +207,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { Authorization: `Bearer ${accessToken}` };
   }, [accessToken]);
 
-  const isPaid = user?.tier === "paid";
-
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -222,9 +219,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateUser,
       forgotPassword,
       getAuthHeader,
-      isPaid,
     }),
-    [user, accessToken, hydrated, login, register, logout, refreshUser, updateUser, forgotPassword, getAuthHeader, isPaid]
+    [user, accessToken, hydrated, login, register, logout, refreshUser, updateUser, forgotPassword, getAuthHeader]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

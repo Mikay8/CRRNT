@@ -24,7 +24,6 @@ import {
 } from "@workspace/api-client-react";
 import { getCategoryMeta } from "@/constants/categories";
 import { useAudio } from "@/contexts/AudioContext";
-import { useAuth } from "@/contexts/AuthContext";
 import { usePurchases } from "@/contexts/PurchasesContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
@@ -117,7 +116,6 @@ export default function StoryDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { isPro } = usePurchases();
-  const { isPaid } = useAuth();
   const { saved } = useSavedStories();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
   const [audioTrackWidth, setAudioTrackWidth] = useState(0);
@@ -444,7 +442,7 @@ export default function StoryDetailScreen() {
                 <Text style={[styles.sectionLabel, { color: "#7B68EE" }]}>
                   How does it affect me?
                 </Text>
-                {isPaid && story.personalized_audio_url ? (
+                {isPro && story.personalized_audio_url ? (
                   <Pressable
                     onPress={() => {
                       const baseUrl = (story as any)._baseUrl ?? "";
@@ -459,11 +457,11 @@ export default function StoryDetailScreen() {
                 ) : null}
               </View>
               <Text style={styles.impactText}>
-                {isPaid && story.personalized_life_impact
+                {isPro && story.personalized_life_impact
                   ? story.personalized_life_impact
                   : story.life_impact}
               </Text>
-              {isPaid && story.personalized_life_impact ? (
+              {isPro && story.personalized_life_impact ? (
                 <Text style={styles.personalizedBadge}>Personalized for you</Text>
               ) : null}
             </View>
@@ -478,7 +476,7 @@ export default function StoryDetailScreen() {
               </View>
               <Text style={styles.impactText}>{story.wallet_impact}</Text>
             </View>
-          ) : !isPaid ? (
+          ) : !isPro ? (
             <Pressable
               onPress={() => router.push("/subscription/manage")}
               style={[styles.insightCard, styles.lockedCard]}
@@ -598,7 +596,7 @@ export default function StoryDetailScreen() {
                   </Text>
                 ) : null}
               </View>
-            ) : !isPaid ? (
+            ) : !isPro ? (
               <Pressable
                 onPress={() => router.push("/subscription/manage")}
                 style={[styles.stockCard, styles.lockedCard]}

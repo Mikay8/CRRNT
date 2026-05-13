@@ -21,6 +21,7 @@ import { useAuth } from "@/contexts/AuthContext";
 interface AudioContextType {
   story: Story | null;
   isPlaying: boolean;
+  isAudioLoading: boolean;
   positionMs: number;
   durationMs: number;
   isBarVisible: boolean;
@@ -67,6 +68,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [story, setStory] = useState<Story | null>(null);
   const storyRef = useRef<Story | null>(null);
   const [isBarVisible, setIsBarVisible] = useState(false);
+  const [isAudioLoading, setIsAudioLoading] = useState(false);
 
   const [isAudioMode, setIsAudioMode] = useState(false);
   const isAudioModeRef = useRef(false);
@@ -113,6 +115,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       const ms = Math.round(d * 1000);
       audioDurationMsRef.current = ms;
       setAudioDurationMs(ms);
+      setIsAudioLoading(false);
     }
   }, [audioStatus.duration]);
 
@@ -303,6 +306,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       wasPlayingRef.current = false;
       audioEndFiredRef.current = false;
 
+      setIsAudioLoading(true);
       _stopSpeech();
       player.pause();
       _setAudioMode(false);
@@ -347,6 +351,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
               }
               const blobUrl = URL.createObjectURL(audioBlob);
               blobUrlRef.current = blobUrl;
+              setIsAudioLoading(false);
               // Pre-load duration via HTML5 Audio — expo-audio web reports it late
               const probeEl = document.createElement("audio");
               const probeDur = await new Promise<number>((resolve) => {
@@ -401,6 +406,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         });
       } else {
         // No audio URL or audio fetch failed — fall back to speech synthesis
+        setIsAudioLoading(false);
         await configureAudioSession();
         _setAudioMode(false);
 
@@ -500,6 +506,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   );
 
   const dismiss = useCallback(async () => {
+    setIsAudioLoading(false);
     _stopSpeech();
     player.pause();
     try { player.clearLockScreenControls(); } catch {}
@@ -519,6 +526,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       value={{
         story,
         isPlaying,
+        isAudioLoading,
         positionMs,
         durationMs,
         isBarVisible,

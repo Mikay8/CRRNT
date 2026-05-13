@@ -157,19 +157,6 @@ async def get_story(
         except Exception as e:
             log.warning("Personalization block failed for story %s: %s", story_id, e)
 
-    # Generate audio synchronously so it's ready when the story screen loads
-    try:
-        if not db.get_user_audio(user["id"], story_id):
-            await fish_audio.synthesize_for_user(
-                story,
-                story_id,
-                user["id"],
-                personalized_text=personalized_text,
-                include_wallet=is_paid,
-            )
-    except Exception as exc:
-        log.warning("Audio generation failed story=%s user=%s: %s", story_id, user["id"], exc)
-
     # Embed auth token in tts_url so the client can stream audio without extra auth wiring
     token = _extract_request_token(request)
     if token:
@@ -257,15 +244,22 @@ async def get_story_audio(
     if cached:
         return _serve_audio(cached, request.headers.get("range"))
 
-    # Generate full audio for this user
+    # Generate full audio for this user — also generate+cache personalization if not yet stored
     personalized_text: Optional[str] = None
     if is_paid:
         try:
             p = db.get_personalization(user_id, story_id)
             if p:
                 personalized_text = p.get("personalized_text")
-        except Exception:
-            pass
+            else:
+                prefs = db.get_preferences(user_id)
+                if prefs:
+                    text = await enrichment.personalize_life_impact(story, prefs)
+                    if text:
+                        db.store_personalization(user_id, story_id, text)
+                        personalized_text = text
+        except Exception as exc:
+            log.warning("Personalization in audio endpoint failed story=%s: %s", story_id, exc)
 
     audio_bytes = await fish_audio.synthesize_for_user(
         story,

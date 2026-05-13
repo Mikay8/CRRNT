@@ -126,6 +126,7 @@ export default function StoryDetailScreen() {
   const {
     story: audioStory,
     isPlaying,
+    isAudioLoading,
     isBarVisible,
     positionMs,
     durationMs,
@@ -354,17 +355,22 @@ export default function StoryDetailScreen() {
             <View style={styles.audioRow}>
               <Pressable
                 onPress={toggleAudio}
+                disabled={isAudioLoading && isThisStoryActive}
                 style={({ pressed }) => [
                   styles.audioPlayBtn,
                   { opacity: pressed ? 0.7 : 1 },
                 ]}
                 accessibilityLabel={isThisStoryPlaying ? "Pause audio" : "Play audio"}
               >
-                <Ionicons
-                  name={isThisStoryPlaying ? "pause" : "play"}
-                  size={14}
-                  color={palette.bg}
-                />
+                {isAudioLoading && isThisStoryActive ? (
+                  <ActivityIndicator size="small" color={palette.bg} />
+                ) : (
+                  <Ionicons
+                    name={isThisStoryPlaying ? "pause" : "play"}
+                    size={14}
+                    color={palette.bg}
+                  />
+                )}
               </Pressable>
               <GestureDetector gesture={seekGesture}>
                 <View

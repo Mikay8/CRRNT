@@ -2,7 +2,7 @@
 
 Config shape:
   {
-    "mode": "category" | "trending",
+    "mode": "category" | "trending" | "both",
     "categories": {
       "celebrity":   {"enabled": true, "count": 10},
       "tech":        {"enabled": true, "count": 10},
@@ -77,6 +77,13 @@ def get_run_params() -> dict[str, Any]:
         for cat, v in cfg["categories"].items()
         if v.get("enabled", True)
     }
+    if cfg["mode"] == "both":
+        return {
+            "mode": "both",
+            "trending_count": cfg.get("trending_count", 25),
+            "categories": enabled,
+            "per_category_map": per_category_map,
+        }
     return {
         "mode": "category",
         "categories": enabled,

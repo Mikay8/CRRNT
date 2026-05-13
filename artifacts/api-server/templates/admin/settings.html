@@ -38,6 +38,17 @@
             <div class="text-xs text-gray-400 mt-0.5">Fetch top trending stories across all topics. NewsMesh picks the hottest content.</div>
           </div>
         </label>
+        <label class="flex items-center gap-3 flex-1 cursor-pointer rounded-xl border p-4 transition-colors
+          {% if cfg.mode == 'both' %}border-cyan-500 bg-cyan-950/30{% else %}border-gray-600 hover:border-gray-500{% endif %}">
+          <input type="radio" name="mode" value="both"
+            {% if cfg.mode == 'both' %}checked{% endif %}
+            class="accent-cyan-400"
+            onchange="document.getElementById('category-section').classList.remove('hidden'); document.getElementById('trending-section').classList.remove('hidden');">
+          <div>
+            <div class="text-sm font-semibold text-white">Both</div>
+            <div class="text-xs text-gray-400 mt-0.5">Fetch trending + category stories. Trending tagged for free feed; category tagged as non-trending.</div>
+          </div>
+        </label>
       </div>
     </div>
 

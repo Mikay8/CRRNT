@@ -70,6 +70,7 @@ def _to_story_row(raw: dict[str, Any]) -> dict[str, Any]:
         "title": raw.get("title"),
         "category": raw.get("category"),
         "tier": "free",
+        "is_trending": bool(raw.get("_is_trending", False)),
         "published_at": pub,
         "source_url": raw.get("link") or raw.get("source_url"),
         "media_url": raw.get("mediaUrl") or raw.get("media_url"),
@@ -114,6 +115,28 @@ async def run_ingestion(
         if mode == "trending":
             log.info("Ingestion starting (mode=trending, count=%d)", trending_count)
             raw = await news_fetcher.fetch_trending(limit=trending_count)
+            for a in raw:
+                a["_is_trending"] = True
+        elif mode == "both":
+            log.info("Ingestion starting (mode=both, trending=%d)", trending_count)
+            trending_raw = await news_fetcher.fetch_trending(limit=trending_count)
+            for a in trending_raw:
+                a["_is_trending"] = True
+            if per_category_map:
+                cat_raw = await news_fetcher.fetch_categories_with_map(per_category_map)
+            else:
+                selected = categories or ALL_CATEGORIES
+                cat_raw = await news_fetcher.fetch_all_categories(selected, per_category=per_category)
+            for a in cat_raw:
+                a["_is_trending"] = False
+            # Dedup by articleId — trending wins if a story appears in both pulls
+            seen: dict[str, Any] = {}
+            for a in trending_raw + cat_raw:
+                aid = a.get("articleId")
+                key = aid if aid else id(a)
+                if key not in seen:
+                    seen[key] = a
+            raw = list(seen.values())
         elif per_category_map:
             # Per-category counts — fetch each separately
             log.info("Ingestion starting (mode=category, per_category_map=%s)", per_category_map)

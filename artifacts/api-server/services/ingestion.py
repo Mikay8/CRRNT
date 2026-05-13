@@ -122,6 +122,7 @@ async def run_ingestion(
             trending_raw = await news_fetcher.fetch_trending(limit=trending_count)
             for a in trending_raw:
                 a["_is_trending"] = True
+            await asyncio.sleep(1.0)
             if per_category_map:
                 cat_raw = await news_fetcher.fetch_categories_with_map(per_category_map)
             else:

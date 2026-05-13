@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -108,28 +108,6 @@ async def search(
 
 # ── Story detail ──────────────────────────────────────────────────────────────
 
-async def _generate_audio_bg(
-    story: dict[str, Any],
-    story_id: str,
-    user_id: str,
-    personalized_text: Optional[str],
-    is_paid: bool,
-) -> None:
-    """Background task: generate and cache per-user audio on story open."""
-    try:
-        if db.get_user_audio(user_id, story_id):
-            return  # already cached
-        await fish_audio.synthesize_for_user(
-            story,
-            story_id,
-            user_id,
-            personalized_text=personalized_text,
-            include_wallet=is_paid,
-        )
-    except Exception as exc:
-        log.warning("Background audio generation failed story=%s user=%s: %s", story_id, user_id, exc)
-
-
 def _extract_request_token(request: Request) -> Optional[str]:
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
@@ -141,7 +119,6 @@ def _extract_request_token(request: Request) -> Optional[str]:
 async def get_story(
     story_id: str,
     request: Request,
-    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     story = db.get_story(story_id)
@@ -180,15 +157,23 @@ async def get_story(
         except Exception as e:
             log.warning("Personalization block failed for story %s: %s", story_id, e)
 
+    # Generate audio synchronously so it's ready when the story screen loads
+    try:
+        if not db.get_user_audio(user["id"], story_id):
+            await fish_audio.synthesize_for_user(
+                story,
+                story_id,
+                user["id"],
+                personalized_text=personalized_text,
+                include_wallet=is_paid,
+            )
+    except Exception as exc:
+        log.warning("Audio generation failed story=%s user=%s: %s", story_id, user["id"], exc)
+
     # Embed auth token in tts_url so the client can stream audio without extra auth wiring
     token = _extract_request_token(request)
     if token:
         story["tts_url"] = f"/api/stories/{story_id}/audio?token={token}"
-
-    # Kick off audio generation in the background so it's ready when user taps play
-    background_tasks.add_task(
-        _generate_audio_bg, story, story_id, user["id"], personalized_text, is_paid
-    )
 
     return story
 

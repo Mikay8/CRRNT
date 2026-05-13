@@ -366,14 +366,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             // fall through to speech synthesis
           }
         } else {
-          // Native: pass token as query param since native media player can't set headers
+          // Native: tts_url from server already has ?token= embedded; only append if missing
           if (blobUrlRef.current) {
             URL.revokeObjectURL(blobUrlRef.current);
             blobUrlRef.current = null;
           }
-          const nativeUrl = accessToken
-            ? `${baseUrl}${audioPath}?token=${encodeURIComponent(accessToken)}`
-            : `${baseUrl}${audioPath}`;
+          const alreadyHasToken = audioPath.includes("token=");
+          const nativeUrl =
+            !alreadyHasToken && accessToken
+              ? `${baseUrl}${audioPath}?token=${encodeURIComponent(accessToken)}`
+              : `${baseUrl}${audioPath}`;
           player.replace({ uri: nativeUrl });
           audioStarted = true;
         }

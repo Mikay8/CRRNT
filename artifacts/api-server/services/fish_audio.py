@@ -20,6 +20,9 @@ MAX_CONCURRENCY = 2
 
 
 def build_audio_text(story: dict[str, Any]) -> str:
+    # NOTE: life_impact is included here as a generic section for all users.
+    # Paid users additionally get a separate personalized clip via synthesize_personalized()
+    # which uses a distinct prefix to avoid sounding like a repeat.
     parts: list[str] = []
     title = (story.get("title") or "").strip()
     if title:
@@ -100,3 +103,63 @@ async def synthesize_and_store(story: dict[str, Any], story_id: str) -> Optional
         return None
 
     return f"/api/stories/{story_id}/audio"
+
+
+async def synthesize_personalized(
+    text: str, user_id: str, story_id: str
+) -> Optional[str]:
+    """Synthesize a short personalized impact clip and cache it in story_personalizations.
+
+    Uses a distinct prefix from build_audio_text so paid users don't hear
+    'Here's how it affects you' twice when playing both the main story and this clip.
+    """
+    from services import db as db_svc
+
+    api_key = os.environ.get("FISH_AUDIO_API_KEY")
+    if not api_key:
+        log.warning("FISH_AUDIO_API_KEY not set — skipping personalized TTS")
+        return None
+
+    if not text.strip():
+        return None
+
+    audio_text = "Based on your profile. " + text
+    voice_id = os.environ.get("FISH_AUDIO_VOICE_ID")
+
+    payload: dict[str, Any] = {
+        "text": audio_text,
+        "format": "mp3",
+        "mp3_bitrate": 128,
+        "normalize": True,
+        "temperature": 0.7,
+        "top_p": 0.7,
+        "prosody": {"speed": 1, "normalize_loudness": True},
+        "latency": "normal",
+        "chunk_length": 300,
+    }
+    if voice_id:
+        payload["reference_id"] = voice_id
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                FISH_AUDIO_URL,
+                headers={
+                    "model": "s2-pro",
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            resp.raise_for_status()
+            audio_bytes = resp.content
+    except Exception as exc:
+        log.warning("Personalized TTS failed for story %s: %s", story_id, exc)
+        return None
+
+    try:
+        db_svc.store_personalization_audio(user_id, story_id, audio_bytes)
+        return f"/api/stories/{story_id}/personalized-audio"
+    except Exception as exc:
+        log.warning("Failed to store personalized audio for story %s: %s", story_id, exc)
+        return None

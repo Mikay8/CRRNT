@@ -72,6 +72,10 @@ export interface Story {
   expires_at?: string;
   created_at?: string;
   saved_at?: string | null;
+  /** Personalized impact statement generated at request time for paid users */
+  personalized_life_impact?: string | null;
+  /** URL to personalized impact audio clip */
+  personalized_audio_url?: string | null;
 }
 
 export interface StoriesResponse {

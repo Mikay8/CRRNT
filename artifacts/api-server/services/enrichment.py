@@ -297,6 +297,67 @@ def _is_buzzfeed_quiz(story: dict[str, Any]) -> bool:
     return "buzzfeed" in source and "quiz" in title
 
 
+async def personalize_life_impact(
+    story: dict[str, Any], prefs: dict[str, Any]
+) -> str:
+    """Generate a personalized impact statement for a paid user at request time.
+
+    Falls back to "" on any error so the caller can fall back to generic life_impact.
+    """
+    title = story.get("title") or ""
+    summary = (story.get("summary") or story.get("storySummary") or "")[:300]
+    category = story.get("category") or ""
+    generic = story.get("life_impact") or story.get("lifeImpact") or ""
+
+    profile_parts = []
+    if prefs.get("job_type"):
+        profile_parts.append(f"Job: {prefs['job_type']}")
+    if prefs.get("housing_status"):
+        profile_parts.append(f"Housing: {prefs['housing_status']}")
+    if prefs.get("city"):
+        profile_parts.append(f"City: {prefs['city']}")
+    if prefs.get("life_stage"):
+        profile_parts.append(f"Life stage: {prefs['life_stage']}")
+    if prefs.get("income_bracket"):
+        profile_parts.append(f"Income: {prefs['income_bracket']}")
+    if isinstance(prefs.get("financial_goals"), list):
+        profile_parts.append(f"Goals: {', '.join(prefs['financial_goals'])}")
+    if isinstance(prefs.get("interests"), list):
+        profile_parts.append(f"Interests: {', '.join(prefs['interests'][:3])}")
+
+    if not profile_parts:
+        return ""
+
+    system = (
+        "You are a personal financial news editor for CRRNT. "
+        "Write a 2-3 sentence impact statement tailored to the specific reader below. "
+        "Be concrete — name their actual situation (city, job, housing). "
+        "Start with 'You' or 'If you' when possible. "
+        "Plain ASCII only: no smart quotes, em dashes, or ellipsis characters. "
+        "Max 200 characters total."
+    )
+    user_prompt = (
+        f"Reader: {'; '.join(profile_parts)}\n\n"
+        f"Story: {title}\nCategory: {category}\nSummary: {summary}\n"
+        f"Generic impact: {generic}\n\n"
+        "Write the personalized impact statement."
+    )
+
+    try:
+        client = _get_client()
+        msg = await client.messages.create(
+            model=MODEL,
+            max_tokens=150,
+            system=system,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        return _sanitize(text.strip())
+    except Exception as exc:
+        log.warning("Personalization failed for '%s': %s", title[:60], exc)
+        return ""
+
+
 async def enrich_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Run both enrichment passes for all stories."""
     from services import xapi

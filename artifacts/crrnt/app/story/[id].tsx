@@ -427,15 +427,35 @@ export default function StoryDetailScreen() {
           </View>
 
           {/* How does it affect me? */}
-          {story.life_impact ? (
+          {(story.life_impact || story.personalized_life_impact) ? (
             <View style={[styles.insightCard, styles.impactCard]}>
               <View style={styles.sectionHeader}>
                 <Ionicons name="people" size={16} color="#7B68EE" />
                 <Text style={[styles.sectionLabel, { color: "#7B68EE" }]}>
                   How does it affect me?
                 </Text>
+                {isPro && story.personalized_audio_url ? (
+                  <Pressable
+                    onPress={() => {
+                      const baseUrl = (story as any)._baseUrl ?? "";
+                      const url = baseUrl + story.personalized_audio_url;
+                      Linking.openURL(url).catch(() => undefined);
+                    }}
+                    style={styles.personalizedPlayBtn}
+                    accessibilityLabel="Play personalized audio"
+                  >
+                    <Ionicons name="play" size={11} color="#7B68EE" />
+                  </Pressable>
+                ) : null}
               </View>
-              <Text style={styles.impactText}>{story.life_impact}</Text>
+              <Text style={styles.impactText}>
+                {isPro && story.personalized_life_impact
+                  ? story.personalized_life_impact
+                  : story.life_impact}
+              </Text>
+              {isPro && story.personalized_life_impact ? (
+                <Text style={styles.personalizedBadge}>Personalized for you</Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -816,6 +836,23 @@ function createStyles(palette: ThemeColors) {
     impactCard: {
       borderColor: "#7B68EE44",
       backgroundColor: "#7B68EE0A",
+    },
+    personalizedPlayBtn: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: "#7B68EE22",
+      borderWidth: 1,
+      borderColor: "#7B68EE55",
+      alignItems: "center",
+      justifyContent: "center",
+      marginLeft: "auto",
+    },
+    personalizedBadge: {
+      fontFamily: "Inter_500Medium",
+      fontSize: 11,
+      color: "#7B68EE",
+      opacity: 0.7,
     },
     socialCard: {
       borderColor: "#1DA1F233",

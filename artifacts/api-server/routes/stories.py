@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from services import db, personalization
+from services import db, enrichment, fish_audio, personalization
 from services.auth_middleware import get_current_user, get_current_user_optional
 
 log = logging.getLogger("crrnt.stories")
@@ -126,6 +126,22 @@ async def get_story(
 
     if user.get("tier") != "paid":
         story = _strip_paid_fields(story)
+    else:
+        prefs = db.get_preferences(user["id"])
+        if prefs:
+            cached = db.get_personalization(user["id"], story_id)
+            if cached:
+                story["personalized_life_impact"] = cached["personalized_text"]
+                story["personalized_audio_url"] = cached.get("audio_url")
+            else:
+                text = await enrichment.personalize_life_impact(story, prefs)
+                if text:
+                    audio_url = await fish_audio.synthesize_personalized(
+                        text, user["id"], story_id
+                    )
+                    db.store_personalization(user["id"], story_id, text, audio_url)
+                    story["personalized_life_impact"] = text
+                    story["personalized_audio_url"] = audio_url
 
     return story
 
@@ -209,4 +225,23 @@ async def get_story_audio(
         content=audio_bytes,
         media_type="audio/mpeg",
         headers={"Accept-Ranges": "bytes", "Content-Length": str(total)},
+    )
+
+
+# ── Personalized audio ────────────────────────────────────────────────────────
+
+@router.get("/{story_id}/personalized-audio")
+async def get_personalized_audio(
+    story_id: str,
+    user: dict = Depends(get_current_user),
+) -> Response:
+    if user.get("tier") != "paid":
+        raise HTTPException(status_code=403, detail="Requires Pro subscription")
+    audio_bytes = db.get_personalization_audio(user["id"], story_id)
+    if not audio_bytes:
+        raise HTTPException(status_code=404, detail="No personalized audio for this story")
+    return Response(
+        content=audio_bytes,
+        media_type="audio/mpeg",
+        headers={"Accept-Ranges": "bytes", "Content-Length": str(len(audio_bytes))},
     )

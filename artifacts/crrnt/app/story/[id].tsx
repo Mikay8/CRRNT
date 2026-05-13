@@ -24,6 +24,7 @@ import {
 } from "@workspace/api-client-react";
 import { getCategoryMeta } from "@/constants/categories";
 import { useAudio } from "@/contexts/AudioContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { usePurchases } from "@/contexts/PurchasesContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
@@ -116,6 +117,7 @@ export default function StoryDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { isPro } = usePurchases();
+  const { isPaid } = useAuth();
   const { saved } = useSavedStories();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
   const [audioTrackWidth, setAudioTrackWidth] = useState(0);
@@ -434,7 +436,7 @@ export default function StoryDetailScreen() {
                 <Text style={[styles.sectionLabel, { color: "#7B68EE" }]}>
                   How does it affect me?
                 </Text>
-                {isPro && story.personalized_audio_url ? (
+                {isPaid && story.personalized_audio_url ? (
                   <Pressable
                     onPress={() => {
                       const baseUrl = (story as any)._baseUrl ?? "";
@@ -449,28 +451,26 @@ export default function StoryDetailScreen() {
                 ) : null}
               </View>
               <Text style={styles.impactText}>
-                {isPro && story.personalized_life_impact
+                {isPaid && story.personalized_life_impact
                   ? story.personalized_life_impact
                   : story.life_impact}
               </Text>
-              {isPro && story.personalized_life_impact ? (
+              {isPaid && story.personalized_life_impact ? (
                 <Text style={styles.personalizedBadge}>Personalized for you</Text>
               ) : null}
             </View>
           ) : null}
 
           {/* Wallet impact */}
-          {isPro ? (
-            story.wallet_impact ? (
-              <View style={styles.insightCard}>
-                <View style={styles.sectionHeader}>
-                  <Ionicons name="sparkles" size={16} color={palette.accent} />
-                  <Text style={styles.sectionLabel}>Wallet impact</Text>
-                </View>
-                <Text style={styles.impactText}>{story.wallet_impact}</Text>
+          {story.wallet_impact ? (
+            <View style={styles.insightCard}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="sparkles" size={16} color={palette.accent} />
+                <Text style={styles.sectionLabel}>Wallet impact</Text>
               </View>
-            ) : null
-          ) : (
+              <Text style={styles.impactText}>{story.wallet_impact}</Text>
+            </View>
+          ) : !isPaid ? (
             <Pressable
               onPress={() => router.push("/subscription/manage")}
               style={[styles.insightCard, styles.lockedCard]}
@@ -487,11 +487,10 @@ export default function StoryDetailScreen() {
                 <Text style={styles.lockedBadgeText}>Unlock with CRRNT Pro</Text>
               </View>
             </Pressable>
-          )}
+          ) : null}
 
           {/* Stock chart */}
-          {isPro ? (
-            ticker ? (
+          {ticker ? (
               <View style={styles.stockCard}>
                 <View style={styles.stockHeader}>
                   <View>
@@ -591,6 +590,23 @@ export default function StoryDetailScreen() {
                   </Text>
                 ) : null}
               </View>
+            ) : !isPaid ? (
+              <Pressable
+                onPress={() => router.push("/subscription/manage")}
+                style={[styles.stockCard, styles.lockedCard]}
+              >
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="bar-chart-outline" size={16} color={palette.accent} />
+                  <Text style={styles.sectionLabel}>Stock data</Text>
+                </View>
+                <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
+                  <Ionicons name="lock-closed" size={22} color={palette.textMuted} />
+                </View>
+                <View style={styles.lockedBadge}>
+                  <Ionicons name="lock-closed" size={12} color={palette.accent} />
+                  <Text style={styles.lockedBadgeText}>Unlock with CRRNT Pro</Text>
+                </View>
+              </Pressable>
             ) : (
               <View style={styles.noTickerCard}>
                 <Ionicons
@@ -602,25 +618,7 @@ export default function StoryDetailScreen() {
                   No public stock is closely tied to this story.
                 </Text>
               </View>
-            )
-          ) : (
-            <Pressable
-              onPress={() => router.push("/subscription/manage")}
-              style={[styles.stockCard, styles.lockedCard]}
-            >
-              <View style={styles.sectionHeader}>
-                <Ionicons name="bar-chart-outline" size={16} color={palette.accent} />
-                <Text style={styles.sectionLabel}>Stock data</Text>
-              </View>
-              <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
-                <Ionicons name="lock-closed" size={22} color={palette.textMuted} />
-              </View>
-              <View style={styles.lockedBadge}>
-                <Ionicons name="lock-closed" size={12} color={palette.accent} />
-                <Text style={styles.lockedBadgeText}>Unlock with CRRNT Pro</Text>
-              </View>
-            </Pressable>
-          )}
+            )}
 
           {/* What are people saying? */}
           {hasSocialData ? (

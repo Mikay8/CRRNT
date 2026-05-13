@@ -335,7 +335,15 @@ export default function StoryDetailScreen() {
         >
           {/* Top row: category + save */}
           <View style={styles.metaRow}>
-            <CategoryBadge category={story.category} size="md" />
+            <View style={styles.badgeRow}>
+              <CategoryBadge category={story.category} size="md" />
+              {story.tier === "paid" && (
+                <View style={styles.proBadge}>
+                  <Ionicons name="star" size={9} color="#000" />
+                  <Text style={styles.proBadgeText}>PRO</Text>
+                </View>
+              )}
+            </View>
             <View style={styles.actionButtons}>
               <SaveButton story={story} size={26} />
             </View>
@@ -775,6 +783,22 @@ function createStyles(palette: ThemeColors) {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
+    },
+    badgeRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+    proBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 3,
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 10,
+      backgroundColor: palette.accent,
+    },
+    proBadgeText: {
+      fontSize: 10,
+      fontWeight: "800",
+      color: "#000",
+      letterSpacing: 0.5,
     },
     actionButtons: { flexDirection: "row", alignItems: "center", gap: 10 },
     audioRow: { flexDirection: "row", alignItems: "center", gap: 10 },

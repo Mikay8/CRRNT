@@ -120,6 +120,35 @@ async def forgot_password(body: ForgotPasswordRequest) -> dict[str, str]:
     return {"message": "If that email is registered you will receive a reset link."}
 
 
+# ── Refresh ───────────────────────────────────────────────────────────────────
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/refresh")
+async def refresh(body: RefreshRequest) -> dict[str, Any]:
+    client = db.get_client()
+    try:
+        res = client.auth.refresh_session(body.refresh_token)
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Refresh token invalid or expired")
+
+    if not res.session:
+        raise HTTPException(status_code=401, detail="Refresh failed")
+
+    user = db.get_user(res.user.id) or db.create_user(res.user.id, res.user.email)
+
+    return {
+        "user": user,
+        "session": {
+            "access_token": res.session.access_token,
+            "refresh_token": res.session.refresh_token,
+            "expires_in": res.session.expires_in,
+        },
+    }
+
+
 # ── Logout ────────────────────────────────────────────────────────────────────
 
 @router.post("/logout")

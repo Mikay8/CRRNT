@@ -20,6 +20,16 @@ const TOKEN_KEY = "@crrnt/auth/access_token";
 const REFRESH_KEY = "@crrnt/auth/refresh_token";
 const USER_KEY = "@crrnt/auth/user";
 
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    // Treat as expired 60s early to avoid edge-case failures
+    return payload.exp * 1000 < Date.now() + 60_000;
+  } catch {
+    return true;
+  }
+}
+
 export interface CrrntUser {
   id: string;
   email: string;
@@ -79,16 +89,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const [token, raw] = await Promise.all([
+        const [token, refreshToken, raw] = await Promise.all([
           AsyncStorage.getItem(TOKEN_KEY),
+          AsyncStorage.getItem(REFRESH_KEY),
           AsyncStorage.getItem(USER_KEY),
         ]);
-        if (token && raw) {
+
+        if (!token || !raw) return;
+
+        if (!isTokenExpired(token)) {
           setAccessToken(token);
           setUser(JSON.parse(raw) as CrrntUser);
+          return;
+        }
+
+        // Token expired — try to refresh silently
+        if (!refreshToken) return;
+
+        const res = await apiFetch("/api/auth/refresh", {
+          method: "POST",
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          await Promise.all([
+            AsyncStorage.setItem(TOKEN_KEY, data.session.access_token),
+            AsyncStorage.setItem(REFRESH_KEY, data.session.refresh_token),
+            AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user)),
+          ]);
+          setAccessToken(data.session.access_token);
+          setUser(data.user as CrrntUser);
+        } else {
+          // Refresh token also expired — clear session, user must log in again
+          await Promise.all([
+            AsyncStorage.removeItem(TOKEN_KEY),
+            AsyncStorage.removeItem(REFRESH_KEY),
+            AsyncStorage.removeItem(USER_KEY),
+          ]);
         }
       } catch {
-        // Corrupt storage — start fresh
+        // Corrupt storage or network error — start fresh
       } finally {
         setHydrated(true);
       }

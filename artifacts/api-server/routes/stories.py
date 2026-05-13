@@ -229,9 +229,12 @@ async def get_story_audio(
     # Generate full audio for this user
     personalized_text: Optional[str] = None
     if is_paid:
-        p = db.get_personalization(user_id, story_id)
-        if p:
-            personalized_text = p.get("personalized_text")
+        try:
+            p = db.get_personalization(user_id, story_id)
+            if p:
+                personalized_text = p.get("personalized_text")
+        except Exception:
+            pass
 
     audio_bytes = await fish_audio.synthesize_for_user(
         story,

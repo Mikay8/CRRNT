@@ -369,14 +369,17 @@ def get_active_subscribers_count() -> int:
 # ── Story personalizations ─────────────────────────────────────────────────────
 
 def get_personalization(user_id: str, story_id: str) -> Optional[dict[str, Any]]:
-    result = (
-        get_client().table("story_personalizations")
-        .select("personalized_text, audio_url")
-        .eq("user_id", user_id)
-        .eq("story_id", story_id)
-        .execute()
-    )
-    return result.data[0] if result.data else None
+    try:
+        result = (
+            get_client().table("story_personalizations")
+            .select("personalized_text")
+            .eq("user_id", user_id)
+            .eq("story_id", story_id)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+    except Exception:
+        return None
 
 
 def store_personalization(user_id: str, story_id: str, text: str) -> None:
@@ -385,35 +388,6 @@ def store_personalization(user_id: str, story_id: str, text: str) -> None:
         "story_id": story_id,
         "personalized_text": text,
     }).execute()
-
-
-def store_personalization_audio(user_id: str, story_id: str, mp3_bytes: bytes) -> None:
-    import base64
-    get_client().table("story_personalizations").update({
-        "mp3_data": base64.b64encode(mp3_bytes).decode(),
-    }).eq("user_id", user_id).eq("story_id", story_id).execute()
-
-
-def get_personalization_audio(user_id: str, story_id: str) -> Optional[bytes]:
-    import base64
-    try:
-        result = (
-            get_client().table("story_personalizations")
-            .select("mp3_data")
-            .eq("user_id", user_id)
-            .eq("story_id", story_id)
-            .execute()
-        )
-    except Exception:
-        return None
-    if not result.data or not result.data[0].get("mp3_data"):
-        return None
-    raw = result.data[0]["mp3_data"]
-    if isinstance(raw, str):
-        if raw.startswith("\\x"):
-            return bytes.fromhex(raw[2:])
-        return base64.b64decode(raw)
-    return bytes(raw)
 
 
 # ── Per-user full story audio ─────────────────────────────────────────────────

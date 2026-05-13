@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from services import db, enrichment, fish_audio, personalization  # fish_audio used in audio endpoint
-from services.auth_middleware import get_current_user
+from services.auth_middleware import get_current_user, get_current_user_optional
 
 log = logging.getLogger("crrnt.stories")
 router = APIRouter(prefix="/api/stories", tags=["stories"])
@@ -32,27 +32,25 @@ ALLOWED_CATEGORIES = {
 @router.get("/daily")
 async def daily_feed(
     category: Optional[str] = Query(default=None),
-    user: dict = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user_optional),
 ) -> dict[str, Any]:
     if category and category not in ALLOWED_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Unknown category '{category}'")
 
-    tier = user.get("tier", "free")
-    prefs = db.get_preferences(user["id"])
+    tier = user.get("tier", "free") if user else "free"
+    prefs = db.get_preferences(user["id"]) if user else {}
 
     stories = db.get_stories_for_feed()
 
-    # Filter by category first if requested
     if category:
         stories = [s for s in stories if s.get("category") == category]
 
-    # Paid story content never sent to free users
+    # Guests and free users only see free-tier stories
     if tier != "paid":
         stories = [s for s in stories if s.get("tier") == "free"]
 
     ranked = personalization.personalize_feed(stories, prefs, tier)
 
-    # Strip paid content from free users (belt-and-suspenders)
     if tier != "paid":
         ranked = [s for s in ranked if s.get("tier") == "free"]
         ranked = [_strip_paid_fields(s) for s in ranked]

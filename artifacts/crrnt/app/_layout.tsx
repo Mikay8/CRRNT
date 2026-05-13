@@ -125,10 +125,6 @@ function AuthGate() {
   const inAuthGroup = seg0 === "auth";
   const inOnboarding = seg0 === "onboarding";
 
-  if (!user && !inAuthGroup) {
-    return <Redirect href={"/auth/login" as any} />;
-  }
-
   if (user && inAuthGroup) {
     return <Redirect href={!user.onboarding_complete ? ("/onboarding" as any) : "/(tabs)"} />;
   }

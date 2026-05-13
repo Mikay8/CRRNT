@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,6 +9,7 @@ import ReanimatedSwipeable, {
 import CategoryBadge from "@/components/CategoryBadge";
 import SaveButton from "@/components/SaveButton";
 import { useAudio } from "@/contexts/AudioContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { usePurchases } from "@/contexts/PurchasesContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
@@ -80,6 +81,7 @@ interface StoryCardProps {
 export function StoryCard({ story }: StoryCardProps) {
   const swipeableRef = useRef<SwipeableMethods | null>(null);
   const { toggleSaved } = useSavedStories();
+  const { user } = useAuth();
   const { playStory, isBarVisible, addToQueue } = useAudio();
   const { isPro } = usePurchases();
   const { theme: palette } = useThemeContext();
@@ -91,6 +93,18 @@ export function StoryCard({ story }: StoryCardProps) {
 
   const handleSave = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    if (!user) {
+      Alert.alert(
+        "Create a free account",
+        "Sign up to save stories and pick up where you left off.",
+        [
+          { text: "Sign in", onPress: () => router.push("/auth/login" as any) },
+          { text: "Create account", onPress: () => router.push("/auth/register" as any) },
+          { text: "Not now", style: "cancel" },
+        ]
+      );
+      return;
+    }
     toggleSaved(story).catch(() => undefined);
   };
 

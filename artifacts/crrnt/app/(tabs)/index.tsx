@@ -33,7 +33,8 @@ const LOGO_LIGHT = require("@/assets/images/full-logo-light.png") as number;
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const { isDark, theme: palette, toggleTheme } = useThemeContext();
-  const { accessToken } = useAuth();
+  const { user, accessToken } = useAuth();
+  const isGuest = !user;
   const [category, setCategory] = useState<Category | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -55,7 +56,7 @@ export default function FeedScreen() {
 
   const { data, isLoading, isFetching, refetch, error } = useListStories(
     category ? { category } : undefined,
-    { query: { staleTime: 60_000, enabled: !!accessToken && !isSearchActive } as any }
+    { query: { staleTime: 60_000, enabled: !isSearchActive } as any }
   );
 
   const { data: searchData, isFetching: searchFetching } = useSearchStories(
@@ -111,11 +112,11 @@ export default function FeedScreen() {
   const listPadding = useMemo(
     () => ({
       paddingTop: insets.top + headerHeight,
-      paddingBottom: insets.bottom + 100,
+      paddingBottom: insets.bottom + (isGuest ? 24 : 100),
       paddingLeft: insets.left,
       paddingRight: insets.right,
     }),
-    [insets.top, insets.bottom, insets.left, insets.right]
+    [insets.top, insets.bottom, insets.left, insets.right, isGuest]
   );
 
   return (

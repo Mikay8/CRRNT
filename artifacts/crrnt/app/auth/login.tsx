@@ -123,6 +123,13 @@ export default function LoginScreen() {
             <Text style={styles.footerLink}>Create one</Text>
           </Pressable>
         </View>
+
+        <Pressable
+          style={styles.guestRow}
+          onPress={() => router.replace("/(tabs)" as any)}
+        >
+          <Text style={styles.guestLink}>Browse without an account</Text>
+        </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -202,5 +209,15 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontSize: 14,
     color: "#06B6D4",
+  },
+  guestRow: {
+    marginTop: 16,
+    alignItems: "center",
+  },
+  guestLink: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
+    color: "#4B5563",
+    textDecorationLine: "underline",
   },
 });

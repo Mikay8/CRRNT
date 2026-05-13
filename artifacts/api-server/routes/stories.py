@@ -130,9 +130,17 @@ async def _generate_audio_bg(
         log.warning("Background audio generation failed story=%s user=%s: %s", story_id, user_id, exc)
 
 
+def _extract_request_token(request: Request) -> Optional[str]:
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:].strip()
+    return request.query_params.get("token") or None
+
+
 @router.get("/{story_id}")
 async def get_story(
     story_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -171,6 +179,11 @@ async def get_story(
                         story["personalized_life_impact"] = text
         except Exception as e:
             log.warning("Personalization block failed for story %s: %s", story_id, e)
+
+    # Embed auth token in tts_url so the client can stream audio without extra auth wiring
+    token = _extract_request_token(request)
+    if token:
+        story["tts_url"] = f"/api/stories/{story_id}/audio?token={token}"
 
     # Kick off audio generation in the background so it's ready when user taps play
     background_tasks.add_task(

@@ -213,6 +213,17 @@ async def admin_users(
     )
 
 
+@router.post("/users/{user_id}/tier")
+async def change_user_tier(
+    user_id: str,
+    tier: str = Form(...),
+    _: None = Depends(_verify_admin),
+):
+    if tier in ("free", "paid"):
+        _safe_db(lambda: db.update_user(user_id, {"tier": tier}), None)
+    return RedirectResponse(url="/admin/users", status_code=302)
+
+
 # ── Breaking news ─────────────────────────────────────────────────────────────
 
 

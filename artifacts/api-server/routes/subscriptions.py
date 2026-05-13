@@ -121,6 +121,32 @@ async def identify(
     return {"message": "RevenueCat ID linked", "user": updated}
 
 
+# ── Client-side sync ─────────────────────────────────────────────────────────
+# Used when RC Preview Mode (Expo Go) means no webhook fires. The client calls
+# this after RC confirms an entitlement so Supabase stays in sync.
+
+class SyncRequest(BaseModel):
+    is_pro: bool
+
+
+@router.post("/sync")
+async def sync_tier(
+    body: SyncRequest,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    current_tier = user.get("tier", "free")
+    new_tier = "paid" if body.is_pro else "free"
+    if new_tier != current_tier:
+        updates: dict[str, Any] = {"tier": new_tier}
+        if body.is_pro:
+            updates["subscription_status"] = "active"
+        else:
+            updates["subscription_status"] = "expired"
+        db.update_user(user["id"], updates)
+        log.info("Tier synced from client: user=%s tier=%s→%s", user["id"], current_tier, new_tier)
+    return {"tier": new_tier}
+
+
 # ── Status ────────────────────────────────────────────────────────────────────
 
 @router.get("/status")

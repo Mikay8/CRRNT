@@ -80,11 +80,27 @@ export function PurchasesProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { user } = useAuth();
+  const { user, refreshUser, getAuthHeader } = useAuth();
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const configured = useRef(false);
   const loggedInUserId = useRef<string | null>(null);
+
+  const syncTierWithBackend = useCallback(async (hasPro: boolean) => {
+    try {
+      const apiBase = process.env.EXPO_PUBLIC_API_BASE ?? "";
+      await fetch(`${apiBase}/api/subscriptions/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify({ is_pro: hasPro }),
+      });
+      await refreshUser();
+    } catch {}
+  }, [getAuthHeader, refreshUser]);
+
+  // Keep a ref so the RC listener (registered once) always calls the latest version
+  const syncTierRef = useRef(syncTierWithBackend);
+  useEffect(() => { syncTierRef.current = syncTierWithBackend; }, [syncTierWithBackend]);
 
   // ── Configure SDK once on mount ─────────────────────────────────────────────
   useEffect(() => {
@@ -97,10 +113,14 @@ export function PurchasesProvider({
 
     Purchases.configure({ apiKey: RC_API_KEY });
 
-    // Real-time listener — fires on any purchase, restoration, or expiry event
-    const removeListener = Purchases.addCustomerInfoUpdateListener(
-      (info) => setCustomerInfo(info)
-    );
+    // Real-time listener — fires on any purchase, restoration, or expiry event.
+    // Also syncs tier to Supabase so content gating stays accurate in Expo Go
+    // where RC Preview Mode doesn't fire real webhooks.
+    const removeListener = Purchases.addCustomerInfoUpdateListener((info) => {
+      setCustomerInfo(info);
+      const hasPro = Boolean(info.entitlements.active[PRO_ENTITLEMENT]);
+      syncTierRef.current(hasPro);
+    });
 
     Purchases.getCustomerInfo()
       .then((info) => setCustomerInfo(info))
@@ -142,11 +162,8 @@ export function PurchasesProvider({
 
   // ── Derived state ────────────────────────────────────────────────────────────
 
-  // Fall back to Supabase tier so content gating works in Expo Go / dev builds
-  // where RevenueCat runs in Preview Mode and entitlements may not be populated.
   const isPro = Boolean(
-    customerInfo?.entitlements.active[PRO_ENTITLEMENT] ||
-    user?.tier === "paid"
+    customerInfo?.entitlements.active[PRO_ENTITLEMENT]
   );
 
   // ── Actions ──────────────────────────────────────────────────────────────────
@@ -211,6 +228,7 @@ export function PurchasesProvider({
       setCustomerInfo(info);
       const hasPro = Boolean(info.entitlements.active[PRO_ENTITLEMENT]);
       if (hasPro) {
+        await syncTierWithBackend(true);
         Alert.alert(
           "Purchases restored",
           "Your CRRNT Pro subscription has been restored.",

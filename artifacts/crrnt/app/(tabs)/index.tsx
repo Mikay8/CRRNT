@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
   useListStories,
@@ -154,6 +155,14 @@ export default function FeedScreen() {
           )}
 
           <View style={styles.headerActions}>
+            {isGuest && !searchVisible && (
+              <Pressable
+                onPress={() => router.push("/login" as any)}
+                style={styles.getAccountBtn}
+              >
+                <Text style={styles.getAccountText}>Get account</Text>
+              </Pressable>
+            )}
             {!searchVisible && isFetching && stories.length > 0 ? (
               <ActivityIndicator
                 size="small"
@@ -291,6 +300,18 @@ function createStyles(palette: ThemeColors) {
     },
     iconBtn: {
       padding: 4,
+    },
+    getAccountBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+      backgroundColor: palette.accent,
+      marginRight: 8,
+    },
+    getAccountText: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 13,
+      color: "#fff",
     },
     searchInput: {
       flex: 1,

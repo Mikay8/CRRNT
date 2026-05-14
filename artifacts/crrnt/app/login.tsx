@@ -48,7 +48,7 @@ export default function LoginScreen() {
         style={styles.flex}
         contentContainerStyle={[
           styles.container,
-          { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 32 },
+          { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 72 },
         ]}
         keyboardShouldPersistTaps="handled"
       >
@@ -123,17 +123,17 @@ export default function LoginScreen() {
             <Text style={styles.footerLink}>Create one</Text>
           </Pressable>
         </View>
-
-        <Pressable
-          style={styles.guestRow}
-          onPress={async () => {
-            await enterGuestMode();
-            router.replace("/(tabs)" as any);
-          }}
-        >
-          <Text style={styles.guestLink}>Browse without an account</Text>
-        </Pressable>
       </ScrollView>
+
+      <Pressable
+        style={[styles.guestRow, { paddingBottom: insets.bottom + 12 }]}
+        onPress={async () => {
+          await enterGuestMode();
+          router.replace("/(tabs)" as any);
+        }}
+      >
+        <Text style={styles.guestLink}>Browse without an account</Text>
+      </Pressable>
     </KeyboardAvoidingView>
   );
 }
@@ -214,8 +214,11 @@ const styles = StyleSheet.create({
     color: "#06B6D4",
   },
   guestRow: {
-    marginTop: 16,
     alignItems: "center",
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#1F2937",
+    backgroundColor: "#090D12",
   },
   guestLink: {
     fontFamily: "Inter_500Medium",

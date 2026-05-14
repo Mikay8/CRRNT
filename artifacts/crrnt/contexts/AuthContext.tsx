@@ -54,6 +54,7 @@ interface AuthContextValue {
   forgotPassword: (email: string) => Promise<void>;
   getAuthHeader: () => Record<string, string>;
   enterGuestMode: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -236,6 +237,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await _clearSession();
   }, [accessToken, _clearSession]);
 
+  const deleteAccount = useCallback(async () => {
+    if (accessToken) {
+      await apiFetch("/api/auth/account", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }).catch(() => undefined);
+    }
+    await _clearSession();
+  }, [accessToken, _clearSession]);
+
   const updateUser = useCallback(async (fields: Partial<CrrntUser>) => {
     if (!user) return;
     const updated = { ...user, ...fields };
@@ -279,8 +290,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       forgotPassword,
       getAuthHeader,
       enterGuestMode,
+      deleteAccount,
     }),
-    [user, accessToken, isGuest, hydrated, login, register, logout, refreshUser, updateUser, forgotPassword, getAuthHeader, enterGuestMode]
+    [user, accessToken, isGuest, hydrated, login, register, logout, refreshUser, updateUser, forgotPassword, getAuthHeader, enterGuestMode, deleteAccount]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

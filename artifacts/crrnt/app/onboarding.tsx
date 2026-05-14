@@ -1,10 +1,15 @@
 /**
- * Onboarding quiz — collected once after registration.
- * Answers feed the personalization engine.
+ * Onboarding flow — runs once after registration.
+ *
+ * Phase 1 (privacy):  Data & privacy disclosure — required for all new users.
+ * Phase 2 (paywall):  RevenueCat paywall presented as a native modal.
+ *                     Purchased → quiz.  Dismissed → mark complete, go to feed.
+ * Phase 3 (quiz):     Personalization quiz — paid users only.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,65 +20,36 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePurchases } from "@/contexts/PurchasesContext";
 import { useSaveOnboardingQuiz } from "@workspace/api-client-react";
 
-// ── Data ─────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type Phase = "privacy" | "paywall" | "quiz";
+
+// ── Quiz data ─────────────────────────────────────────────────────────────────
 
 const JOB_TYPES = [
-  "Tech / Engineering",
-  "Finance / Banking",
-  "Healthcare",
-  "Education",
-  "Retail / Hospitality",
-  "Creative / Media",
-  "Government",
-  "Self-employed",
-  "Student",
-  "Other",
+  "Tech / Engineering", "Finance / Banking", "Healthcare", "Education",
+  "Retail / Hospitality", "Creative / Media", "Government", "Self-employed",
+  "Student", "Other",
 ];
-
 const LIFE_STAGES = [
-  "In college",
-  "Just starting out",
-  "Building my career",
-  "Starting a family",
-  "Mid-career",
-  "Pre-retirement",
+  "In college", "Just starting out", "Building my career", "Starting a family",
+  "Mid-career", "Pre-retirement",
 ];
-
 const INTERESTS = [
-  "Celebrity",
-  "Tech",
-  "Government",
-  "Sports",
-  "Business",
-  "Science",
-  "Entertainment",
+  "Celebrity", "Tech", "Government", "Sports", "Business", "Science", "Entertainment",
 ];
-
 const GOALS = [
-  "Save more money",
-  "Pay off debt",
-  "Invest in stocks",
-  "Buy a home",
-  "Start a business",
-  "Build an emergency fund",
-  "Travel more",
-  "Retire early",
+  "Save more money", "Pay off debt", "Invest in stocks", "Buy a home",
+  "Start a business", "Build an emergency fund", "Travel more", "Retire early",
 ];
-
 const INCOME = [
-  "Under $30k",
-  "$30k–$60k",
-  "$60k–$100k",
-  "$100k–$150k",
-  "$150k+",
-  "Prefer not to say",
+  "Under $30k", "$30k–$60k", "$60k–$100k", "$100k–$150k", "$150k+", "Prefer not to say",
 ];
 
-// ── Component ─────────────────────────────────────────────────────────────────
-
-interface Step {
+interface QuizStep {
   title: string;
   subtitle: string;
   key: keyof typeof QUIZ_DEFAULTS;
@@ -90,66 +66,150 @@ const QUIZ_DEFAULTS = {
   city: "" as string,
 };
 
-const STEPS: Step[] = [
-  {
-    title: "What do you do for work?",
-    subtitle: "Helps us connect stories to your career.",
-    key: "job_type",
-    type: "single",
-    options: JOB_TYPES,
-  },
-  {
-    title: "Where are you in life?",
-    subtitle: "Helps us understand what matters most right now.",
-    key: "life_stage",
-    type: "single",
-    options: LIFE_STAGES,
-  },
-  {
-    title: "What topics do you care about?",
-    subtitle: "Select all that apply — we'll prioritize these in your feed.",
-    key: "interests",
-    type: "multi",
-    options: INTERESTS,
-  },
-  {
-    title: "What are your money goals?",
-    subtitle: "We'll connect financial stories to what you're working toward.",
-    key: "financial_goals",
-    type: "multi",
-    options: GOALS,
-  },
-  {
-    title: "What city are you in?",
-    subtitle: "So we can flag news that hits close to home. (Optional)",
-    key: "city",
-    type: "text",
-  },
-  {
-    title: "Rough income range?",
-    subtitle: "Helps us gauge how news affects your wallet. (Optional)",
-    key: "income_bracket",
-    type: "single",
-    options: INCOME,
-  },
+const QUIZ_STEPS: QuizStep[] = [
+  { title: "What do you do for work?", subtitle: "Helps us connect stories to your career.", key: "job_type", type: "single", options: JOB_TYPES },
+  { title: "Where are you in life?", subtitle: "Helps us understand what matters most right now.", key: "life_stage", type: "single", options: LIFE_STAGES },
+  { title: "What topics do you care about?", subtitle: "Select all that apply — we'll prioritize these in your feed.", key: "interests", type: "multi", options: INTERESTS },
+  { title: "What are your money goals?", subtitle: "We'll connect financial stories to what you're working toward.", key: "financial_goals", type: "multi", options: GOALS },
+  { title: "What city are you in?", subtitle: "So we can flag news that hits close to home. (Optional)", key: "city", type: "text" },
+  { title: "Rough income range?", subtitle: "Helps us gauge how news affects your wallet. (Optional)", key: "income_bracket", type: "single", options: INCOME },
 ];
 
-export default function OnboardingScreen() {
+// ── Privacy screen ─────────────────────────────────────────────────────────────
+
+function PrivacyScreen({ onContinue }: { onContinue: () => void }) {
   const insets = useSafeAreaInsets();
-  const { user, updateUser } = useAuth();
+  const { deleteAccount } = useAuth();
+  const [declining, setDeclining] = useState(false);
+
+  const handleDecline = () => {
+    Alert.alert(
+      "Decline & delete account",
+      "This will permanently delete your account and all associated data. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete my data",
+          style: "destructive",
+          onPress: async () => {
+            setDeclining(true);
+            await deleteAccount();
+            // AuthGate will redirect to /login once user is null
+          },
+        },
+      ]
+    );
+  };
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top + 24 }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.privacyContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.privacyHeading}>Your data & privacy</Text>
+        <Text style={styles.privacyIntro}>
+          Before you continue, here's a plain-English summary of how we handle your information.
+        </Text>
+
+        <Text style={styles.privacySection}>What we collect</Text>
+        <Text style={styles.privacyBody}>
+          • Your email address and account credentials{"\n"}
+          • Answers from the optional personalization quiz{"\n"}
+          • Stories you save and topics you engage with{"\n"}
+          • Basic device info (platform, push notification token)
+        </Text>
+
+        <Text style={styles.privacySection}>How we use it</Text>
+        <Text style={styles.privacyBody}>
+          Your data is used solely to personalize your news feed and improve CRRNT. We do not sell your personal information to third parties or use it for advertising.
+        </Text>
+
+        <Text style={styles.privacySection}>Third-party services</Text>
+        <Text style={styles.privacyBody}>
+          • <Text style={styles.privacyBold}>Supabase</Text> — secure cloud database where your account and preferences are stored{"\n"}
+          • <Text style={styles.privacyBold}>RevenueCat</Text> — handles subscription payments through Apple / Google; CRRNT never sees your card details{"\n"}
+          • <Text style={styles.privacyBold}>Expo / Apple / Google</Text> — push notifications (optional; you can decline)
+        </Text>
+
+        <Text style={styles.privacySection}>Your rights</Text>
+        <Text style={styles.privacyBody}>
+          You can delete your account and all associated data at any time from <Text style={styles.privacyBold}>Settings → Delete account</Text>. Deletion is permanent and immediate.
+        </Text>
+
+        <Text style={styles.privacyFootnote}>
+          By continuing you acknowledge that you have read and understood this privacy summary.
+        </Text>
+      </ScrollView>
+
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+        <Pressable
+          style={({ pressed }) => [styles.nextBtn, pressed && styles.nextBtnPressed]}
+          onPress={onContinue}
+          disabled={declining}
+        >
+          <Text style={styles.nextBtnText}>I understand, continue</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.declineBtn, pressed && styles.nextBtnPressed]}
+          onPress={handleDecline}
+          disabled={declining}
+        >
+          {declining ? (
+            <ActivityIndicator color="#EF4444" size="small" />
+          ) : (
+            <Text style={styles.declineBtnText}>Decline & delete my data</Text>
+          )}
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// ── Paywall gate ──────────────────────────────────────────────────────────────
+
+function PaywallGate({
+  onPurchased,
+  onSkipped,
+}: {
+  onPurchased: () => void;
+  onSkipped: () => void;
+}) {
+  const { presentPaywall } = usePurchases();
+  const called = useRef(false);
+
+  useEffect(() => {
+    if (called.current) return;
+    called.current = true;
+
+    presentPaywall().then((purchased) => {
+      if (purchased) {
+        onPurchased();
+      } else {
+        onSkipped();
+      }
+    });
+  }, []);
+
+  return (
+    <View style={styles.paywallWait}>
+      <ActivityIndicator color="#06B6D4" size="large" />
+    </View>
+  );
+}
+
+// ── Quiz screen ───────────────────────────────────────────────────────────────
+
+function QuizScreen({ onComplete }: { onComplete: () => Promise<void> }) {
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({ ...QUIZ_DEFAULTS });
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (user?.onboarding_complete) {
-      router.replace("/(tabs)");
-    }
-  }, [user?.onboarding_complete]);
-
   const saveQuiz = useSaveOnboardingQuiz();
-  const current = STEPS[step];
-  const total = STEPS.length;
+
+  const current = QUIZ_STEPS[step];
+  const total = QUIZ_STEPS.length;
   const progress = (step + 1) / total;
 
   function toggleSingle(key: keyof typeof QUIZ_DEFAULTS, value: string) {
@@ -168,13 +228,18 @@ export default function OnboardingScreen() {
 
   const canProceed = () => {
     if (current.type === "text") return true;
-    if (current.type === "single" && step === STEPS.length - 1) return true;
+    if (current.type === "single" && step === QUIZ_STEPS.length - 1) return true;
     const val = answers[current.key];
     if (Array.isArray(val)) return val.length > 0;
     return Boolean(val);
   };
 
-  const submitQuiz = async () => {
+  const handleNext = async () => {
+    if (step < total - 1) {
+      setStep((s) => s + 1);
+      return;
+    }
+    setSubmitting(true);
     try {
       await saveQuiz.mutateAsync({
         data: {
@@ -187,18 +252,9 @@ export default function OnboardingScreen() {
         },
       } as Parameters<typeof saveQuiz.mutateAsync>[0]);
     } catch {
-      // best-effort — still mark complete locally so the user isn't stuck
+      // best-effort — still proceed
     }
-    await updateUser({ onboarding_complete: true });
-  };
-
-  const handleNext = async () => {
-    if (step < total - 1) {
-      setStep((s) => s + 1);
-      return;
-    }
-    setSubmitting(true);
-    await submitQuiz();
+    await onComplete();
     setSubmitting(false);
   };
 
@@ -208,13 +264,12 @@ export default function OnboardingScreen() {
       return;
     }
     setSubmitting(true);
-    await submitQuiz();
+    await onComplete();
     setSubmitting(false);
   };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 16, paddingBottom: insets.bottom }]}>
-      {/* Progress bar */}
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${progress * 100}%` as any }]} />
       </View>
@@ -228,7 +283,7 @@ export default function OnboardingScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.quizContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -251,7 +306,6 @@ export default function OnboardingScreen() {
               const selected = isArr
                 ? (answers[current.key] as string[]).includes(opt)
                 : answers[current.key] === opt;
-
               return (
                 <Pressable
                   key={opt}
@@ -296,8 +350,101 @@ export default function OnboardingScreen() {
   );
 }
 
+// ── Root orchestrator ─────────────────────────────────────────────────────────
+
+export default function OnboardingScreen() {
+  const { user, updateUser } = useAuth();
+  const [phase, setPhase] = useState<Phase>("privacy");
+
+  useEffect(() => {
+    if (user?.onboarding_complete) {
+      router.replace("/(tabs)");
+    }
+  }, [user?.onboarding_complete]);
+
+  const finish = async () => {
+    await updateUser({ onboarding_complete: true });
+    router.replace("/(tabs)");
+  };
+
+  if (phase === "privacy") {
+    return <PrivacyScreen onContinue={() => setPhase("paywall")} />;
+  }
+
+  if (phase === "paywall") {
+    return (
+      <PaywallGate
+        onPurchased={() => setPhase("quiz")}
+        onSkipped={finish}
+      />
+    );
+  }
+
+  return <QuizScreen onComplete={finish} />;
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#090D12" },
+  scroll: { flex: 1 },
+
+  // ── Privacy ──────────────────────────────────────────────────────────────────
+  privacyContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+  },
+  privacyHeading: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 28,
+    color: "#F9FAFB",
+    marginBottom: 10,
+  },
+  privacyIntro: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 15,
+    color: "#9CA3AF",
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  privacySection: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
+    color: "#06B6D4",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  privacyBody: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    color: "#D1D5DB",
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  privacyBold: {
+    fontFamily: "Inter_600SemiBold",
+    color: "#F9FAFB",
+  },
+  privacyFootnote: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: "#4B5563",
+    lineHeight: 18,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+
+  // ── Paywall waiting ───────────────────────────────────────────────────────────
+  paywallWait: {
+    flex: 1,
+    backgroundColor: "#090D12",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // ── Quiz ──────────────────────────────────────────────────────────────────────
   progressTrack: {
     height: 3,
     backgroundColor: "#1F2937",
@@ -327,8 +474,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#06B6D4",
   },
-  scroll: { flex: 1 },
-  scrollContent: {
+  quizContent: {
     paddingHorizontal: 24,
     paddingTop: 24,
     paddingBottom: 16,
@@ -385,6 +531,8 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     fontSize: 16,
   },
+
+  // ── Shared footer ─────────────────────────────────────────────────────────────
   footer: {
     paddingHorizontal: 24,
     paddingTop: 12,
@@ -403,5 +551,15 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     fontSize: 16,
     color: "#fff",
+  },
+  declineBtn: {
+    marginTop: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  declineBtnText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
+    color: "#EF4444",
   },
 });

@@ -122,14 +122,16 @@ function AuthGate() {
   if (!hydrated) return null;
 
   const seg0 = segments[0] as string | undefined;
+  const onLoginScreen = seg0 === "login";
   const inAuthGroup = seg0 === "auth";
   const inOnboarding = seg0 === "onboarding";
+  const isPublicScreen = onLoginScreen || inAuthGroup;
 
-  if (!user && !isGuest && !inAuthGroup) {
+  if (!user && !isGuest && !isPublicScreen) {
     return <Redirect href={"/login" as any} />;
   }
 
-  if (user && inAuthGroup) {
+  if (user && isPublicScreen) {
     return <Redirect href={!user.onboarding_complete ? ("/onboarding" as any) : "/(tabs)"} />;
   }
 

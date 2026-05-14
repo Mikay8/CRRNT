@@ -19,6 +19,7 @@ import { Platform } from "react-native";
 const TOKEN_KEY = "@crrnt/auth/access_token";
 const REFRESH_KEY = "@crrnt/auth/refresh_token";
 const USER_KEY = "@crrnt/auth/user";
+const GUEST_KEY = "@crrnt/auth/guest_mode";
 
 function isTokenExpired(token: string): boolean {
   try {
@@ -43,6 +44,7 @@ export interface CrrntUser {
 interface AuthContextValue {
   user: CrrntUser | null;
   accessToken: string | null;
+  isGuest: boolean;
   hydrated: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<{ requiresConfirmation: boolean }>;
@@ -51,6 +53,7 @@ interface AuthContextValue {
   updateUser: (fields: Partial<CrrntUser>) => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   getAuthHeader: () => Record<string, string>;
+  enterGuestMode: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -83,17 +86,24 @@ async function apiFetch(
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CrrntUser | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   // ── Hydrate from storage on mount ────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
-        const [token, refreshToken, raw] = await Promise.all([
+        const [token, refreshToken, raw, guestFlag] = await Promise.all([
           AsyncStorage.getItem(TOKEN_KEY),
           AsyncStorage.getItem(REFRESH_KEY),
           AsyncStorage.getItem(USER_KEY),
+          AsyncStorage.getItem(GUEST_KEY),
         ]);
+
+        if (guestFlag === "1" && !token) {
+          setIsGuest(true);
+          return;
+        }
 
         if (!token || !raw) return;
 
@@ -141,10 +151,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (token: string, refresh: string, userData: CrrntUser) => {
       setAccessToken(token);
       setUser(userData);
+      setIsGuest(false);
       await Promise.all([
         AsyncStorage.setItem(TOKEN_KEY, token),
         AsyncStorage.setItem(REFRESH_KEY, refresh),
         AsyncStorage.setItem(USER_KEY, JSON.stringify(userData)),
+        AsyncStorage.removeItem(GUEST_KEY),
       ]);
     },
     []
@@ -158,6 +170,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       AsyncStorage.removeItem(REFRESH_KEY),
       AsyncStorage.removeItem(USER_KEY),
     ]);
+  }, []);
+
+  const enterGuestMode = useCallback(async () => {
+    setIsGuest(true);
+    await AsyncStorage.setItem(GUEST_KEY, "1");
   }, []);
 
   // ── Auth actions ───────────────────────────────────────────────────────────
@@ -252,6 +269,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       user,
       accessToken,
+      isGuest,
       hydrated,
       login,
       register,
@@ -260,8 +278,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateUser,
       forgotPassword,
       getAuthHeader,
+      enterGuestMode,
     }),
-    [user, accessToken, hydrated, login, register, logout, refreshUser, updateUser, forgotPassword, getAuthHeader]
+    [user, accessToken, isGuest, hydrated, login, register, logout, refreshUser, updateUser, forgotPassword, getAuthHeader, enterGuestMode]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

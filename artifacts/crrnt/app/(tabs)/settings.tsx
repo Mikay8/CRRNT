@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePurchases } from "@/contexts/PurchasesContext";
@@ -127,7 +127,11 @@ function tierColor(isPro: boolean): string {
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { isDark, theme, toggleTheme } = useThemeContext();
-  const { user, logout, forgotPassword, accessToken } = useAuth();
+  const { user, logout, forgotPassword, accessToken, isGuest } = useAuth();
+
+  if (isGuest || !user) {
+    return <Redirect href={"/auth/login" as any} />;
+  }
   const {
     isPro,
     customerInfo,

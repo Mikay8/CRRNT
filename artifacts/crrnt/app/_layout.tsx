@@ -116,7 +116,7 @@ function AuthTokenWirer() {
  * to onboarding when onboarding is incomplete.
  */
 function AuthGate() {
-  const { user, hydrated } = useAuth();
+  const { user, isGuest, hydrated } = useAuth();
   const segments = useSegments();
 
   if (!hydrated) return null;
@@ -124,6 +124,10 @@ function AuthGate() {
   const seg0 = segments[0] as string | undefined;
   const inAuthGroup = seg0 === "auth";
   const inOnboarding = seg0 === "onboarding";
+
+  if (!user && !isGuest && !inAuthGroup) {
+    return <Redirect href={"/auth/login" as any} />;
+  }
 
   if (user && inAuthGroup) {
     return <Redirect href={!user.onboarding_complete ? ("/onboarding" as any) : "/(tabs)"} />;

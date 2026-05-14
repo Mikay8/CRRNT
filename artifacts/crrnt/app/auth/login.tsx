@@ -20,7 +20,7 @@ const LOGO_DARK = require("@/assets/images/full-logo-dark.png") as number;
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { login } = useAuth();
+  const { login, enterGuestMode } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -126,7 +126,10 @@ export default function LoginScreen() {
 
         <Pressable
           style={styles.guestRow}
-          onPress={() => router.replace("/(tabs)" as any)}
+          onPress={async () => {
+            await enterGuestMode();
+            router.replace("/(tabs)" as any);
+          }}
         >
           <Text style={styles.guestLink}>Browse without an account</Text>
         </Pressable>

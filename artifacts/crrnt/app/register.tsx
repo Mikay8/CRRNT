@@ -43,8 +43,9 @@ export default function RegisterScreen() {
           "We sent you a confirmation link. Please verify your email then sign in.",
           [{ text: "OK", onPress: () => router.replace("/login" as any) }]
         );
+        return;
       }
-      // AuthGate handles the redirect to /onboarding once user state is set
+      router.replace("/onboarding" as any);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Registration failed";
       Alert.alert("Registration failed", msg);

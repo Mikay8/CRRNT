@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -127,7 +128,16 @@ function tierColor(isPro: boolean): string {
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { isDark, theme, toggleTheme } = useThemeContext();
-  const { user, logout, forgotPassword, accessToken, isGuest } = useAuth();
+  const { user, logout, forgotPassword, accessToken, isGuest, sendVerificationEmail } = useAuth();
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
+
+  const handleSendVerification = async () => {
+    setSendingVerification(true);
+    await sendVerificationEmail();
+    setSendingVerification(false);
+    setVerificationSent(true);
+  };
 
   if (isGuest || !user) {
     return <Redirect href={"/login" as any} />;
@@ -267,6 +277,34 @@ export default function SettingsScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
         showsVerticalScrollIndicator={false}
       >
+        {/* ── Email verification banner ──────────────────────────────── */}
+        {user.email_verified === false && (
+          <View style={bannerStyles.banner}>
+            <Ionicons name="mail-unread-outline" size={20} color="#92400E" style={{ marginTop: 1 }} />
+            <View style={bannerStyles.body}>
+              <Text style={bannerStyles.title}>Verify your email</Text>
+              <Text style={bannerStyles.subtitle}>
+                {verificationSent
+                  ? "Email sent — check your inbox and click the link."
+                  : "Check your inbox for a verification link."}
+              </Text>
+            </View>
+            {!verificationSent && (
+              <Pressable
+                onPress={handleSendVerification}
+                disabled={sendingVerification}
+                style={bannerStyles.btn}
+              >
+                {sendingVerification ? (
+                  <ActivityIndicator size="small" color="#92400E" />
+                ) : (
+                  <Text style={bannerStyles.btnText}>Resend</Text>
+                )}
+              </Pressable>
+            )}
+          </View>
+        )}
+
         {/* ── Account card ──────────────────────────────────────────── */}
         <View style={[styles.accountCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={[styles.avatar, { backgroundColor: theme.surfaceHigh }]}>
@@ -479,5 +517,47 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     fontSize: 13,
     color: "#fff",
+  },
+});
+
+const bannerStyles = StyleSheet.create({
+  banner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    backgroundColor: "#FEF3C7",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FCD34D",
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  body: { flex: 1 },
+  title: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+    color: "#92400E",
+  },
+  subtitle: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    color: "#92400E",
+    marginTop: 2,
+    lineHeight: 18,
+  },
+  btn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#D97706",
+    minWidth: 60,
+    alignItems: "center",
+  },
+  btnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
+    color: "#92400E",
   },
 });

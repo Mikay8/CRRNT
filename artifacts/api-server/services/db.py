@@ -237,7 +237,7 @@ def create_user(user_id: str, email: str) -> dict[str, Any]:
     """
     result = (
         get_client().table("users")
-        .upsert({"id": user_id, "email": email}, on_conflict="id")
+        .upsert({"id": user_id, "email": email, "email_verified": False}, on_conflict="id")
         .execute()
     )
     if result.data:

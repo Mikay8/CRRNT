@@ -13,7 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Image } from "expo-image";
-import { Redirect, Stack, useSegments } from "expo-router";
+import { Stack, router, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
@@ -111,32 +111,32 @@ function AuthTokenWirer() {
   return null;
 }
 
-/**
- * Auth gate: redirects to login when unauthenticated,
- * to onboarding when onboarding is incomplete.
- */
 function AuthGate() {
   const { user, isGuest, hydrated } = useAuth();
   const segments = useSegments();
 
-  if (!hydrated) return null;
+  useEffect(() => {
+    if (!hydrated) return;
 
-  const seg0 = segments[0] as string | undefined;
-  const inAuthGroup = seg0 === "auth";
-  const inOnboarding = seg0 === "onboarding";
-  const isPublicScreen = seg0 === "login" || seg0 === "register" || inAuthGroup;
+    const seg0 = segments[0] as string | undefined;
+    const inAuthGroup = seg0 === "auth";
+    const inOnboarding = seg0 === "onboarding";
+    const isPublicScreen = seg0 === "login" || seg0 === "register" || inAuthGroup;
 
-  if (!user && !isGuest && !isPublicScreen) {
-    return <Redirect href={"/login" as any} />;
-  }
+    if (!user && !isGuest && !isPublicScreen) {
+      router.replace("/login" as any);
+      return;
+    }
 
-  if (user && isPublicScreen) {
-    return <Redirect href={!user.onboarding_complete ? ("/onboarding" as any) : "/(tabs)"} />;
-  }
+    if (user && isPublicScreen) {
+      router.replace((!user.onboarding_complete ? "/onboarding" : "/(tabs)") as any);
+      return;
+    }
 
-  if (user && !user.onboarding_complete && !inOnboarding) {
-    return <Redirect href={"/onboarding" as any} />;
-  }
+    if (user && !user.onboarding_complete && !inOnboarding) {
+      router.replace("/onboarding" as any);
+    }
+  }, [user, isGuest, hydrated, segments]);
 
   return null;
 }

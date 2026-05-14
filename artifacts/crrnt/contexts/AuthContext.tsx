@@ -39,6 +39,7 @@ export interface CrrntUser {
   subscription_expires_at: string | null;
   onboarding_complete: boolean;
   notification_consent: boolean;
+  email_verified?: boolean;
 }
 
 interface AuthContextValue {
@@ -55,6 +56,7 @@ interface AuthContextValue {
   getAuthHeader: () => Record<string, string>;
   enterGuestMode: () => Promise<void>;
   deleteAccount: () => Promise<void>;
+  sendVerificationEmail: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -237,6 +239,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await _clearSession();
   }, [accessToken, _clearSession]);
 
+  const sendVerificationEmail = useCallback(async () => {
+    if (!accessToken) return;
+    await apiFetch("/api/auth/send-verification", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).catch(() => undefined);
+  }, [accessToken]);
+
   const deleteAccount = useCallback(async () => {
     if (accessToken) {
       await apiFetch("/api/auth/account", {
@@ -291,8 +301,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       getAuthHeader,
       enterGuestMode,
       deleteAccount,
+      sendVerificationEmail,
     }),
-    [user, accessToken, isGuest, hydrated, login, register, logout, refreshUser, updateUser, forgotPassword, getAuthHeader, enterGuestMode, deleteAccount]
+    [user, accessToken, isGuest, hydrated, login, register, logout, refreshUser, updateUser, forgotPassword, getAuthHeader, enterGuestMode, deleteAccount, sendVerificationEmail]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -30,8 +30,15 @@ class LoginRequest(BaseModel):
 @router.post("/register", status_code=201)
 async def register(body: RegisterRequest) -> dict[str, Any]:
     client = db.get_client()
+
+    # Use admin API to create the user with email pre-confirmed so the app
+    # can sign in immediately without requiring an email verification step.
     try:
-        res = client.auth.sign_up({"email": body.email, "password": body.password})
+        res = client.auth.admin.create_user({
+            "email": body.email,
+            "password": body.password,
+            "email_confirm": True,
+        })
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -47,27 +54,21 @@ async def register(body: RegisterRequest) -> dict[str, Any]:
         log.error("Failed to create/get user row after sign_up: %s", exc)
         raise HTTPException(status_code=500, detail=f"User profile creation failed: {exc}")
 
-    session = res.session
-
-    # If Supabase email-confirmation is enabled, sign_up returns no session.
-    # Immediately sign in so the app can proceed without an extra step.
-    if not session:
-        try:
-            login_res = client.auth.sign_in_with_password(
-                {"email": body.email, "password": body.password}
-            )
-            session = login_res.session
-        except Exception:
-            pass  # Email confirmation truly required — handled by frontend
-
-    requires_confirmation = session is None
+    # Sign in immediately to get a session token
+    try:
+        login_res = client.auth.sign_in_with_password(
+            {"email": body.email, "password": body.password}
+        )
+        session = login_res.session
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Auto sign-in after registration failed: {exc}")
 
     return {
         "user": user,
-        "requires_confirmation": requires_confirmation,
+        "requires_confirmation": False,
         "session": {
-            "access_token": session.access_token if session else None,
-            "refresh_token": session.refresh_token if session else None,
+            "access_token": session.access_token,
+            "refresh_token": session.refresh_token,
         },
     }
 
@@ -147,6 +148,31 @@ async def refresh(body: RefreshRequest) -> dict[str, Any]:
             "expires_in": res.session.expires_in,
         },
     }
+
+
+# ── Send email verification ───────────────────────────────────────────────────
+
+@router.post("/send-verification", status_code=200)
+async def send_verification(user: dict = Depends(get_current_user)) -> dict[str, str]:
+    """Send a magic-link OTP to the user's email so they can verify it."""
+    client = db.get_client()
+    try:
+        client.auth.sign_in_with_otp({
+            "email": user["email"],
+            "options": {"should_create_user": False},
+        })
+    except Exception as exc:
+        log.warning("send_verification error for %s: %s", user["email"], exc)
+    return {"message": "Verification email sent"}
+
+
+# ── Mark email verified ────────────────────────────────────────────────────────
+
+@router.post("/mark-verified", status_code=200)
+async def mark_verified(user: dict = Depends(get_current_user)) -> dict[str, str]:
+    """Called by the app after the user clicks the verification link."""
+    db.update_user(user["id"], {"email_verified": True})
+    return {"message": "Email verified"}
 
 
 # ── Logout ────────────────────────────────────────────────────────────────────

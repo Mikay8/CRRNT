@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -13,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -24,31 +24,27 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
+  const passwordMismatch = confirm.length > 0 && confirm !== password;
   const isValid = email.trim() && password.length >= 6 && password === confirm;
 
   const handleRegister = async () => {
     if (!isValid) return;
-    if (password !== confirm) {
-      Alert.alert("Passwords don't match", "Please re-enter your password.");
-      return;
-    }
+    setFormError(null);
     setLoading(true);
     try {
       const { requiresConfirmation } = await register(email.trim().toLowerCase(), password);
       if (requiresConfirmation) {
-        Alert.alert(
-          "Check your email",
-          "We sent you a confirmation link. Please verify your email then sign in.",
-          [{ text: "OK", onPress: () => router.replace("/login" as any) }]
-        );
+        setFormError("Check your inbox — we sent a confirmation link before you can sign in.");
         return;
       }
       router.replace("/onboarding" as any);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Registration failed";
-      Alert.alert("Registration failed", msg);
+      setFormError(err instanceof Error ? err.message : "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -84,7 +80,7 @@ export default function RegisterScreen() {
             <TextInput
               style={styles.input}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(v) => { setEmail(v); setFormError(null); }}
               placeholder="you@example.com"
               placeholderTextColor="#4B5563"
               keyboardType="email-address"
@@ -96,35 +92,69 @@ export default function RegisterScreen() {
 
           <View style={styles.field}>
             <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="At least 6 characters"
-              placeholderTextColor="#4B5563"
-              secureTextEntry
-              autoCapitalize="none"
-            />
+            <View style={styles.inputWrap}>
+              <TextInput
+                style={[styles.input, styles.inputWithIcon]}
+                value={password}
+                onChangeText={(v) => { setPassword(v); setFormError(null); }}
+                placeholder="At least 6 characters"
+                placeholderTextColor="#4B5563"
+                secureTextEntry={!passwordVisible}
+                autoCapitalize="none"
+              />
+              <Pressable
+                style={styles.eyeBtn}
+                onPress={() => setPasswordVisible((v) => !v)}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name={passwordVisible ? "eye-outline" : "eye-off-outline"}
+                  size={20}
+                  color="#4B5563"
+                />
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.field}>
             <Text style={styles.label}>Confirm password</Text>
-            <TextInput
-              style={[
-                styles.input,
-                confirm && confirm !== password && styles.inputError,
-              ]}
-              value={confirm}
-              onChangeText={setConfirm}
-              placeholder="Re-enter password"
-              placeholderTextColor="#4B5563"
-              secureTextEntry
-              autoCapitalize="none"
-            />
-            {confirm.length > 0 && confirm !== password ? (
-              <Text style={styles.errorText}>Passwords don't match</Text>
+            <View style={styles.inputWrap}>
+              <TextInput
+                style={[
+                  styles.input,
+                  styles.inputWithIcon,
+                  passwordMismatch && styles.inputError,
+                ]}
+                value={confirm}
+                onChangeText={(v) => { setConfirm(v); setFormError(null); }}
+                placeholder="Re-enter password"
+                placeholderTextColor="#4B5563"
+                secureTextEntry={!confirmVisible}
+                autoCapitalize="none"
+              />
+              <Pressable
+                style={styles.eyeBtn}
+                onPress={() => setConfirmVisible((v) => !v)}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name={confirmVisible ? "eye-outline" : "eye-off-outline"}
+                  size={20}
+                  color="#4B5563"
+                />
+              </Pressable>
+            </View>
+            {passwordMismatch ? (
+              <Text style={styles.fieldError}>Passwords don't match</Text>
             ) : null}
           </View>
+
+          {formError ? (
+            <View style={styles.errorBanner}>
+              <Ionicons name="alert-circle-outline" size={15} color="#EF4444" />
+              <Text style={styles.errorBannerText}>{formError}</Text>
+            </View>
+          ) : null}
 
           <Pressable
             style={({ pressed }) => [
@@ -179,6 +209,7 @@ const styles = StyleSheet.create({
     color: "#9CA3AF",
     marginLeft: 2,
   },
+  inputWrap: { position: "relative" },
   input: {
     backgroundColor: "#111827",
     borderWidth: 1,
@@ -190,12 +221,37 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     fontSize: 16,
   },
+  inputWithIcon: { paddingRight: 48 },
   inputError: { borderColor: "#EF4444" },
-  errorText: {
+  eyeBtn: {
+    position: "absolute",
+    right: 14,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+  },
+  fieldError: {
     fontFamily: "Inter_400Regular",
     fontSize: 12,
     color: "#EF4444",
     marginLeft: 2,
+  },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#EF444415",
+    borderWidth: 1,
+    borderColor: "#EF444430",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  errorBannerText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    color: "#EF4444",
+    flex: 1,
   },
   button: {
     backgroundColor: "#06B6D4",

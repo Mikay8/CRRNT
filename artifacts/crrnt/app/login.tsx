@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -13,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -23,17 +23,18 @@ export default function LoginScreen() {
   const { login, enterGuestMode } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const handleLogin = async () => {
     if (!email.trim() || !password) return;
+    setFormError(null);
     setLoading(true);
     try {
       await login(email.trim().toLowerCase(), password);
-      // AuthGate handles redirect to /(tabs) or /onboarding once user state is set
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Login failed";
-      Alert.alert("Login failed", msg);
+      setFormError(err instanceof Error ? err.message : "Login failed. Check your email and password.");
     } finally {
       setLoading(false);
     }
@@ -69,7 +70,7 @@ export default function LoginScreen() {
             <TextInput
               style={styles.input}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(v) => { setEmail(v); setFormError(null); }}
               placeholder="you@example.com"
               placeholderTextColor="#4B5563"
               keyboardType="email-address"
@@ -81,17 +82,37 @@ export default function LoginScreen() {
 
           <View style={styles.field}>
             <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              placeholderTextColor="#4B5563"
-              secureTextEntry
-              autoCapitalize="none"
-              autoComplete="password"
-            />
+            <View style={styles.inputWrap}>
+              <TextInput
+                style={[styles.input, styles.inputWithIcon]}
+                value={password}
+                onChangeText={(v) => { setPassword(v); setFormError(null); }}
+                placeholder="••••••••"
+                placeholderTextColor="#4B5563"
+                secureTextEntry={!passwordVisible}
+                autoCapitalize="none"
+                autoComplete="password"
+              />
+              <Pressable
+                style={styles.eyeBtn}
+                onPress={() => setPasswordVisible((v) => !v)}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name={passwordVisible ? "eye-outline" : "eye-off-outline"}
+                  size={20}
+                  color="#4B5563"
+                />
+              </Pressable>
+            </View>
           </View>
+
+          {formError ? (
+            <View style={styles.errorBanner}>
+              <Ionicons name="alert-circle-outline" size={15} color="#EF4444" />
+              <Text style={styles.errorBannerText}>{formError}</Text>
+            </View>
+          ) : null}
 
           <Pressable
             style={({ pressed }) => [
@@ -164,6 +185,7 @@ const styles = StyleSheet.create({
     color: "#9CA3AF",
     marginLeft: 2,
   },
+  inputWrap: { position: "relative" },
   input: {
     backgroundColor: "#111827",
     borderWidth: 1,
@@ -174,6 +196,31 @@ const styles = StyleSheet.create({
     color: "#F9FAFB",
     fontFamily: "Inter_400Regular",
     fontSize: 16,
+  },
+  inputWithIcon: { paddingRight: 48 },
+  eyeBtn: {
+    position: "absolute",
+    right: 14,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+  },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#EF444415",
+    borderWidth: 1,
+    borderColor: "#EF444430",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  errorBannerText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    color: "#EF4444",
+    flex: 1,
   },
   button: {
     backgroundColor: "#06B6D4",

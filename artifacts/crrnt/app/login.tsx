@@ -30,7 +30,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await login(email.trim().toLowerCase(), password);
-      router.replace("/(tabs)" as any);
+      // AuthGate handles redirect to /(tabs) or /onboarding once user state is set
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Login failed";
       Alert.alert("Login failed", msg);

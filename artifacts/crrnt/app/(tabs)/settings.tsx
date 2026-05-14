@@ -130,7 +130,7 @@ export default function SettingsScreen() {
   const { user, logout, forgotPassword, accessToken, isGuest } = useAuth();
 
   if (isGuest || !user) {
-    return <Redirect href={"/auth/login" as any} />;
+    return <Redirect href={"/login" as any} />;
   }
   const {
     isPro,

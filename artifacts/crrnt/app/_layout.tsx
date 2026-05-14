@@ -126,7 +126,7 @@ function AuthGate() {
   const inOnboarding = seg0 === "onboarding";
 
   if (!user && !isGuest && !inAuthGroup) {
-    return <Redirect href={"/auth/login" as any} />;
+    return <Redirect href={"/login" as any} />;
   }
 
   if (user && inAuthGroup) {
@@ -181,7 +181,7 @@ function ThemedApp() {
                           }}
                         />
                         <Stack.Screen
-                          name="auth/login"
+                          name="login"
                           options={{ headerShown: false }}
                         />
                         <Stack.Screen

@@ -72,7 +72,7 @@ export default function ForgotPasswordScreen() {
                 styles.button,
                 pressed && styles.buttonPressed,
               ]}
-              onPress={() => router.replace("/auth/login" as any)}
+              onPress={() => router.replace("/login" as any)}
             >
               <Text style={styles.buttonText}>Back to sign in</Text>
             </Pressable>

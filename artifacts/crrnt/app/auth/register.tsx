@@ -41,7 +41,7 @@ export default function RegisterScreen() {
         Alert.alert(
           "Check your email",
           "We sent you a confirmation link. Please verify your email then sign in.",
-          [{ text: "OK", onPress: () => router.replace("/auth/login" as any) }]
+          [{ text: "OK", onPress: () => router.replace("/login" as any) }]
         );
       } else {
         router.replace("/onboarding" as any);
@@ -145,7 +145,7 @@ export default function RegisterScreen() {
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>Already have an account? </Text>
-          <Pressable onPress={() => router.push("/auth/login" as any)}>
+          <Pressable onPress={() => router.push("/login" as any)}>
             <Text style={styles.footerLink}>Sign in</Text>
           </Pressable>
         </View>

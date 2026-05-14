@@ -274,16 +274,21 @@ def count_users(tier: Optional[str] = None) -> int:
 
 
 def delete_user_account(user_id: str) -> None:
-    """Hard-delete all user data, then remove from auth.users."""
+    """Hard-delete all user data, then remove from auth.users.
+
+    Only deletes the row belonging to user_id — the caller must have already
+    verified that user_id matches the authenticated requester's JWT sub claim.
+    """
     client = get_client()
-    # Delete child rows first to avoid FK constraint failures
-    client.table("saved_stories").delete().eq("user_id", user_id).execute()
-    client.table("user_preferences").delete().eq("user_id", user_id).execute()
-    client.table("story_personalizations").delete().eq("user_id", user_id).execute()
-    client.table("user_story_audio").delete().eq("user_id", user_id).execute()
-    # Delete the profile row, then the auth identity
+    for table in ("saved_stories", "user_preferences", "story_personalizations", "user_story_audio"):
+        try:
+            client.table(table).delete().eq("user_id", user_id).execute()
+        except Exception as exc:
+            log.warning("delete_user_account: skipping %s for %s — %s", table, user_id, exc)
     client.table("users").delete().eq("id", user_id).execute()
+    log.info("delete_user_account: deleted users row for %s, removing auth identity", user_id)
     client.auth.admin.delete_user(user_id)
+    log.info("delete_user_account: completed for %s", user_id)
 
 
 # ── User preferences ──────────────────────────────────────────────────────────

@@ -93,8 +93,13 @@ function PrivacyScreen({ onContinue }: { onContinue: () => void }) {
           style: "destructive",
           onPress: async () => {
             setDeclining(true);
-            await deleteAccount();
-            // AuthGate will redirect to /login once user is null
+            try {
+              await deleteAccount();
+              // AuthGate will redirect to /login once user is null
+            } catch {
+              setDeclining(false);
+              Alert.alert("Error", "Could not delete account. Please try again.");
+            }
           },
         },
       ]

@@ -274,9 +274,16 @@ def count_users(tier: Optional[str] = None) -> int:
 
 
 def delete_user_account(user_id: str) -> None:
-    """Hard-delete: remove from public.users (cascades) then from auth.users."""
-    get_client().table("users").delete().eq("id", user_id).execute()
-    get_client().auth.admin.delete_user(user_id)
+    """Hard-delete all user data, then remove from auth.users."""
+    client = get_client()
+    # Delete child rows first to avoid FK constraint failures
+    client.table("saved_stories").delete().eq("user_id", user_id).execute()
+    client.table("user_preferences").delete().eq("user_id", user_id).execute()
+    client.table("story_personalizations").delete().eq("user_id", user_id).execute()
+    client.table("user_story_audio").delete().eq("user_id", user_id).execute()
+    # Delete the profile row, then the auth identity
+    client.table("users").delete().eq("id", user_id).execute()
+    client.auth.admin.delete_user(user_id)
 
 
 # ── User preferences ──────────────────────────────────────────────────────────

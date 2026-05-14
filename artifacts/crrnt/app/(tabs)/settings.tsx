@@ -128,7 +128,7 @@ function tierColor(isPro: boolean): string {
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { isDark, theme, toggleTheme } = useThemeContext();
-  const { user, logout, forgotPassword, accessToken, isGuest, sendVerificationEmail } = useAuth();
+  const { user, logout, forgotPassword, accessToken, isGuest, sendVerificationEmail, deleteAccount } = useAuth();
   const [sendingVerification, setSendingVerification] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
 
@@ -165,12 +165,6 @@ export default function SettingsScreen() {
   const interestsSummary = prefs?.interests?.length
     ? prefs.interests.join(", ")
     : "Not set";
-
-  const getApiBase = () => {
-    const domain = process.env.EXPO_PUBLIC_DOMAIN;
-    if (domain) return `https://${domain}`;
-    return process.env.EXPO_PUBLIC_API_BASE ?? "";
-  };
 
   const handleChangePassword = () => {
     if (!user?.email) return;
@@ -226,11 +220,7 @@ export default function SettingsScreen() {
       closeDialog();
       setDeleting(true);
       try {
-        await fetch(`${getApiBase()}/api/auth/account`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${accessToken ?? ""}` },
-        });
-        await logout();
+        await deleteAccount();
       } catch {
         setDialog({
           title: "Error",

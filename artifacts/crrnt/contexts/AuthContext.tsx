@@ -249,10 +249,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const deleteAccount = useCallback(async () => {
     if (accessToken) {
-      await apiFetch("/api/auth/account", {
+      const res = await apiFetch("/api/auth/account", {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
-      }).catch(() => undefined);
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.detail ?? "Account deletion failed");
+      }
     }
     await _clearSession();
   }, [accessToken, _clearSession]);

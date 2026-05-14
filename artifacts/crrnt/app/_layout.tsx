@@ -122,10 +122,9 @@ function AuthGate() {
   if (!hydrated) return null;
 
   const seg0 = segments[0] as string | undefined;
-  const onLoginScreen = seg0 === "login";
   const inAuthGroup = seg0 === "auth";
   const inOnboarding = seg0 === "onboarding";
-  const isPublicScreen = onLoginScreen || inAuthGroup;
+  const isPublicScreen = seg0 === "login" || seg0 === "register" || inAuthGroup;
 
   if (!user && !isGuest && !isPublicScreen) {
     return <Redirect href={"/login" as any} />;
@@ -187,7 +186,7 @@ function ThemedApp() {
                           options={{ headerShown: false }}
                         />
                         <Stack.Screen
-                          name="auth/register"
+                          name="register"
                           options={{ headerShown: false }}
                         />
                         <Stack.Screen

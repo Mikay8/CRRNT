@@ -26,7 +26,7 @@ export function SaveButton({ story, size = 22 }: SaveButtonProps) {
         "Sign up to save stories and pick up where you left off.",
         [
           { text: "Sign in", onPress: () => router.push("/login" as any) },
-          { text: "Create account", onPress: () => router.push("/auth/register" as any) },
+          { text: "Create account", onPress: () => router.push("/register" as any) },
           { text: "Not now", style: "cancel" },
         ]
       );

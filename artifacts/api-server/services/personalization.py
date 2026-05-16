@@ -46,44 +46,40 @@ def personalize_feed(
     stories: list[dict[str, Any]],
     prefs: Optional[dict[str, Any]],
     tier: str,
+    category: Optional[str] = None,
 ) -> list[dict[str, Any]]:
-    """Score and filter stories for a user.
+    """Score and rank stories for a user.
 
-    Free  → top 5 free-tier stories (≥1 per category where available)
-    Paid  → top 15 stories (free + paid)
+    When browsing "All" (no category filter), all available stories are returned.
+    When a specific category is selected, results are capped (free → 5, paid → 15).
     """
     if prefs is None:
         prefs = {}
 
-    free_stories = [s for s in stories if s.get("tier") == "free"]
-    paid_stories = [s for s in stories if s.get("tier") == "paid"]
-
     if tier == "paid":
         pool = stories
     else:
-        pool = free_stories
+        pool = [s for s in stories if s.get("tier") == "free"]
 
     scored = sorted(pool, key=lambda s: score_story(s, prefs), reverse=True)
+
+    if category is None:
+        return scored
 
     limit = 15 if tier == "paid" else 5
 
     if tier != "paid":
-        # Guarantee at least one story per category
-        categories: list[str] = []
+        # Guarantee at least one story per category before applying the limit
         seen_cats: set[str] = set()
-        remainder: list[dict[str, Any]] = []
+        guaranteed = []
+        fill = []
         for s in scored:
             cat = s.get("category", "")
             if cat not in seen_cats:
                 seen_cats.add(cat)
-                categories.append(s["id"] if "id" in s else "")
-                remainder.insert(0, s)
+                guaranteed.append(s)
             else:
-                remainder.append(s)
-        # Re-sort: put guaranteed-category stories first then fill to limit
-        guaranteed = [s for s in scored if s.get("id", "") in set(categories)]
-        fill = [s for s in scored if s.get("id", "") not in set(categories)]
-        combined = guaranteed + fill
-        return combined[:limit]
+                fill.append(s)
+        return (guaranteed + fill)[:limit]
 
     return scored[:limit]

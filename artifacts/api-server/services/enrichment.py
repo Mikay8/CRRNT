@@ -300,14 +300,9 @@ def _is_buzzfeed_quiz(story: dict[str, Any]) -> bool:
 async def personalize_life_impact(
     story: dict[str, Any], prefs: dict[str, Any]
 ) -> str:
-    """Generate a personalized impact statement for a paid user at request time.
-
-    Falls back to "" on any error so the caller can fall back to generic life_impact.
-    """
     title = story.get("title") or ""
     summary = (story.get("summary") or story.get("storySummary") or "")[:300]
     category = story.get("category") or ""
-    generic = story.get("life_impact") or story.get("lifeImpact") or ""
 
     profile_parts = []
     if prefs.get("job_type"):
@@ -329,18 +324,29 @@ async def personalize_life_impact(
         return ""
 
     system = (
-        "You are a personal financial news editor for CRRNT. "
-        "Write a 2-3 sentence impact statement tailored to the specific reader below. "
-        "Be concrete — name their actual situation (city, job, housing). "
-        "Start with 'You' or 'If you' when possible. "
-        "Plain ASCII only: no smart quotes, em dashes, or ellipsis characters. "
-        "Max 200 characters total."
+        "You write for CRRNT - a news app that makes stories feel personal. "
+        "Your only job here is to write ONE punchy, specific sentence (max 280 characters) "
+        "that tells this exact reader how this story touches their actual life.\n\n"
+        "Rules:\n"
+        "- Write like a friend who knows them, not a financial advisor who read their profile\n"
+        "- Never list their details back at them ('as a renter in Austin...')\n"
+        "- Anchor to a real moment: a bill, a commute, a grocery run, a job search, a lease renewal\n"
+        "- Use a number or timeframe if you can ('this month', '$20 more', 'by fall')\n"
+        "- Start with 'You' or 'If you' when it fits naturally\n"
+        "- Plain ASCII only: straight quotes, hyphens, three dots. No em dashes or curly quotes\n\n"
+        "BAD: 'As a renter in a high cost city with home-buying goals, market volatility "
+        "could impact your savings trajectory.'\n"
+        "GOOD: 'If you're stacking savings for a down payment, a bumpy market this quarter "
+        "could quietly set your timeline back a few months.'"
     )
+
     user_prompt = (
-        f"Reader: {'; '.join(profile_parts)}\n\n"
-        f"Story: {title}\nCategory: {category}\nSummary: {summary}\n"
-        f"Generic impact: {generic}\n\n"
-        "Write the personalized impact statement."
+        f"Reader profile:\n{chr(10).join(profile_parts)}\n\n"
+        f"Story: {title}\n"
+        f"Category: {category}\n"
+        f"What happened: {summary}\n\n"
+        "Write the one-sentence personalized impact. Be specific to their situation "
+        "without reciting it back. Make it feel like something real that happens in their week."
     )
 
     try:

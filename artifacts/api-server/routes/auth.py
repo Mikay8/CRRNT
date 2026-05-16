@@ -154,13 +154,14 @@ async def refresh(body: RefreshRequest) -> dict[str, Any]:
 
 @router.post("/send-verification", status_code=200)
 async def send_verification(user: dict = Depends(get_current_user)) -> dict[str, str]:
-    """Send a magic-link OTP to the user's email so they can verify it."""
+    """Resend the signup confirmation email (not a magic link)."""
+    redirect_to = os.environ.get("APP_VERIFY_EMAIL_URL", "")
     client = db.get_client()
     try:
-        client.auth.sign_in_with_otp({
-            "email": user["email"],
-            "options": {"should_create_user": False},
-        })
+        opts: dict[str, Any] = {"type": "signup", "email": user["email"]}
+        if redirect_to:
+            opts["options"] = {"email_redirect_to": redirect_to}
+        client.auth.resend(opts)
     except Exception as exc:
         log.warning("send_verification error for %s: %s", user["email"], exc)
     return {"message": "Verification email sent"}

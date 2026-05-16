@@ -49,7 +49,7 @@ async def daily_feed(
     if tier != "paid":
         stories = [s for s in stories if s.get("tier") == "free"]
 
-    ranked = personalization.personalize_feed(stories, prefs, tier)
+    ranked = personalization.personalize_feed(stories, prefs, tier, category=category)
 
     if tier != "paid":
         ranked = [s for s in ranked if s.get("tier") == "free"]

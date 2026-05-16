@@ -364,7 +364,7 @@ export default function StoryDetailScreen() {
           <Text style={styles.title}>{story.title}</Text>
 
           {/* Audio player row */}
-          {(
+          {isPro && (
             <View style={styles.audioRow}>
               <Pressable
                 onPress={toggleAudio}

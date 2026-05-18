@@ -61,44 +61,49 @@ async def revenuecat_webhook(
         return {"status": "user_not_found"}
 
     user_id = user["id"]
+    event_id = event.get("id", "unknown")
     expiry = event.get("expiration_at_ms")
     expires_at = None
     if expiry:
         from datetime import datetime, timezone
         expires_at = datetime.fromtimestamp(expiry / 1000, tz=timezone.utc).isoformat()
 
-    updates: dict[str, Any] = {}
+    kwargs: dict[str, Any] = {"event_id": event_id, "event_type": event_type}
 
     if event_type in ("INITIAL_PURCHASE", "RENEWAL"):
-        updates = {
-            "tier": "paid",
-            "subscription_status": "active",
-            "subscription_expires_at": expires_at,
-        }
-        log.info("RC: user %s activated (event=%s)", user_id, event_type)
+        db.update_user_subscription(
+            user_id,
+            tier="paid",
+            subscription_status="active",
+            subscription_expires_at=expires_at,
+            **kwargs,
+        )
 
     elif event_type == "CANCELLATION":
-        updates = {
-            "subscription_status": "cancelled",
-            # Keep paid until expires_at
-        }
-        if expires_at:
-            updates["subscription_expires_at"] = expires_at
-        log.info("RC: user %s cancelled", user_id)
+        db.update_user_subscription(
+            user_id,
+            subscription_status="cancelled",
+            subscription_expires_at=expires_at,
+            **kwargs,
+        )
 
     elif event_type == "EXPIRATION":
-        updates = {
-            "tier": "free",
-            "subscription_status": "expired",
-        }
-        log.info("RC: user %s expired", user_id)
+        db.update_user_subscription(
+            user_id,
+            tier="free",
+            subscription_status="expired",
+            **kwargs,
+        )
 
     elif event_type == "BILLING_ISSUE":
-        updates = {"subscription_status": "billing_issue"}
-        log.info("RC: user %s billing issue", user_id)
+        db.update_user_subscription(
+            user_id,
+            subscription_status="billing_issue",
+            **kwargs,
+        )
 
-    if updates:
-        db.update_user(user_id, updates)
+    else:
+        log.info("RC webhook: unhandled event_type=%s user=%s event_id=%s", event_type, user_id, event_id)
 
     return {"status": "processed", "event_type": event_type}
 
@@ -137,13 +142,13 @@ async def sync_tier(
     current_tier = user.get("tier", "free")
     new_tier = "paid" if body.is_pro else "free"
     if new_tier != current_tier:
-        updates: dict[str, Any] = {"tier": new_tier}
-        if body.is_pro:
-            updates["subscription_status"] = "active"
-        else:
-            updates["subscription_status"] = "expired"
-        db.update_user(user["id"], updates)
-        log.info("Tier synced from client: user=%s tier=%s→%s", user["id"], current_tier, new_tier)
+        db.update_user_subscription(
+            user["id"],
+            tier=new_tier,
+            subscription_status="active" if body.is_pro else "expired",
+            event_id="client-sync",
+            event_type="CLIENT_SYNC",
+        )
     return {"tier": new_tier}
 
 

@@ -14,8 +14,10 @@ Actions (POST, redirect back):
   POST /admin/breaking/create
   POST /admin/breaking/{id}/dismiss
   POST /admin/stories/{id}/delete
-  POST /admin/stories/{id}/tier
   POST /admin/settings/save
+
+NOTE: User tier is read-only here. It is owned exclusively by RevenueCat
+and updated only via the /api/subscriptions/revenuecat/webhook handler.
 """
 
 from __future__ import annotations
@@ -174,17 +176,6 @@ async def delete_story(story_id: str, _: None = Depends(_verify_admin)):
     return RedirectResponse(url="/admin/stories", status_code=302)
 
 
-@router.post("/stories/{story_id}/tier")
-async def change_tier(
-    story_id: str,
-    tier: str = Form(...),
-    _: None = Depends(_verify_admin),
-):
-    if tier in ("free", "paid"):
-        _safe_db(lambda: db.update_story(story_id, {"tier": tier}), None)
-    return RedirectResponse(url="/admin/stories", status_code=302)
-
-
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 
@@ -211,17 +202,6 @@ async def admin_users(
             "filter_tier": tier or "",
         },
     )
-
-
-@router.post("/users/{user_id}/tier")
-async def change_user_tier(
-    user_id: str,
-    tier: str = Form(...),
-    _: None = Depends(_verify_admin),
-):
-    if tier in ("free", "paid"):
-        _safe_db(lambda: db.update_user(user_id, {"tier": tier}), None)
-    return RedirectResponse(url="/admin/users", status_code=302)
 
 
 # ── Breaking news ─────────────────────────────────────────────────────────────

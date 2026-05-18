@@ -19,8 +19,7 @@
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
-        ],
-        "NSMicrophoneUsageDescription": "CRRNT uses the microphone for audio recording."
+        ]
       }
     },
     "android": {

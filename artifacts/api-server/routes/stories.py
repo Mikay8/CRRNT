@@ -268,6 +268,6 @@ async def get_story_audio(
         include_wallet=is_paid,
     )
     if not audio_bytes:
-        raise HTTPException(status_code=404, detail="Audio generation failed")
+        raise HTTPException(status_code=503, detail="Audio generation temporarily unavailable")
 
     return _serve_audio(audio_bytes, request.headers.get("range"))

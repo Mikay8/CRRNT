@@ -157,7 +157,9 @@ CREATE TABLE IF NOT EXISTS push_tokens (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- No RLS on push_tokens — backend-only writes via service role key
+ALTER TABLE push_tokens ENABLE ROW LEVEL SECURITY;
+-- No user-facing policies: push_tokens is backend-only via the service role key.
+-- RLS is enabled so the anon/authenticated roles have no access.
 
 -- ─────────────────────────────────────────
 -- STORAGE BUCKET (run separately in Storage tab or via API)

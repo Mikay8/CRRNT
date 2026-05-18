@@ -1,8 +1,15 @@
 """Supabase client — service-role access for all backend operations.
 
-The service-role key bypasses RLS.  Never expose it to the frontend.
-All public-facing story queries go through the stories routes which
-enforce tier gating at the application layer.
+Every table has RLS enabled. The service-role key (SUPABASE_SERVICE_KEY) intentionally
+bypasses RLS so the backend can perform operations that no single authenticated user is
+allowed to do directly:
+  - webhook: look up a user row by revenuecat_customer_id (cross-user read)
+  - ingestion: insert/update stories (no auth.uid() exists in a background job)
+  - admin portal: list all users and stories
+
+Never expose the service-role key or any response from it to the frontend.
+All public-facing data is filtered and tier-gated at the route layer before
+it is returned to the client.
 """
 from __future__ import annotations
 
@@ -249,12 +256,62 @@ def create_user(user_id: str, email: str) -> dict[str, Any]:
     raise RuntimeError(f"Failed to create or retrieve user row for {user_id}")
 
 
+_TIER_FIELDS = frozenset({"tier", "subscription_status", "subscription_expires_at"})
+
+
 def update_user(user_id: str, fields: dict[str, Any]) -> Optional[dict[str, Any]]:
+    forbidden = _TIER_FIELDS & fields.keys()
+    if forbidden:
+        log.error(
+            "update_user called with forbidden tier fields %s for user %s — use update_user_subscription instead",
+            forbidden, user_id,
+        )
+        fields = {k: v for k, v in fields.items() if k not in _TIER_FIELDS}
+    if not fields:
+        return get_user(user_id)
     result = (
         get_client().table("users")
         .update(fields)
         .eq("id", user_id)
         .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def update_user_subscription(
+    user_id: str,
+    *,
+    tier: Optional[str] = None,
+    subscription_status: Optional[str] = None,
+    subscription_expires_at: Optional[str] = None,
+    event_id: str = "unknown",
+    event_type: str = "unknown",
+) -> Optional[dict[str, Any]]:
+    """Only path allowed to write tier/subscription_status. Called exclusively from the RC webhook."""
+    current = get_user(user_id)
+    old_tier = current.get("tier") if current else "unknown"
+
+    fields: dict[str, Any] = {}
+    if tier is not None:
+        fields["tier"] = tier
+    if subscription_status is not None:
+        fields["subscription_status"] = subscription_status
+    if subscription_expires_at is not None:
+        fields["subscription_expires_at"] = subscription_expires_at
+
+    if not fields:
+        return current
+
+    result = (
+        get_client().table("users")
+        .update(fields)
+        .eq("id", user_id)
+        .execute()
+    )
+    log.info(
+        "subscription_change user=%s old_tier=%s new_tier=%s status=%s event_type=%s event_id=%s",
+        user_id, old_tier, tier or old_tier, subscription_status or "unchanged",
+        event_type, event_id,
     )
     return result.data[0] if result.data else None
 

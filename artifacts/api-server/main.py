@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import time
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from routes import health, stocks
@@ -69,6 +70,41 @@ app.add_middleware(
 )
 
 
+_rate_windows: dict[str, deque] = defaultdict(deque)
+_RATE_WINDOW = 60.0
+_GENERAL_LIMIT = 60
+_EXPENSIVE_LIMIT = 10
+_EXPENSIVE_SEGMENTS = ("/audio", "/personalized-audio")
+
+
+@app.middleware("http")
+async def _rate_limit_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/admin") or "/health" in path:
+        return await call_next(request)
+
+    client_ip = (request.client.host if request.client else "unknown")
+    now = time.monotonic()
+    is_expensive = any(seg in path for seg in _EXPENSIVE_SEGMENTS)
+    limit = _EXPENSIVE_LIMIT if is_expensive else _GENERAL_LIMIT
+    key = f"{client_ip}:{'exp' if is_expensive else 'gen'}"
+
+    bucket = _rate_windows[key]
+    cutoff = now - _RATE_WINDOW
+    while bucket and bucket[0] < cutoff:
+        bucket.popleft()
+
+    if len(bucket) >= limit:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded. Try again in 60 seconds."},
+            headers={"Retry-After": "60"},
+        )
+
+    bucket.append(now)
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def _metrics_middleware(request: Request, call_next):
     start = time.monotonic()
@@ -87,7 +123,6 @@ app.include_router(subscriptions_routes.router) # already prefixed /api/subscrip
 
 # ── Legacy push token endpoint (backward compat with old app installs) ────────
 from fastapi import Request
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 class PushTokenBody(BaseModel):

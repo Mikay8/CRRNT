@@ -6,6 +6,7 @@
  * `getAuthHeader()` to get the Authorization header.
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import {
   createContext,
   useCallback,
@@ -14,7 +15,22 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
+
+const _storage = {
+  getItem: (key: string) =>
+    Platform.OS === "web"
+      ? AsyncStorage.getItem(key)
+      : SecureStore.getItemAsync(key),
+  setItem: (key: string, value: string) =>
+    Platform.OS === "web"
+      ? AsyncStorage.setItem(key, value)
+      : SecureStore.setItemAsync(key, value),
+  removeItem: (key: string) =>
+    Platform.OS === "web"
+      ? AsyncStorage.removeItem(key)
+      : SecureStore.deleteItemAsync(key),
+};
 
 const TOKEN_KEY = "@crrnt/auth/access_token";
 const REFRESH_KEY = "@crrnt/auth/refresh_token";
@@ -97,10 +113,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const [token, refreshToken, raw, guestFlag] = await Promise.all([
-          AsyncStorage.getItem(TOKEN_KEY),
-          AsyncStorage.getItem(REFRESH_KEY),
-          AsyncStorage.getItem(USER_KEY),
-          AsyncStorage.getItem(GUEST_KEY),
+          _storage.getItem(TOKEN_KEY),
+          _storage.getItem(REFRESH_KEY),
+          _storage.getItem(USER_KEY),
+          _storage.getItem(GUEST_KEY),
         ]);
 
         if (guestFlag === "1" && !token) {
@@ -127,18 +143,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (res.ok) {
           const data = await res.json();
           await Promise.all([
-            AsyncStorage.setItem(TOKEN_KEY, data.session.access_token),
-            AsyncStorage.setItem(REFRESH_KEY, data.session.refresh_token),
-            AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user)),
+            _storage.setItem(TOKEN_KEY, data.session.access_token),
+            _storage.setItem(REFRESH_KEY, data.session.refresh_token),
+            _storage.setItem(USER_KEY, JSON.stringify(data.user)),
           ]);
           setAccessToken(data.session.access_token);
           setUser(data.user as CrrntUser);
         } else {
           // Refresh token also expired — clear session, user must log in again
           await Promise.all([
-            AsyncStorage.removeItem(TOKEN_KEY),
-            AsyncStorage.removeItem(REFRESH_KEY),
-            AsyncStorage.removeItem(USER_KEY),
+            _storage.removeItem(TOKEN_KEY),
+            _storage.removeItem(REFRESH_KEY),
+            _storage.removeItem(USER_KEY),
           ]);
         }
       } catch {
@@ -149,6 +165,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  // ── Re-check token expiry when app comes to foreground ───────────────────
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", async (nextState) => {
+      if (nextState !== "active") return;
+      const token = await _storage.getItem(TOKEN_KEY);
+      if (!token || !isTokenExpired(token)) return;
+
+      const refreshToken = await _storage.getItem(REFRESH_KEY);
+      if (refreshToken) {
+        try {
+          const res = await apiFetch("/api/auth/refresh", {
+            method: "POST",
+            body: JSON.stringify({ refresh_token: refreshToken }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            await _persistSession(
+              data.session.access_token,
+              data.session.refresh_token ?? "",
+              data.user as CrrntUser
+            );
+            return;
+          }
+        } catch {
+          // fall through to clear session
+        }
+      }
+      await _clearSession();
+    });
+    return () => sub.remove();
+  }, [_persistSession, _clearSession]);
+
   // ── Persist session ────────────────────────────────────────────────────────
   const _persistSession = useCallback(
     async (token: string, refresh: string, userData: CrrntUser) => {
@@ -156,10 +204,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(userData);
       setIsGuest(false);
       await Promise.all([
-        AsyncStorage.setItem(TOKEN_KEY, token),
-        AsyncStorage.setItem(REFRESH_KEY, refresh),
-        AsyncStorage.setItem(USER_KEY, JSON.stringify(userData)),
-        AsyncStorage.removeItem(GUEST_KEY),
+        _storage.setItem(TOKEN_KEY, token),
+        _storage.setItem(REFRESH_KEY, refresh),
+        _storage.setItem(USER_KEY, JSON.stringify(userData)),
+        _storage.removeItem(GUEST_KEY),
       ]);
     },
     []
@@ -169,15 +217,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccessToken(null);
     setUser(null);
     await Promise.all([
-      AsyncStorage.removeItem(TOKEN_KEY),
-      AsyncStorage.removeItem(REFRESH_KEY),
-      AsyncStorage.removeItem(USER_KEY),
+      _storage.removeItem(TOKEN_KEY),
+      _storage.removeItem(REFRESH_KEY),
+      _storage.removeItem(USER_KEY),
     ]);
   }, []);
 
   const enterGuestMode = useCallback(async () => {
     setIsGuest(true);
-    await AsyncStorage.setItem(GUEST_KEY, "1");
+    await _storage.setItem(GUEST_KEY, "1");
   }, []);
 
   // ── Auth actions ───────────────────────────────────────────────────────────
@@ -265,7 +313,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
     const updated = { ...user, ...fields };
     setUser(updated);
-    await AsyncStorage.setItem(USER_KEY, JSON.stringify(updated));
+    await _storage.setItem(USER_KEY, JSON.stringify(updated));
   }, [user]);
 
   const refreshUser = useCallback(async () => {

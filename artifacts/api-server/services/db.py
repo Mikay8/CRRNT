@@ -385,6 +385,29 @@ def upsert_preferences(user_id: str, prefs: dict[str, Any]) -> dict[str, Any]:
     return result.data[0] if result.data else payload
 
 
+# ── App settings (persistent config) ─────────────────────────────────────────
+
+def get_app_setting(key: str) -> Optional[Any]:
+    try:
+        result = get_client().table("app_settings").select("value").eq("key", key).execute()
+        return result.data[0]["value"] if result.data else None
+    except Exception as exc:
+        log.warning("get_app_setting(%s) failed: %s", key, exc)
+        return None
+
+
+def set_app_setting(key: str, value: Any) -> None:
+    from datetime import datetime, timezone
+    try:
+        get_client().table("app_settings").upsert({
+            "key": key,
+            "value": value,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    except Exception as exc:
+        log.warning("set_app_setting(%s) failed: %s", key, exc)
+
+
 # ── Ingestion logs ─────────────────────────────────────────────────────────────
 
 def insert_ingestion_log(log_entry: dict[str, Any]) -> dict[str, Any]:

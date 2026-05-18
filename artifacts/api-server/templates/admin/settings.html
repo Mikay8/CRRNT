@@ -148,6 +148,98 @@
 
   </form>
 
+  <!-- ── Feed Limits ──────────────────────────────────────────────────── -->
+  <form method="POST" action="/admin/feed-limits/save">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-5">
+      <div>
+        <h2 class="text-sm font-semibold text-white">Feed &amp; Save Limits</h2>
+        <p class="text-xs text-gray-500 mt-0.5">Controls how many stories are shown per category and how many a user can save.</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Free limit -->
+        <div class="bg-gray-900/50 rounded-lg p-4 space-y-3">
+          <div class="flex items-center gap-2">
+            <span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-700 text-green-400">Free</span>
+            <span class="text-sm text-gray-300">Per-category &amp; save limit</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <input type="range" name="free_limit" min="1" max="50"
+              value="{{ feed_limits.free }}"
+              class="flex-1 accent-cyan-400 cursor-pointer"
+              oninput="document.getElementById('free-limit-val').textContent = this.value">
+            <span id="free-limit-val" class="text-cyan-400 font-bold text-sm w-8 text-right">{{ feed_limits.free }}</span>
+            <span class="text-gray-500 text-xs">stories</span>
+          </div>
+        </div>
+
+        <!-- Paid limit -->
+        <div class="bg-gray-900/50 rounded-lg p-4 space-y-3">
+          <div class="flex items-center gap-2">
+            <span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-yellow-900/30 text-yellow-400 border border-yellow-700/40">Pro</span>
+            <span class="text-sm text-gray-300">Per-category &amp; save limit</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <input type="range" name="paid_limit" min="1" max="100"
+              value="{{ feed_limits.paid }}"
+              class="flex-1 accent-cyan-400 cursor-pointer"
+              oninput="document.getElementById('paid-limit-val').textContent = this.value">
+            <span id="paid-limit-val" class="text-cyan-400 font-bold text-sm w-8 text-right">{{ feed_limits.paid }}</span>
+            <span class="text-gray-500 text-xs">stories</span>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit"
+        class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-lg transition-colors">
+        Save Feed Limits
+      </button>
+    </div>
+  </form>
+
+  <!-- ── Story Expiry ───────────────────────────────────────────────────── -->
+  <form method="POST" action="/admin/story-expiry/save">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-5">
+      <div>
+        <h2 class="text-sm font-semibold text-white">Story Expiry</h2>
+        <p class="text-xs text-gray-500 mt-0.5">Stories expire after N days. Saved stories get extended instead of deleted.</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Expiry days -->
+        <div class="bg-gray-900/50 rounded-lg p-4 space-y-3">
+          <span class="text-sm text-gray-300">Expire after</span>
+          <div class="flex items-center gap-3">
+            <input type="range" name="expiry_days" min="1" max="90"
+              value="{{ story_expiry.days }}"
+              class="flex-1 accent-cyan-400 cursor-pointer"
+              oninput="document.getElementById('expiry-days-val').textContent = this.value">
+            <span id="expiry-days-val" class="text-cyan-400 font-bold text-sm w-8 text-right">{{ story_expiry.days }}</span>
+            <span class="text-gray-500 text-xs">days</span>
+          </div>
+        </div>
+
+        <!-- Extension days -->
+        <div class="bg-gray-900/50 rounded-lg p-4 space-y-3">
+          <span class="text-sm text-gray-300">Extend saved stories by</span>
+          <div class="flex items-center gap-3">
+            <input type="range" name="extension_days" min="7" max="365"
+              value="{{ story_expiry.extension_days }}"
+              class="flex-1 accent-cyan-400 cursor-pointer"
+              oninput="document.getElementById('extension-days-val').textContent = this.value">
+            <span id="extension-days-val" class="text-cyan-400 font-bold text-sm w-8 text-right">{{ story_expiry.extension_days }}</span>
+            <span class="text-gray-500 text-xs">days</span>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit"
+        class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-lg transition-colors">
+        Save Story Expiry
+      </button>
+    </div>
+  </form>
+
   <!-- ── System info (read-only) ───────────────────────────────────────── -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
     <h2 class="text-sm font-semibold text-white mb-4">System Defaults</h2>

@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import db, enrichment, news_fetcher
+from services import app_settings, db, enrichment, news_fetcher
 
 log = logging.getLogger("crrnt.ingestion")
 
@@ -36,7 +36,9 @@ def _set_status(s: dict[str, Any]) -> None:
 
 # ── Expiry helper ─────────────────────────────────────────────────────────────
 
-def _expires_at(published_at: Optional[str], days: int = 7) -> str:
+def _expires_at(published_at: Optional[str], days: Optional[int] = None) -> str:
+    if days is None:
+        days = app_settings.get_story_expiry()["days"]
     if published_at:
         try:
             base = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
@@ -156,6 +158,7 @@ async def run_ingestion(
         enriched = await enrichment.enrich_all(raw)
         log.info("Enriched %d stories", len(enriched))
 
+        inserted_stories: list[dict] = []
         for story in enriched:
             try:
                 row = _to_story_row(story)
@@ -170,8 +173,13 @@ async def run_ingestion(
                 if not external_id:
                     row.pop("external_id", None)
 
-                inserted = db.insert_story(row)
+                db.insert_story(row)
                 enriched_count += 1
+                inserted_stories.append({
+                    "title": row.get("title"),
+                    "category": row.get("category"),
+                    "tier": row.get("tier"),
+                })
 
             except Exception as exc:
                 log.exception("Failed to store story: %s", exc)
@@ -182,19 +190,22 @@ async def run_ingestion(
             fetched_count, enriched_count, error_count,
         )
         status_str = "success" if error_count == 0 else "partial"
+
+        cleanup_result: dict = {"deleted": 0, "extended": 0}
+        try:
+            cleanup_result = await run_cleanup()
+        except Exception as exc:
+            log.warning("Post-ingestion cleanup failed: %s", exc)
+
         _set_status({
             "state": status_str,
             "storyCount": enriched_count,
+            "insertedStories": inserted_stories,
+            "cleanup": cleanup_result,
             "startedAt": started_at.isoformat(),
             "finishedAt": datetime.now(timezone.utc).isoformat(),
         })
         _write_log(fetched_count, enriched_count, error_count, status_str)
-
-        # Run cleanup after each ingestion to remove expired stories
-        try:
-            await run_cleanup()
-        except Exception as exc:
-            log.warning("Post-ingestion cleanup failed: %s", exc)
 
         return _ingestion_status
 
@@ -243,7 +254,8 @@ async def run_cleanup() -> dict[str, int]:
             db.delete_story(story_id)
             deleted += 1
         else:
-            db.extend_story_expiry(story_id, days=30)
+            extension_days = app_settings.get_story_expiry()["extension_days"]
+            db.extend_story_expiry(story_id, days=extension_days)
             extended += 1
 
     log.info("Cleanup: deleted=%d extended=%d", deleted, extended)

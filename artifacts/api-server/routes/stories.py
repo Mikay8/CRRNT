@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from services import db, enrichment, fish_audio, personalization  # fish_audio used in audio endpoint
+from services import app_settings, db, enrichment, fish_audio, personalization  # fish_audio used in audio endpoint
 from services.auth_middleware import get_current_user, get_current_user_optional
 
 log = logging.getLogger("crrnt.stories")
@@ -175,7 +175,8 @@ async def save_story(
         raise HTTPException(status_code=404, detail="Story not found")
     if story.get("tier") == "paid" and user.get("tier") != "paid":
         raise HTTPException(status_code=403, detail="Cannot save paid story on free tier")
-    save_limit = 15 if user.get("tier") == "paid" else 5
+    limits = app_settings.get_feed_limits()
+    save_limit = limits["paid"] if user.get("tier") == "paid" else limits["free"]
     if db.count_saved_stories(user["id"]) >= save_limit:
         raise HTTPException(status_code=403, detail="save_limit_reached")
     result = db.save_story(user["id"], story_id)

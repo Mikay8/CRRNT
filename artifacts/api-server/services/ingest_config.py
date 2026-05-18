@@ -1,4 +1,4 @@
-"""Ingestion configuration — persisted as JSON on disk.
+"""Ingestion configuration — persisted to Supabase (primary) and JSON file (fallback).
 
 Config shape:
   {
@@ -13,6 +13,9 @@ Config shape:
     },
     "trending_count": 25
   }
+
+Supabase is the primary store so settings survive redeployments. The local file
+is kept as a write-through cache for fast reads and offline fallback.
 """
 from __future__ import annotations
 
@@ -25,28 +28,45 @@ from typing import Any
 log = logging.getLogger("crrnt.ingest_config")
 
 _CONFIG_PATH = Path(__file__).parent.parent / "ingest_config.json"
+_DB_KEY = "ingest_config"
 _lock = threading.Lock()
 
 ALL_CATEGORIES = ["celebrity", "tech", "government", "sports", "business", "science"]
 
 _DEFAULTS: dict[str, Any] = {
-    "mode": "category",
+    "mode": "both",
     "categories": {cat: {"enabled": True, "count": 10} for cat in ALL_CATEGORIES},
     "trending_count": 25,
 }
 
 
+def _backfill(data: dict[str, Any]) -> dict[str, Any]:
+    data.setdefault("mode", "both")
+    data.setdefault("trending_count", 25)
+    data.setdefault("categories", {})
+    for cat in ALL_CATEGORIES:
+        data["categories"].setdefault(cat, {"enabled": True, "count": 10})
+    return data
+
+
 def _load() -> dict[str, Any]:
+    # 1. Try Supabase first
+    try:
+        from services import db
+        stored = db.get_app_setting(_DB_KEY)
+        if stored and isinstance(stored, dict):
+            return _backfill(stored)
+    except Exception as exc:
+        log.warning("Could not load ingest config from Supabase: %s", exc)
+
+    # 2. Fall back to local file
     try:
         if _CONFIG_PATH.exists():
             data = json.loads(_CONFIG_PATH.read_text())
-            # Backfill any missing categories
-            for cat in ALL_CATEGORIES:
-                data.setdefault("categories", {})
-                data["categories"].setdefault(cat, {"enabled": True, "count": 10})
-            return data
+            return _backfill(data)
     except Exception as exc:
-        log.warning("Could not load ingest config: %s", exc)
+        log.warning("Could not load ingest config from file: %s", exc)
+
     return json.loads(json.dumps(_DEFAULTS))
 
 
@@ -57,11 +77,20 @@ def get() -> dict[str, Any]:
 
 def save(cfg: dict[str, Any]) -> None:
     with _lock:
+        # Primary: Supabase
+        try:
+            from services import db
+            db.set_app_setting(_DB_KEY, cfg)
+        except Exception as exc:
+            log.warning("Could not save ingest config to Supabase: %s", exc)
+
+        # Write-through: local file
         try:
             _CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-            log.info("Ingestion config saved: mode=%s", cfg.get("mode"))
         except Exception as exc:
-            log.warning("Could not save ingest config: %s", exc)
+            log.warning("Could not save ingest config to file: %s", exc)
+
+        log.info("Ingestion config saved: mode=%s", cfg.get("mode"))
 
 
 def get_run_params() -> dict[str, Any]:

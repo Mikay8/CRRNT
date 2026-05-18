@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from services import app_settings
+
 
 def score_story(story: dict[str, Any], prefs: dict[str, Any]) -> int:
     """Return a relevance score for a story given user preferences.
@@ -66,7 +68,8 @@ def personalize_feed(
     if category is None:
         return scored
 
-    limit = 15 if tier == "paid" else 5
+    limits = app_settings.get_feed_limits()
+    limit = limits["paid"] if tier == "paid" else limits["free"]
 
     if tier != "paid":
         # Guarantee at least one story per category before applying the limit

@@ -33,7 +33,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from services import db, ingestion, ingest_config, log_buffer, metrics
+from services import app_settings, db, ingestion, ingest_config, log_buffer, metrics
 
 log = logging.getLogger("crrnt.admin")
 
@@ -245,6 +245,8 @@ async def dismiss_breaking(record_id: str, _: None = Depends(_verify_admin)):
 @router.get("/settings", response_class=HTMLResponse)
 async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
     cfg = ingest_config.get()
+    feed_limits = app_settings.get_feed_limits()
+    story_expiry = app_settings.get_story_expiry()
     env_status = {
         "SUPABASE_URL": bool(os.environ.get("SUPABASE_URL")),
         "SUPABASE_SERVICE_KEY": bool(os.environ.get("SUPABASE_SERVICE_KEY")),
@@ -254,13 +256,14 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
         "FISH_AUDIO_API_KEY": bool(os.environ.get("FISH_AUDIO_API_KEY")),
         "REVENUECAT_WEBHOOK_SECRET": bool(os.environ.get("REVENUECAT_WEBHOOK_SECRET")),
         "ADMIN_PASSWORD": bool(os.environ.get("ADMIN_PASSWORD")),
+        "ADMIN_EMAIL": bool(os.environ.get("ADMIN_EMAIL")),
+        "SMTP_HOST": bool(os.environ.get("SMTP_HOST")),
+        "SMTP_USER": bool(os.environ.get("SMTP_USER")),
+        "SMTP_PASS": bool(os.environ.get("SMTP_PASS")),
     }
     system_info = [
         {"label": "Schedule", "value": "08:00 America/New_York (daily)"},
         {"label": "Cleanup", "value": "03:00 America/New_York (daily)"},
-        {"label": "Story expiry", "value": "7 days (extended 30d if saved)"},
-        {"label": "Free feed limit", "value": "5 stories"},
-        {"label": "Paid feed limit", "value": "15 stories"},
         {"label": "NewsMesh daily quota", "value": "25 requests/day"},
     ]
     return templates.TemplateResponse(
@@ -269,6 +272,8 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
         {
             "page": "settings",
             "cfg": cfg,
+            "feed_limits": feed_limits,
+            "story_expiry": story_expiry,
             "env_status": env_status,
             "system_info": system_info,
         },
@@ -310,6 +315,30 @@ async def save_and_run_ingest(request: Request, _: None = Depends(_verify_admin)
     params = ingest_config.get_run_params()
     asyncio.create_task(ingestion.run_ingestion(**params))
     return RedirectResponse(url="/admin/dashboard", status_code=302)
+
+
+@router.post("/feed-limits/save")
+async def save_feed_limits(request: Request, _: None = Depends(_verify_admin)):
+    form = dict(await request.form())
+    try:
+        free = max(1, min(50, int(form.get("free_limit", 5))))
+        paid = max(1, min(100, int(form.get("paid_limit", 15))))
+    except (TypeError, ValueError):
+        free, paid = 5, 15
+    app_settings.save_feed_limits(free, paid)
+    return RedirectResponse(url="/admin/settings", status_code=302)
+
+
+@router.post("/story-expiry/save")
+async def save_story_expiry(request: Request, _: None = Depends(_verify_admin)):
+    form = dict(await request.form())
+    try:
+        days = max(1, min(90, int(form.get("expiry_days", 7))))
+        extension_days = max(7, min(365, int(form.get("extension_days", 30))))
+    except (TypeError, ValueError):
+        days, extension_days = 7, 30
+    app_settings.save_story_expiry(days, extension_days)
+    return RedirectResponse(url="/admin/settings", status_code=302)
 
 
 # ── Service logs ──────────────────────────────────────────────────────────────

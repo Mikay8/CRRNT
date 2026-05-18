@@ -8,7 +8,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from services import ingestion, ingest_config
+from services import email_service, ingestion, ingest_config
 
 log = logging.getLogger("crrnt.scheduler")
 
@@ -18,7 +18,14 @@ _scheduler: AsyncIOScheduler | None = None
 async def _daily_ingest() -> None:
     params = ingest_config.get_run_params()
     log.info("Scheduled ingestion starting with params: %s", params)
-    await ingestion.run_ingestion(**params)
+    status = await ingestion.run_ingestion(**params)
+    try:
+        email_service.send_digest(
+            stories=status.get("insertedStories", []),
+            cleanup=status.get("cleanup", {"deleted": 0, "extended": 0}),
+        )
+    except Exception as exc:
+        log.warning("Digest email failed: %s", exc)
 
 
 async def _daily_cleanup() -> None:

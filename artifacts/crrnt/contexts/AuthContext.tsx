@@ -165,6 +165,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  // ── Persist session ────────────────────────────────────────────────────────
+  const _persistSession = useCallback(
+    async (token: string, refresh: string, userData: CrrntUser) => {
+      setAccessToken(token);
+      setUser(userData);
+      setIsGuest(false);
+      await Promise.all([
+        _storage.setItem(TOKEN_KEY, token),
+        _storage.setItem(REFRESH_KEY, refresh),
+        _storage.setItem(USER_KEY, JSON.stringify(userData)),
+        _storage.removeItem(GUEST_KEY),
+      ]);
+    },
+    []
+  );
+
+  const _clearSession = useCallback(async () => {
+    setAccessToken(null);
+    setUser(null);
+    await Promise.all([
+      _storage.removeItem(TOKEN_KEY),
+      _storage.removeItem(REFRESH_KEY),
+      _storage.removeItem(USER_KEY),
+    ]);
+  }, []);
+
   // ── Re-check token expiry when app comes to foreground ───────────────────
   useEffect(() => {
     const sub = AppState.addEventListener("change", async (nextState) => {
@@ -196,32 +222,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     return () => sub.remove();
   }, [_persistSession, _clearSession]);
-
-  // ── Persist session ────────────────────────────────────────────────────────
-  const _persistSession = useCallback(
-    async (token: string, refresh: string, userData: CrrntUser) => {
-      setAccessToken(token);
-      setUser(userData);
-      setIsGuest(false);
-      await Promise.all([
-        _storage.setItem(TOKEN_KEY, token),
-        _storage.setItem(REFRESH_KEY, refresh),
-        _storage.setItem(USER_KEY, JSON.stringify(userData)),
-        _storage.removeItem(GUEST_KEY),
-      ]);
-    },
-    []
-  );
-
-  const _clearSession = useCallback(async () => {
-    setAccessToken(null);
-    setUser(null);
-    await Promise.all([
-      _storage.removeItem(TOKEN_KEY),
-      _storage.removeItem(REFRESH_KEY),
-      _storage.removeItem(USER_KEY),
-    ]);
-  }, []);
 
   const enterGuestMode = useCallback(async () => {
     setIsGuest(true);

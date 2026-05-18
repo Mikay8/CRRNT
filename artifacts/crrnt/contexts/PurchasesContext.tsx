@@ -25,6 +25,7 @@ import Purchases, {
   type CustomerInfo,
 } from "react-native-purchases";
 import RevenueCatUI, { PAYWALL_RESULT } from "react-native-purchases-ui";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "./AuthContext";
 
@@ -81,6 +82,7 @@ export function PurchasesProvider({
   children: React.ReactNode;
 }) {
   const { user, refreshUser, getAuthHeader } = useAuth();
+  const queryClient = useQueryClient();
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const configured = useRef(false);
@@ -89,14 +91,25 @@ export function PurchasesProvider({
   const syncTierWithBackend = useCallback(async (hasPro: boolean) => {
     try {
       const apiBase = process.env.EXPO_PUBLIC_API_BASE ?? "";
-      await fetch(`${apiBase}/api/subscriptions/sync`, {
+      const res = await fetch(`${apiBase}/api/subscriptions/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeader() },
         body: JSON.stringify({ is_pro: hasPro }),
       });
+      if (!res.ok) return;
       await refreshUser();
+      // Force the feed and story queries to refetch with the updated tier.
+      // Without this, React Query serves the stale free-tier cache even after
+      // the DB has been updated to paid.
+      queryClient.invalidateQueries({ queryKey: ["/api/stories/daily"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stories/search"] });
+      queryClient.invalidateQueries({
+        predicate: (query) =>
+          typeof query.queryKey[0] === "string" &&
+          query.queryKey[0].startsWith("/api/stories/"),
+      });
     } catch {}
-  }, [getAuthHeader, refreshUser]);
+  }, [getAuthHeader, refreshUser, queryClient]);
 
   // Keep a ref so the RC listener (registered once) always calls the latest version
   const syncTierRef = useRef(syncTierWithBackend);
@@ -141,6 +154,13 @@ export function PurchasesProvider({
       Purchases.logIn(user.id)
         .then(({ customerInfo: info }) => {
           setCustomerInfo(info);
+          const hasPro = Boolean(info.entitlements.active[PRO_ENTITLEMENT]);
+          // Sync DB tier after login in case this is a new device or the webhook
+          // missed the original purchase. Only write when there's a mismatch to
+          // avoid unnecessary backend calls.
+          if (hasPro !== (user.tier === "paid")) {
+            syncTierRef.current(hasPro);
+          }
           // Stamp the user profile with attributes visible in the RC dashboard.
           // These are set for every user — free or paid — so you can filter and
           // segment non-subscribers in RC Analytics.
@@ -182,10 +202,16 @@ export function PurchasesProvider({
           result = await RevenueCatUI.presentPaywall();
         }
 
-        return (
+        const purchased =
           result === PAYWALL_RESULT.PURCHASED ||
-          result === PAYWALL_RESULT.RESTORED
-        );
+          result === PAYWALL_RESULT.RESTORED;
+
+        // Await the backend sync so user.tier is "paid" before the caller
+        // re-renders the feed. The RC listener fires the same sync but may
+        // race with the feed re-fetch if we return before it completes.
+        if (purchased) await syncTierRef.current(true);
+
+        return purchased;
       } catch {
         return false;
       }
@@ -199,11 +225,16 @@ export function PurchasesProvider({
       const result = await RevenueCatUI.presentPaywallIfNeeded({
         requiredEntitlementIdentifier: PRO_ENTITLEMENT,
       });
-      return (
+      const purchased =
         result === PAYWALL_RESULT.PURCHASED ||
         result === PAYWALL_RESULT.RESTORED ||
-        result === PAYWALL_RESULT.NOT_PRESENTED // already had access
-      );
+        result === PAYWALL_RESULT.NOT_PRESENTED; // already had access
+
+      if (result === PAYWALL_RESULT.PURCHASED || result === PAYWALL_RESULT.RESTORED) {
+        await syncTierRef.current(true);
+      }
+
+      return purchased;
     } catch {
       return false;
     }

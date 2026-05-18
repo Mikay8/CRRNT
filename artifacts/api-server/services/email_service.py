@@ -1,11 +1,13 @@
 """Admin email digest — sent after the morning ingestion cron.
 
-Required env vars:
-  ADMIN_EMAIL   — recipient address
-  SMTP_HOST     — e.g. smtp.gmail.com
-  SMTP_PORT     — 587 (STARTTLS, default) or 465 (SSL)
-  SMTP_USER     — sender address / login
-  SMTP_PASS     — SMTP password or app-specific password
+Required env vars (SMTP credentials only — recipients are managed in app_settings):
+  SMTP_HOST  — e.g. smtp.gmail.com
+  SMTP_PORT  — 587 (STARTTLS, default) or 465 (SSL)
+  SMTP_USER  — sender address / login
+  SMTP_PASS  — SMTP password or app-specific password
+
+Recipients are stored in the app_settings table under the key "admin_emails"
+and managed via the admin portal Settings page.
 """
 from __future__ import annotations
 
@@ -17,18 +19,23 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
 
+from services import app_settings
+
 log = logging.getLogger("crrnt.email")
 
 
 def send_digest(stories: list[dict[str, Any]], cleanup: dict[str, int]) -> None:
-    """Send the morning ingestion digest to ADMIN_EMAIL."""
-    admin_email = os.environ.get("ADMIN_EMAIL", "")
+    """Send the morning ingestion digest to all admin_emails recipients."""
+    recipients = app_settings.get_admin_emails()
     smtp_host = os.environ.get("SMTP_HOST", "")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     smtp_user = os.environ.get("SMTP_USER", "")
     smtp_pass = os.environ.get("SMTP_PASS", "")
 
-    if not all([admin_email, smtp_host, smtp_user, smtp_pass]):
+    if not recipients:
+        log.info("Email digest skipped — no admin_emails configured")
+        return
+    if not all([smtp_host, smtp_user, smtp_pass]):
         log.info("Email digest skipped — SMTP env vars not fully configured")
         return
 
@@ -38,7 +45,7 @@ def send_digest(stories: list[dict[str, Any]], cleanup: dict[str, int]) -> None:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = smtp_user
-    msg["To"] = admin_email
+    msg["To"] = ", ".join(recipients)
     msg.attach(MIMEText(_build_text(stories, cleanup, now), "plain"))
     msg.attach(MIMEText(_build_html(stories, cleanup, now), "html"))
 
@@ -46,14 +53,14 @@ def send_digest(stories: list[dict[str, Any]], cleanup: dict[str, int]) -> None:
         if smtp_port == 465:
             with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
                 server.login(smtp_user, smtp_pass)
-                server.sendmail(smtp_user, [admin_email], msg.as_string())
+                server.sendmail(smtp_user, recipients, msg.as_string())
         else:
             with smtplib.SMTP(smtp_host, smtp_port) as server:
                 server.ehlo()
                 server.starttls()
                 server.login(smtp_user, smtp_pass)
-                server.sendmail(smtp_user, [admin_email], msg.as_string())
-        log.info("Digest email sent to %s (%d stories)", admin_email, len(stories))
+                server.sendmail(smtp_user, recipients, msg.as_string())
+        log.info("Digest email sent to %s (%d stories)", recipients, len(stories))
     except Exception as exc:
         log.warning("Failed to send digest email: %s", exc)
 

@@ -14,11 +14,13 @@ log = logging.getLogger("crrnt.app_settings")
 
 _FEED_LIMITS_KEY = "feed_limits"
 _STORY_EXPIRY_KEY = "story_expiry"
+_ADMIN_EMAILS_KEY = "admin_emails"
 _TTL = 300.0  # seconds
 
-_DEFAULTS: dict[str, dict] = {
+_DEFAULTS: dict[str, Any] = {
     _FEED_LIMITS_KEY: {"free": 5, "paid": 15},
     _STORY_EXPIRY_KEY: {"days": 7, "extension_days": 30},
+    _ADMIN_EMAILS_KEY: {"emails": []},
 }
 
 _cache: dict[str, Any] = {}
@@ -67,3 +69,12 @@ def save_feed_limits(free: int, paid: int) -> None:
 def save_story_expiry(days: int, extension_days: int) -> None:
     _save(_STORY_EXPIRY_KEY, {"days": days, "extension_days": extension_days})
     log.info("Story expiry saved: days=%d extension_days=%d", days, extension_days)
+
+
+def get_admin_emails() -> list[str]:
+    return _get(_ADMIN_EMAILS_KEY).get("emails", [])
+
+
+def save_admin_emails(emails: list[str]) -> None:
+    _save(_ADMIN_EMAILS_KEY, {"emails": emails})
+    log.info("Admin emails saved: %s", emails)

@@ -247,6 +247,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
     cfg = ingest_config.get()
     feed_limits = app_settings.get_feed_limits()
     story_expiry = app_settings.get_story_expiry()
+    admin_emails = app_settings.get_admin_emails()
     env_status = {
         "SUPABASE_URL": bool(os.environ.get("SUPABASE_URL")),
         "SUPABASE_SERVICE_KEY": bool(os.environ.get("SUPABASE_SERVICE_KEY")),
@@ -256,7 +257,6 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
         "FISH_AUDIO_API_KEY": bool(os.environ.get("FISH_AUDIO_API_KEY")),
         "REVENUECAT_WEBHOOK_SECRET": bool(os.environ.get("REVENUECAT_WEBHOOK_SECRET")),
         "ADMIN_PASSWORD": bool(os.environ.get("ADMIN_PASSWORD")),
-        "ADMIN_EMAIL": bool(os.environ.get("ADMIN_EMAIL")),
         "SMTP_HOST": bool(os.environ.get("SMTP_HOST")),
         "SMTP_USER": bool(os.environ.get("SMTP_USER")),
         "SMTP_PASS": bool(os.environ.get("SMTP_PASS")),
@@ -274,6 +274,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
             "cfg": cfg,
             "feed_limits": feed_limits,
             "story_expiry": story_expiry,
+            "admin_emails": admin_emails,
             "env_status": env_status,
             "system_info": system_info,
         },
@@ -326,6 +327,15 @@ async def save_feed_limits(request: Request, _: None = Depends(_verify_admin)):
     except (TypeError, ValueError):
         free, paid = 5, 15
     app_settings.save_feed_limits(free, paid)
+    return RedirectResponse(url="/admin/settings", status_code=302)
+
+
+@router.post("/admin-emails/save")
+async def save_admin_emails(request: Request, _: None = Depends(_verify_admin)):
+    form = dict(await request.form())
+    raw = form.get("emails", "")
+    emails = [e.strip() for e in raw.replace(",", "\n").splitlines() if e.strip()]
+    app_settings.save_admin_emails(emails)
     return RedirectResponse(url="/admin/settings", status_code=302)
 
 

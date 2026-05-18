@@ -240,6 +240,61 @@
     </div>
   </form>
 
+  <!-- ── Digest Email Recipients ──────────────────────────────────────── -->
+  <form method="POST" action="/admin/admin-emails/save" id="email-recipients-form">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
+      <div class="flex items-start justify-between">
+        <div>
+          <h2 class="text-sm font-semibold text-white">Digest Email Recipients</h2>
+          <p class="text-xs text-gray-500 mt-0.5">These addresses receive the morning ingestion digest. SMTP credentials are set via environment variables.</p>
+        </div>
+        {% if not env_status.get('SMTP_HOST') or not env_status.get('SMTP_USER') or not env_status.get('SMTP_PASS') %}
+        <span class="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-yellow-900/30 border border-yellow-700/40 text-yellow-400 text-xs font-medium">
+          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+          SMTP not configured
+        </span>
+        {% endif %}
+      </div>
+
+      <!-- Hidden input — JS keeps this in sync with the chip list -->
+      <input type="hidden" name="emails" id="emails-hidden" value="{{ admin_emails | join(',') }}">
+
+      <!-- Chip list -->
+      <div id="email-chips" class="flex flex-wrap gap-2 min-h-[2rem]">
+        {% for email in admin_emails %}
+        <span class="email-chip inline-flex items-center gap-1.5 px-3 py-1 bg-gray-700 border border-gray-600 rounded-full text-sm text-white">
+          {{ email }}
+          <button type="button" onclick="removeEmail('{{ email }}')"
+            class="text-gray-400 hover:text-red-400 transition-colors leading-none">
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          </button>
+        </span>
+        {% else %}
+        <span id="empty-hint" class="text-sm text-gray-600 italic">No recipients yet</span>
+        {% endfor %}
+      </div>
+
+      <!-- Add input -->
+      <div class="flex gap-2">
+        <input
+          type="email"
+          id="new-email-input"
+          placeholder="name@example.com"
+          class="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();addEmail();}">
+        <button type="button" onclick="addEmail()"
+          class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
+          Add
+        </button>
+      </div>
+
+      <button type="submit"
+        class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-lg transition-colors">
+        Save Recipients
+      </button>
+    </div>
+  </form>
+
   <!-- ── System info (read-only) ───────────────────────────────────────── -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
     <h2 class="text-sm font-semibold text-white mb-4">System Defaults</h2>
@@ -321,6 +376,56 @@ function updateTotal() {
 document.querySelectorAll('input[type=range][name^=cat_count_], input[type=checkbox][name^=cat_enabled_]').forEach(el => {
   el.addEventListener('input', updateTotal);
   el.addEventListener('change', updateTotal);
+});
+
+// ── Email recipients ─────────────────────────────────────────────────────────
+
+function _syncHidden() {
+  const chips = [...document.querySelectorAll('#email-chips .email-chip')];
+  document.getElementById('emails-hidden').value = chips.map(c => c.dataset.email).join(',');
+}
+
+function addEmail() {
+  const input = document.getElementById('new-email-input');
+  const val = input.value.trim().toLowerCase();
+  if (!val || !val.includes('@')) return;
+
+  // Deduplicate
+  const existing = [...document.querySelectorAll('#email-chips .email-chip')].map(c => c.dataset.email);
+  if (existing.includes(val)) { input.value = ''; return; }
+
+  // Remove empty hint if present
+  const hint = document.getElementById('empty-hint');
+  if (hint) hint.remove();
+
+  const chip = document.createElement('span');
+  chip.className = 'email-chip inline-flex items-center gap-1.5 px-3 py-1 bg-gray-700 border border-gray-600 rounded-full text-sm text-white';
+  chip.dataset.email = val;
+  chip.innerHTML = `${val}<button type="button" onclick="removeEmail('${val}')" class="text-gray-400 hover:text-red-400 transition-colors leading-none ml-0.5"><svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></button>`;
+  document.getElementById('email-chips').appendChild(chip);
+  _syncHidden();
+  input.value = '';
+  input.focus();
+}
+
+function removeEmail(email) {
+  document.querySelectorAll('#email-chips .email-chip').forEach(chip => {
+    if (chip.dataset.email === email) chip.remove();
+  });
+  if (!document.querySelector('#email-chips .email-chip')) {
+    const hint = document.createElement('span');
+    hint.id = 'empty-hint';
+    hint.className = 'text-sm text-gray-600 italic';
+    hint.textContent = 'No recipients yet';
+    document.getElementById('email-chips').appendChild(hint);
+  }
+  _syncHidden();
+}
+
+// Set data-email on server-rendered chips so JS can reference them
+document.querySelectorAll('#email-chips .email-chip').forEach(chip => {
+  const text = chip.childNodes[0].textContent.trim();
+  chip.dataset.email = text;
 });
 </script>
 {% endblock %}

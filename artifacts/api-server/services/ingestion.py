@@ -207,6 +207,12 @@ async def run_ingestion(
         })
         _write_log(fetched_count, enriched_count, error_count, status_str)
 
+        try:
+            from services import email_service
+            email_service.send_digest(stories=inserted_stories, cleanup=cleanup_result)
+        except Exception as exc:
+            log.warning("Digest email failed: %s", exc)
+
         return _ingestion_status
 
     except Exception as exc:

@@ -464,3 +464,17 @@ async def trigger_cleanup(_: None = Depends(_verify_admin)):
 
     asyncio.create_task(ingestion.run_cleanup())
     return RedirectResponse(url="/admin/dashboard", status_code=302)
+
+
+@router.post("/test-email")
+async def test_email(_: None = Depends(_verify_admin)):
+    from services import email_service
+    email_service.send_digest(
+        stories=[
+            {"title": "Test Story One", "category": "tech", "tier": "free"},
+            {"title": "Test Story Two", "category": "business", "tier": "paid"},
+        ],
+        cleanup={"deleted": 3, "extended": 1},
+    )
+    recipients = app_settings.get_admin_emails()
+    return {"sent_to": recipients, "note": "Check server logs if email did not arrive"}

@@ -70,7 +70,13 @@ def update_story(story_id: str, fields: dict[str, Any]) -> Optional[dict[str, An
 
 
 def delete_story(story_id: str) -> None:
-    get_client().table("stories").delete().eq("id", story_id).execute()
+    client = get_client()
+    for table in ("story_personalizations", "user_story_audio", "story_audio", "saved_stories"):
+        try:
+            client.table(table).delete().eq("story_id", story_id).execute()
+        except Exception as exc:
+            log.warning("delete_story: skipping %s for %s — %s", table, story_id, exc)
+    client.table("stories").delete().eq("id", story_id).execute()
 
 
 def get_stories(

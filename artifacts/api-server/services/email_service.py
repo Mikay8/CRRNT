@@ -32,15 +32,27 @@ def send_digest(stories: list[dict[str, Any]], cleanup: dict[str, int]) -> None:
     smtp_user = os.environ.get("SMTP_USER", "")
     smtp_pass = os.environ.get("SMTP_PASS", "")
 
+    log.info(
+        "Email digest: recipients=%s smtp_host=%s smtp_port=%d smtp_user=%s",
+        recipients, smtp_host or "(not set)", smtp_port, smtp_user or "(not set)",
+    )
+
     if not recipients:
-        log.info("Email digest skipped — no admin_emails configured")
+        log.warning("Email digest skipped — no admin_emails configured in app_settings")
         return
-    if not all([smtp_host, smtp_user, smtp_pass]):
-        log.info("Email digest skipped — SMTP env vars not fully configured")
+    if not smtp_host:
+        log.warning("Email digest skipped — SMTP_HOST not set")
+        return
+    if not smtp_user:
+        log.warning("Email digest skipped — SMTP_USER not set")
+        return
+    if not smtp_pass:
+        log.warning("Email digest skipped — SMTP_PASS not set")
         return
 
     now = datetime.now(timezone.utc)
     subject = f"CRRNT Daily Digest — {now.strftime('%B')} {now.day}, {now.year}"
+    log.info("Sending digest: subject=%r to=%s stories=%d", subject, recipients, len(stories))
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -51,16 +63,20 @@ def send_digest(stories: list[dict[str, Any]], cleanup: dict[str, int]) -> None:
 
     try:
         if smtp_port == 465:
+            log.info("Connecting via SMTP_SSL to %s:%d", smtp_host, smtp_port)
             with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
                 server.login(smtp_user, smtp_pass)
+                log.info("Authenticated — sending...")
                 server.sendmail(smtp_user, recipients, msg.as_string())
         else:
+            log.info("Connecting via SMTP+STARTTLS to %s:%d", smtp_host, smtp_port)
             with smtplib.SMTP(smtp_host, smtp_port) as server:
                 server.ehlo()
                 server.starttls()
                 server.login(smtp_user, smtp_pass)
+                log.info("Authenticated — sending...")
                 server.sendmail(smtp_user, recipients, msg.as_string())
-        log.info("Digest email sent to %s (%d stories)", recipients, len(stories))
+        log.info("Digest email sent successfully to %s (%d stories)", recipients, len(stories))
     except Exception as exc:
         log.warning("Failed to send digest email: %s", exc)
 

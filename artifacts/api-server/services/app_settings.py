@@ -15,12 +15,14 @@ log = logging.getLogger("crrnt.app_settings")
 _FEED_LIMITS_KEY = "feed_limits"
 _STORY_EXPIRY_KEY = "story_expiry"
 _ADMIN_EMAILS_KEY = "admin_emails"
+_SCHEDULE_KEY = "schedule_times"
 _TTL = 300.0  # seconds
 
 _DEFAULTS: dict[str, Any] = {
     _FEED_LIMITS_KEY: {"free": 5, "paid": 15},
     _STORY_EXPIRY_KEY: {"days": 7, "extension_days": 30},
     _ADMIN_EMAILS_KEY: {"emails": []},
+    _SCHEDULE_KEY: {"ingest_hour": 8, "ingest_minute": 0, "cleanup_hour": 3, "cleanup_minute": 0},
 }
 
 _cache: dict[str, Any] = {}
@@ -78,3 +80,17 @@ def get_admin_emails() -> list[str]:
 def save_admin_emails(emails: list[str]) -> None:
     _save(_ADMIN_EMAILS_KEY, {"emails": emails})
     log.info("Admin emails saved: %s", emails)
+
+
+def get_schedule_times() -> dict[str, int]:
+    return _get(_SCHEDULE_KEY)
+
+
+def save_schedule_times(ingest_hour: int, ingest_minute: int, cleanup_hour: int, cleanup_minute: int) -> None:
+    _save(_SCHEDULE_KEY, {
+        "ingest_hour": ingest_hour,
+        "ingest_minute": ingest_minute,
+        "cleanup_hour": cleanup_hour,
+        "cleanup_minute": cleanup_minute,
+    })
+    log.info("Schedule saved: ingestion=%02d:%02d ET cleanup=%02d:%02d ET", ingest_hour, ingest_minute, cleanup_hour, cleanup_minute)

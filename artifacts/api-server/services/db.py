@@ -71,7 +71,7 @@ def update_story(story_id: str, fields: dict[str, Any]) -> Optional[dict[str, An
 
 def delete_story(story_id: str) -> None:
     client = get_client()
-    for table in ("story_personalizations", "user_story_audio", "story_audio", "saved_stories"):
+    for table in ("story_personalizations", "user_story_audio", "saved_stories"):
         try:
             client.table(table).delete().eq("story_id", story_id).execute()
         except Exception as exc:

@@ -248,6 +248,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
     feed_limits = app_settings.get_feed_limits()
     story_expiry = app_settings.get_story_expiry()
     admin_emails = app_settings.get_admin_emails()
+    schedule_times = app_settings.get_schedule_times()
     env_status = {
         "SUPABASE_URL": bool(os.environ.get("SUPABASE_URL")),
         "SUPABASE_SERVICE_KEY": bool(os.environ.get("SUPABASE_SERVICE_KEY")),
@@ -275,6 +276,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
             "feed_limits": feed_limits,
             "story_expiry": story_expiry,
             "admin_emails": admin_emails,
+            "schedule_times": schedule_times,
             "env_status": env_status,
             "system_info": system_info,
         },
@@ -327,6 +329,22 @@ async def save_feed_limits(request: Request, _: None = Depends(_verify_admin)):
     except (TypeError, ValueError):
         free, paid = 5, 15
     app_settings.save_feed_limits(free, paid)
+    return RedirectResponse(url="/admin/settings", status_code=302)
+
+
+@router.post("/schedule/save")
+async def save_schedule(request: Request, _: None = Depends(_verify_admin)):
+    from services import scheduler as sched
+    form = dict(await request.form())
+    try:
+        ih, im = map(int, form.get("ingest_time", "08:00").split(":"))
+        ch, cm = map(int, form.get("cleanup_time", "03:00").split(":"))
+        ih = max(0, min(23, ih)); im = max(0, min(59, im))
+        ch = max(0, min(23, ch)); cm = max(0, min(59, cm))
+    except (ValueError, AttributeError):
+        ih, im, ch, cm = 8, 0, 3, 0
+    app_settings.save_schedule_times(ih, im, ch, cm)
+    sched.reschedule(ih, im, ch, cm)
     return RedirectResponse(url="/admin/settings", status_code=302)
 
 

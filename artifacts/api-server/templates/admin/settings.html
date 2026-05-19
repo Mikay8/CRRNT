@@ -148,6 +148,49 @@
 
   </form>
 
+  <!-- ── Schedule ─────────────────────────────────────────────────────── -->
+  <form method="POST" action="/admin/schedule/save">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-5">
+      <div>
+        <h2 class="text-sm font-semibold text-white">Cron Schedule</h2>
+        <p class="text-xs text-gray-500 mt-0.5">All times are Eastern Time (America/New_York). Changes take effect immediately — no restart needed.</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Ingestion -->
+        <div class="bg-gray-900/50 rounded-lg p-4 space-y-2">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-sm font-medium text-white">Daily ingestion</span>
+            <span class="text-xs text-gray-500">fetches &amp; enriches stories</span>
+          </div>
+          <input
+            type="time"
+            name="ingest_time"
+            value="{{ '%02d:%02d' | format(schedule_times.ingest_hour, schedule_times.ingest_minute) }}"
+            class="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 [color-scheme:dark]">
+        </div>
+
+        <!-- Cleanup -->
+        <div class="bg-gray-900/50 rounded-lg p-4 space-y-2">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-sm font-medium text-white">Daily cleanup</span>
+            <span class="text-xs text-gray-500">removes expired stories</span>
+          </div>
+          <input
+            type="time"
+            name="cleanup_time"
+            value="{{ '%02d:%02d' | format(schedule_times.cleanup_hour, schedule_times.cleanup_minute) }}"
+            class="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500 [color-scheme:dark]">
+        </div>
+      </div>
+
+      <button type="submit"
+        class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-lg transition-colors">
+        Save Schedule
+      </button>
+    </div>
+  </form>
+
   <!-- ── Feed Limits ──────────────────────────────────────────────────── -->
   <form method="POST" action="/admin/feed-limits/save">
     <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-5">

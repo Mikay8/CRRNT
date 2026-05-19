@@ -22,5 +22,6 @@ INSERT INTO app_settings (key, value) VALUES
   ('ingest_config', '{"mode":"both","categories":{"celebrity":{"enabled":true,"count":10},"tech":{"enabled":true,"count":10},"government":{"enabled":true,"count":10},"sports":{"enabled":true,"count":10},"business":{"enabled":true,"count":10},"science":{"enabled":true,"count":10}},"trending_count":25}'::jsonb),
   ('feed_limits',   '{"free":5,"paid":15}'::jsonb),
   ('story_expiry',  '{"days":7,"extension_days":30}'::jsonb),
-  ('admin_emails',  '{"emails":[]}'::jsonb)
+  ('admin_emails',   '{"emails":[]}'::jsonb),
+  ('schedule_times', '{"ingest_hour":8,"ingest_minute":0,"cleanup_hour":3,"cleanup_minute":0}'::jsonb)
 ON CONFLICT (key) DO NOTHING;

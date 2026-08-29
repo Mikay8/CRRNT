@@ -16,7 +16,7 @@ _scheduler: AsyncIOScheduler | None = None
 
 
 async def _daily_ingest() -> None:
-    params = ingest_config.get_run_params()
+    params = await ingest_config.get_run_params()
     log.info("Scheduled ingestion starting with params: %s", params)
     await ingestion.run_ingestion(**params)
 
@@ -25,14 +25,14 @@ async def _daily_cleanup() -> None:
     await ingestion.run_cleanup()
 
 
-def start() -> None:
+async def start() -> None:
     global _scheduler
     if _scheduler is not None:
         return
     _scheduler = AsyncIOScheduler(timezone="America/New_York")
 
     from services import app_settings
-    times = app_settings.get_schedule_times()
+    times = await app_settings.get_schedule_times()
     ih, im = times["ingest_hour"], times["ingest_minute"]
     ch, cm = times["cleanup_hour"], times["cleanup_minute"]
 

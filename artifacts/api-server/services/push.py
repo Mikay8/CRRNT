@@ -1,7 +1,6 @@
 """Expo Push Notification service.
 
-Tokens are stored in the push_tokens Supabase table (TEXT rows).
-Falls back gracefully if Supabase is not configured.
+Tokens are stored in the push_tokens Postgres table.
 """
 from __future__ import annotations
 
@@ -10,50 +9,45 @@ from typing import Any
 
 import httpx
 
+from services import db
+
 log = logging.getLogger("crrnt.push")
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
 
-def _db():
-    from services import db
-    return db.get_client()
-
-
-def get_tokens() -> list[str]:
+async def get_tokens() -> list[str]:
     try:
-        result = _db().table("push_tokens").select("token").execute()
-        return [r["token"] for r in (result.data or [])]
+        return await db.get_push_tokens()
     except Exception as exc:
         log.warning("push.get_tokens failed: %s", exc)
         return []
 
 
-def add_token(token: str) -> None:
+async def add_token(token: str) -> None:
     try:
-        _db().table("push_tokens").upsert({"token": token}).execute()
+        await db.add_push_token(token)
         log.info("Push token registered: %s…", token[:20])
     except Exception as exc:
         log.warning("push.add_token failed: %s", exc)
 
 
-def remove_token(token: str) -> None:
+async def remove_token(token: str) -> None:
     try:
-        _db().table("push_tokens").delete().eq("token", token).execute()
+        await db.remove_push_token(token)
     except Exception as exc:
         log.warning("push.remove_token failed: %s", exc)
 
 
-def token_count() -> int:
+async def token_count() -> int:
     try:
-        result = _db().table("push_tokens").select("token", count="exact").execute()
-        return result.count or 0
+        return await db.push_token_count()
     except Exception:
         return 0
 
 
 async def send_push(title: str, body: str, data: dict[str, Any] | None = None) -> None:
-    tokens = get_tokens()
+    tokens = await get_tokens()
     if not tokens:
         log.info("No push tokens — skipping notification")
         return

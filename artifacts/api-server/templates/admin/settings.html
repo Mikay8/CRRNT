@@ -199,37 +199,15 @@
         <p class="text-xs text-gray-500 mt-0.5">Controls how many stories are shown per category and how many a user can save.</p>
       </div>
 
-      <div class="grid grid-cols-2 gap-4">
-        <!-- Free limit -->
-        <div class="bg-gray-900/50 rounded-lg p-4 space-y-3">
-          <div class="flex items-center gap-2">
-            <span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-700 text-green-400">Free</span>
-            <span class="text-sm text-gray-300">Per-category &amp; save limit</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <input type="range" name="free_limit" min="1" max="50"
-              value="{{ feed_limits.free }}"
-              class="flex-1 accent-cyan-400 cursor-pointer"
-              oninput="document.getElementById('free-limit-val').textContent = this.value">
-            <span id="free-limit-val" class="text-cyan-400 font-bold text-sm w-8 text-right">{{ feed_limits.free }}</span>
-            <span class="text-gray-500 text-xs">stories</span>
-          </div>
-        </div>
-
-        <!-- Paid limit -->
-        <div class="bg-gray-900/50 rounded-lg p-4 space-y-3">
-          <div class="flex items-center gap-2">
-            <span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-yellow-900/30 text-yellow-400 border border-yellow-700/40">Pro</span>
-            <span class="text-sm text-gray-300">Per-category &amp; save limit</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <input type="range" name="paid_limit" min="1" max="100"
-              value="{{ feed_limits.paid }}"
-              class="flex-1 accent-cyan-400 cursor-pointer"
-              oninput="document.getElementById('paid-limit-val').textContent = this.value">
-            <span id="paid-limit-val" class="text-cyan-400 font-bold text-sm w-8 text-right">{{ feed_limits.paid }}</span>
-            <span class="text-gray-500 text-xs">stories</span>
-          </div>
+      <div class="bg-gray-900/50 rounded-lg p-4 space-y-3 max-w-sm">
+        <span class="text-sm text-gray-300">Per-category &amp; save limit</span>
+        <div class="flex items-center gap-3">
+          <input type="range" name="daily_limit" min="1" max="100"
+            value="{{ feed_limits.daily }}"
+            class="flex-1 accent-cyan-400 cursor-pointer"
+            oninput="document.getElementById('daily-limit-val').textContent = this.value">
+          <span id="daily-limit-val" class="text-cyan-400 font-bold text-sm w-8 text-right">{{ feed_limits.daily }}</span>
+          <span class="text-gray-500 text-xs">stories</span>
         </div>
       </div>
 

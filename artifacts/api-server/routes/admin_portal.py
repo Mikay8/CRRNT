@@ -16,8 +16,6 @@ Actions (POST, redirect back):
   POST /admin/stories/{id}/delete
   POST /admin/settings/save
 
-NOTE: User tier is read-only here. It is owned exclusively by RevenueCat
-and updated only via the /api/subscriptions/revenuecat/webhook handler.
 """
 
 from __future__ import annotations
@@ -79,9 +77,9 @@ def _verify_admin(
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _safe_db(fn, default):
+async def _safe_db(coro, default):
     try:
-        return fn()
+        return await coro
     except Exception as exc:
         log.warning("Admin DB call failed: %s", exc)
         return default
@@ -103,14 +101,10 @@ async def admin_root(_: None = Depends(_verify_admin)):
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: None = Depends(_verify_admin)):
-    total_stories = _safe_db(lambda: db.count_stories(), 0)
-    free_stories = _safe_db(lambda: db.count_stories(tier="free"), 0)
-    paid_stories = _safe_db(lambda: db.count_stories(tier="paid"), 0)
-    total_users = _safe_db(lambda: db.count_users(), 0)
-    paid_users = _safe_db(lambda: db.count_users(tier="paid"), 0)
-    active_subs = _safe_db(lambda: db.get_active_subscribers_count(), 0)
-    ingest_logs = _safe_db(lambda: db.get_ingestion_logs(limit=5), [])
-    breaking = _safe_db(lambda: db.get_active_breaking_news(), None)
+    total_stories = await _safe_db(db.count_stories(), 0)
+    total_users = await _safe_db(db.count_users(), 0)
+    ingest_logs = await _safe_db(db.get_ingestion_logs(limit=5), [])
+    breaking = await _safe_db(db.get_active_breaking_news(), None)
     ingest_status = ingestion.get_status()
     recent_logs = log_buffer.get_logs()
 
@@ -120,11 +114,7 @@ async def dashboard(request: Request, _: None = Depends(_verify_admin)):
         {
             "page": "dashboard",
             "total_stories": total_stories,
-            "free_stories": free_stories,
-            "paid_stories": paid_stories,
             "total_users": total_users,
-            "paid_users": paid_users,
-            "active_subs": active_subs,
             "ingest_logs": ingest_logs,
             "breaking": breaking,
             "ingest_status": ingest_status,
@@ -140,14 +130,13 @@ async def dashboard(request: Request, _: None = Depends(_verify_admin)):
 async def admin_stories(
     request: Request,
     category: Optional[str] = None,
-    tier: Optional[str] = None,
     _: None = Depends(_verify_admin),
 ):
-    stories = _safe_db(
-        lambda: db.get_stories(category=category or None, tier=tier or None, limit=100),
+    stories = await _safe_db(
+        db.get_stories(category=category or None, limit=100),
         [],
     )
-    total = _safe_db(lambda: db.count_stories(), 0)
+    total = await _safe_db(db.count_stories(), 0)
     return templates.TemplateResponse(
         request,
         "admin/stories.html",
@@ -156,7 +145,6 @@ async def admin_stories(
             "stories": stories,
             "total": total,
             "filter_category": category or "",
-            "filter_tier": tier or "",
             "categories": [
                 "celebrity",
                 "tech",
@@ -172,7 +160,7 @@ async def admin_stories(
 
 @router.post("/stories/{story_id}/delete")
 async def delete_story(story_id: str, _: None = Depends(_verify_admin)):
-    _safe_db(lambda: db.delete_story(story_id), None)
+    await _safe_db(db.delete_story(story_id), None)
     return RedirectResponse(url="/admin/stories", status_code=302)
 
 
@@ -182,15 +170,10 @@ async def delete_story(story_id: str, _: None = Depends(_verify_admin)):
 @router.get("/users", response_class=HTMLResponse)
 async def admin_users(
     request: Request,
-    tier: Optional[str] = None,
     _: None = Depends(_verify_admin),
 ):
-    users = _safe_db(
-        lambda: db.list_users(tier=tier or None, limit=100),
-        [],
-    )
-    total = _safe_db(lambda: db.count_users(), 0)
-    paid = _safe_db(lambda: db.count_users(tier="paid"), 0)
+    users = await _safe_db(db.list_users(limit=100), [])
+    total = await _safe_db(db.count_users(), 0)
     return templates.TemplateResponse(
         request,
         "admin/users.html",
@@ -198,8 +181,6 @@ async def admin_users(
             "page": "users",
             "users": users,
             "total": total,
-            "paid_count": paid,
-            "filter_tier": tier or "",
         },
     )
 
@@ -209,8 +190,8 @@ async def admin_users(
 
 @router.get("/breaking", response_class=HTMLResponse)
 async def admin_breaking(request: Request, _: None = Depends(_verify_admin)):
-    active = _safe_db(lambda: db.get_active_breaking_news(), None)
-    recent = _safe_db(lambda: db.get_recent_breaking_news(limit=10), [])
+    active = await _safe_db(db.get_active_breaking_news(), None)
+    recent = await _safe_db(db.get_recent_breaking_news(limit=10), [])
     return templates.TemplateResponse(
         request,
         "admin/breaking.html",
@@ -229,13 +210,13 @@ async def create_breaking(
     ttl_hours: int = Form(6),
     _: None = Depends(_verify_admin),
 ):
-    _safe_db(lambda: db.insert_breaking_news(headline, link, ttl_hours), None)
+    await _safe_db(db.insert_breaking_news(headline, link, ttl_hours), None)
     return RedirectResponse(url="/admin/breaking", status_code=302)
 
 
 @router.post("/breaking/{record_id}/dismiss")
 async def dismiss_breaking(record_id: str, _: None = Depends(_verify_admin)):
-    _safe_db(lambda: db.dismiss_breaking_news(record_id), None)
+    await _safe_db(db.dismiss_breaking_news(record_id), None)
     return RedirectResponse(url="/admin/breaking", status_code=302)
 
 
@@ -244,19 +225,18 @@ async def dismiss_breaking(record_id: str, _: None = Depends(_verify_admin)):
 
 @router.get("/settings", response_class=HTMLResponse)
 async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
-    cfg = ingest_config.get()
-    feed_limits = app_settings.get_feed_limits()
-    story_expiry = app_settings.get_story_expiry()
-    admin_emails = app_settings.get_admin_emails()
-    schedule_times = app_settings.get_schedule_times()
+    cfg = await ingest_config.get()
+    feed_limits = await app_settings.get_feed_limits()
+    story_expiry = await app_settings.get_story_expiry()
+    admin_emails = await app_settings.get_admin_emails()
+    schedule_times = await app_settings.get_schedule_times()
     env_status = {
-        "SUPABASE_URL": bool(os.environ.get("SUPABASE_URL")),
-        "SUPABASE_SERVICE_KEY": bool(os.environ.get("SUPABASE_SERVICE_KEY")),
+        "DATABASE_URL": bool(os.environ.get("DATABASE_URL")),
+        "JWT_SECRET": bool(os.environ.get("JWT_SECRET")),
         "ANTHROPIC_API_KEY": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "NEWSMESH_API_KEY": bool(os.environ.get("NEWSMESH_API_KEY")),
         "XAPI_KEY": bool(os.environ.get("XAPI_KEY")),
         "FISH_AUDIO_API_KEY": bool(os.environ.get("FISH_AUDIO_API_KEY")),
-        "REVENUECAT_WEBHOOK_SECRET": bool(os.environ.get("REVENUECAT_WEBHOOK_SECRET")),
         "ADMIN_PASSWORD": bool(os.environ.get("ADMIN_PASSWORD")),
         "SMTP_HOST": bool(os.environ.get("SMTP_HOST")),
         "SMTP_USER": bool(os.environ.get("SMTP_USER")),
@@ -305,7 +285,7 @@ def _parse_ingest_config(form: dict) -> dict:
 async def save_ingest_config(request: Request, _: None = Depends(_verify_admin)):
     form = dict(await request.form())
     cfg = _parse_ingest_config(form)
-    ingest_config.save(cfg)
+    await ingest_config.save(cfg)
     return RedirectResponse(url="/admin/settings", status_code=302)
 
 
@@ -314,8 +294,8 @@ async def save_and_run_ingest(request: Request, _: None = Depends(_verify_admin)
     import asyncio
     form = dict(await request.form())
     cfg = _parse_ingest_config(form)
-    ingest_config.save(cfg)
-    params = ingest_config.get_run_params()
+    await ingest_config.save(cfg)
+    params = await ingest_config.get_run_params()
     asyncio.create_task(ingestion.run_ingestion(**params))
     return RedirectResponse(url="/admin/dashboard", status_code=302)
 
@@ -324,11 +304,10 @@ async def save_and_run_ingest(request: Request, _: None = Depends(_verify_admin)
 async def save_feed_limits(request: Request, _: None = Depends(_verify_admin)):
     form = dict(await request.form())
     try:
-        free = max(1, min(50, int(form.get("free_limit", 5))))
-        paid = max(1, min(100, int(form.get("paid_limit", 15))))
+        daily = max(1, min(100, int(form.get("daily_limit", 15))))
     except (TypeError, ValueError):
-        free, paid = 5, 15
-    app_settings.save_feed_limits(free, paid)
+        daily = 15
+    await app_settings.save_feed_limits(daily)
     return RedirectResponse(url="/admin/settings", status_code=302)
 
 
@@ -343,7 +322,7 @@ async def save_schedule(request: Request, _: None = Depends(_verify_admin)):
         ch = max(0, min(23, ch)); cm = max(0, min(59, cm))
     except (ValueError, AttributeError):
         ih, im, ch, cm = 8, 0, 3, 0
-    app_settings.save_schedule_times(ih, im, ch, cm)
+    await app_settings.save_schedule_times(ih, im, ch, cm)
     sched.reschedule(ih, im, ch, cm)
     return RedirectResponse(url="/admin/settings", status_code=302)
 
@@ -353,7 +332,7 @@ async def save_admin_emails(request: Request, _: None = Depends(_verify_admin)):
     form = dict(await request.form())
     raw = form.get("emails", "")
     emails = [e.strip() for e in raw.replace(",", "\n").splitlines() if e.strip()]
-    app_settings.save_admin_emails(emails)
+    await app_settings.save_admin_emails(emails)
     return RedirectResponse(url="/admin/settings", status_code=302)
 
 
@@ -365,7 +344,7 @@ async def save_story_expiry(request: Request, _: None = Depends(_verify_admin)):
         extension_days = max(7, min(365, int(form.get("extension_days", 30))))
     except (TypeError, ValueError):
         days, extension_days = 7, 30
-    app_settings.save_story_expiry(days, extension_days)
+    await app_settings.save_story_expiry(days, extension_days)
     return RedirectResponse(url="/admin/settings", status_code=302)
 
 
@@ -398,19 +377,11 @@ def _dashboard_links() -> list[dict]:
             ),
         },
         {
-            "name": "Supabase",
-            "description": "Database, Auth, Storage usage and billing",
+            "name": "Railway",
+            "description": "Postgres database, deploys, and service usage/billing",
             "url": os.environ.get(
-                "SUPABASE_DASHBOARD_URL",
-                "https://supabase.com/dashboard/project/gdgqbneacjirwlkbgnyb",
-            ),
-        },
-        {
-            "name": "RevenueCat",
-            "description": "Subscription analytics, webhook logs, customer lookup",
-            "url": os.environ.get(
-                "REVENUECAT_DASHBOARD_URL",
-                "https://app.revenuecat.com/projects/7335007e/overview",
+                "RAILWAY_DASHBOARD_URL",
+                "https://railway.app/dashboard",
             ),
         },
         {
@@ -471,7 +442,7 @@ async def reset_usage(_: None = Depends(_verify_admin)):
 async def trigger_ingest(_: None = Depends(_verify_admin)):
     import asyncio
 
-    params = ingest_config.get_run_params()
+    params = await ingest_config.get_run_params()
     asyncio.create_task(ingestion.run_ingestion(**params))
     return RedirectResponse(url="/admin/dashboard", status_code=302)
 
@@ -487,12 +458,12 @@ async def trigger_cleanup(_: None = Depends(_verify_admin)):
 @router.post("/test-email")
 async def test_email(_: None = Depends(_verify_admin)):
     from services import email_service
-    email_service.send_digest(
+    await email_service.send_digest(
         stories=[
-            {"title": "Test Story One", "category": "tech", "tier": "free"},
-            {"title": "Test Story Two", "category": "business", "tier": "paid"},
+            {"title": "Test Story One", "category": "tech"},
+            {"title": "Test Story Two", "category": "business"},
         ],
         cleanup={"deleted": 3, "extended": 1},
     )
-    recipients = app_settings.get_admin_emails()
+    recipients = await app_settings.get_admin_emails()
     return {"sent_to": recipients, "note": "Check server logs if email did not arrive"}

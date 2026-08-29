@@ -22,18 +22,10 @@
         {% endfor %}
       </select>
     </div>
-    <div>
-      <label class="block text-xs text-gray-400 mb-1">Tier</label>
-      <select name="tier" class="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-cyan-500">
-        <option value="">All tiers</option>
-        <option value="free" {% if filter_tier == 'free' %}selected{% endif %}>Free</option>
-        <option value="paid" {% if filter_tier == 'paid' %}selected{% endif %}>PRO</option>
-      </select>
-    </div>
     <button type="submit" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg transition-colors">
       Filter
     </button>
-    {% if filter_category or filter_tier %}
+    {% if filter_category %}
     <a href="/admin/stories" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">Clear</a>
     {% endif %}
   </form>
@@ -47,8 +39,6 @@
           <tr class="border-b border-gray-700 text-gray-400 text-xs uppercase tracking-wider">
             <th class="px-5 py-3 text-left">Title</th>
             <th class="px-5 py-3 text-left">Category</th>
-            <th class="px-5 py-3 text-left">Tier</th>
-            <th class="px-5 py-3 text-left">Trending</th>
             <th class="px-5 py-3 text-left">Sentiment</th>
             <th class="px-5 py-3 text-left">TTS</th>
             <th class="px-5 py-3 text-left">Published</th>
@@ -65,20 +55,6 @@
             </td>
             <td class="px-5 py-3">
               <span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-700 text-gray-300">{{ s.category or '—' }}</span>
-            </td>
-            <td class="px-5 py-3">
-              {% if s.tier == 'paid' %}
-                <span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-900/30 text-yellow-400 border border-yellow-700/40">PRO</span>
-              {% else %}
-                <span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-700 text-green-400">Free</span>
-              {% endif %}
-            </td>
-            <td class="px-5 py-3">
-              {% if s.is_trending %}
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-900/40 text-cyan-400 border border-cyan-700/40">⚡ trending</span>
-              {% else %}
-                <span class="text-gray-600 text-xs">—</span>
-              {% endif %}
             </td>
             <td class="px-5 py-3">
               {% if s.sentiment_label %}

@@ -2,8 +2,8 @@ openapi: 3.1.0
 info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 2.0.0
-  description: CRRNT API — personalized news, stocks, auth, and subscriptions
+  version: 3.0.0
+  description: CRRNT API — personalized news, stocks, and auth
 servers:
   - url: /api
     description: Base API path
@@ -12,7 +12,6 @@ tags:
   - name: auth
   - name: stories
   - name: onboarding
-  - name: subscriptions
   - name: stocks
 paths:
   /healthz:
@@ -67,6 +66,125 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthResponse"
 
+  /auth/refresh:
+    post:
+      operationId: refreshSession
+      tags: [auth]
+      summary: Exchange a refresh token for a new session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+              required: [refresh_token]
+      responses:
+        "200":
+          description: New session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/forgot-password:
+    post:
+      operationId: forgotPassword
+      tags: [auth]
+      summary: Request a password reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+              required: [email]
+      responses:
+        "200":
+          description: Request accepted (always returns success to avoid email enumeration)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required: [message]
+
+  /auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [auth]
+      summary: Reset password using a token from the forgot-password email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+              required: [token, password]
+      responses:
+        "200":
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required: [message]
+
+  /auth/send-verification:
+    post:
+      operationId: sendVerification
+      tags: [auth]
+      summary: Send an email verification message
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required: [message]
+
+  /auth/mark-verified:
+    post:
+      operationId: markVerified
+      tags: [auth]
+      summary: Mark the current user's email as verified
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Marked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required: [message]
+
   /auth/logout:
     post:
       operationId: logout
@@ -85,6 +203,17 @@ paths:
                   message:
                     type: string
                 required: [message]
+
+  /auth/account:
+    delete:
+      operationId: deleteAccount
+      tags: [auth]
+      summary: Permanently delete the current user's account and all associated data
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Deleted
 
   /auth/me:
     get:
@@ -294,51 +423,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/QuizResponse"
 
-  # ── Subscriptions ─────────────────────────────────────────────────────────
-  /subscriptions/status:
-    get:
-      operationId: getSubscriptionStatus
-      tags: [subscriptions]
-      summary: Get subscription status
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: Subscription status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SubscriptionStatus"
-
-  /subscriptions/revenuecat/identify:
-    post:
-      operationId: identifyRevenueCat
-      tags: [subscriptions]
-      summary: Link RevenueCat customer ID
-      security:
-        - BearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                revenuecat_customer_id:
-                  type: string
-              required: [revenuecat_customer_id]
-      responses:
-        "200":
-          description: Linked
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                required: [message]
-
   # ── Stocks ────────────────────────────────────────────────────────────────
   /stock/{ticker}:
     get:
@@ -443,9 +527,6 @@ components:
           type: string
         category:
           $ref: "#/components/schemas/Category"
-        tier:
-          type: string
-          enum: [free, paid]
         published_at:
           type: string
         source_url:
@@ -459,6 +540,10 @@ components:
         life_impact:
           type: string
           description: How this story directly affects the reader's life
+        personalized_life_impact:
+          type: string
+          nullable: true
+          description: Life impact rewritten for this user's onboarding preferences, when available
         wallet_impact:
           type: string
           description: Everyday money ripple effect
@@ -501,8 +586,6 @@ components:
     StoriesResponse:
       type: object
       properties:
-        tier:
-          type: string
         totalCount:
           type: integer
         stories:
@@ -560,21 +643,15 @@ components:
           type: string
         email:
           type: string
-        tier:
-          type: string
-          enum: [free, paid]
-        subscription_status:
-          type: string
-        subscription_expires_at:
-          type: string
-          nullable: true
         onboarding_complete:
           type: boolean
         notification_consent:
           type: boolean
+        email_verified:
+          type: boolean
         created_at:
           type: string
-      required: [id, email, tier, onboarding_complete]
+      required: [id, email, onboarding_complete]
 
     SessionInfo:
       type: object
@@ -673,22 +750,6 @@ components:
           $ref: "#/components/schemas/UserPreferences"
           nullable: true
       required: [preferences]
-
-    SubscriptionStatus:
-      type: object
-      properties:
-        tier:
-          type: string
-          enum: [free, paid]
-        subscription_status:
-          type: string
-        subscription_expires_at:
-          type: string
-          nullable: true
-        revenuecat_customer_id:
-          type: string
-          nullable: true
-      required: [tier, subscription_status]
 
     StockPricePoint:
       type: object

@@ -31,7 +31,6 @@ import MiniAudioBar from "@/components/MiniAudioBar";
 import { ThemeProvider, useThemeContext } from "@/contexts/ThemeContext";
 import { AudioProvider } from "@/contexts/AudioContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { PurchasesProvider } from "@/contexts/PurchasesContext";
 import { SavedStoriesProvider } from "@/contexts/SavedStoriesContext";
 
 SplashScreen.preventAutoHideAsync();
@@ -153,67 +152,61 @@ function ThemedApp() {
               <QueryClientProvider client={queryClient}>
                 <AuthTokenWirer />
                 <AuthGate />
-                <PurchasesProvider>
-                  <SavedStoriesProvider>
-                    <AudioProvider>
-                      <StatusBar style={isDark ? "light" : "dark"} />
-                      <Stack
-                        screenOptions={{
-                          headerStyle: { backgroundColor: theme.bg },
-                          headerTintColor: theme.text,
-                          headerTitleStyle: {
-                            fontFamily: "Inter_700Bold",
-                            color: theme.text,
-                          },
-                          contentStyle: { backgroundColor: theme.bg },
+                <SavedStoriesProvider>
+                  <AudioProvider>
+                    <StatusBar style={isDark ? "light" : "dark"} />
+                    <Stack
+                      screenOptions={{
+                        headerStyle: { backgroundColor: theme.bg },
+                        headerTintColor: theme.text,
+                        headerTitleStyle: {
+                          fontFamily: "Inter_700Bold",
+                          color: theme.text,
+                        },
+                        contentStyle: { backgroundColor: theme.bg },
+                      }}
+                    >
+                      <Stack.Screen
+                        name="(tabs)"
+                        options={{ headerShown: false }}
+                      />
+                      <Stack.Screen
+                        name="story/[id]"
+                        options={{
+                          title: "",
+                          headerBackTitle: "Back",
+                          headerTransparent: true,
+                          presentation: "card",
                         }}
-                      >
-                        <Stack.Screen
-                          name="(tabs)"
-                          options={{ headerShown: false }}
-                        />
-                        <Stack.Screen
-                          name="story/[id]"
-                          options={{
-                            title: "",
-                            headerBackTitle: "Back",
-                            headerTransparent: true,
-                            presentation: "card",
-                          }}
-                        />
-                        <Stack.Screen
-                          name="login"
-                          options={{ headerShown: false }}
-                        />
-                        <Stack.Screen
-                          name="register"
-                          options={{ headerShown: false }}
-                        />
-                        <Stack.Screen
-                          name="auth/forgot-password"
-                          options={{ headerShown: false }}
-                        />
-                        <Stack.Screen
-                          name="onboarding"
-                          options={{ headerShown: false, gestureEnabled: false }}
-                        />
-                        <Stack.Screen
-                          name="settings/preferences"
-                          options={{ headerShown: false, presentation: "card" }}
-                        />
-                        <Stack.Screen
-                          name="subscription/manage"
-                          options={{ headerShown: false, presentation: "card" }}
-                        />
-                        <Stack.Screen
-                          name="+not-found"
-                          options={{ title: "Not found" }}
-                        />
-                      </Stack>
-                      <MiniAudioBar />
-                    </AudioProvider>
-                  </SavedStoriesProvider>
-                </PurchasesProvider>
+                      />
+                      <Stack.Screen
+                        name="login"
+                        options={{ headerShown: false }}
+                      />
+                      <Stack.Screen
+                        name="register"
+                        options={{ headerShown: false }}
+                      />
+                      <Stack.Screen
+                        name="auth/forgot-password"
+                        options={{ headerShown: false }}
+                      />
+                      <Stack.Screen
+                        name="onboarding"
+                        options={{ headerShown: false, gestureEnabled: false }}
+                      />
+                      <Stack.Screen
+                        name="settings/preferences"
+                        options={{ headerShown: false, presentation: "card" }}
+                      />
+                      <Stack.Screen
+                        name="+not-found"
+                        options={{ title: "Not found" }}
+                      />
+                    </Stack>
+                    <MiniAudioBar />
+                  </AudioProvider>
+                </SavedStoriesProvider>
               </QueryClientProvider>
             </AuthProvider>
           </ErrorBoundary>

@@ -24,7 +24,6 @@ import {
 } from "@workspace/api-client-react";
 import { getCategoryMeta } from "@/constants/categories";
 import { useAudio } from "@/contexts/AudioContext";
-import { usePurchases } from "@/contexts/PurchasesContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -115,7 +114,6 @@ export default function StoryDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { isPro } = usePurchases();
   const { saved } = useSavedStories();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
   const [audioTrackWidth, setAudioTrackWidth] = useState(0);
@@ -336,12 +334,6 @@ export default function StoryDetailScreen() {
           <View style={styles.metaRow}>
             <View style={styles.badgeRow}>
               <CategoryBadge category={story.category} size="md" />
-              {story.tier === "paid" && (
-                <View style={styles.proBadge}>
-                  <Ionicons name="star" size={9} color="#000" />
-                  <Text style={styles.proBadgeText}>PRO</Text>
-                </View>
-              )}
               {(() => {
                 const days = daysRemaining(story.expires_at);
                 if (days === null) return null;
@@ -364,8 +356,7 @@ export default function StoryDetailScreen() {
           <Text style={styles.title}>{story.title}</Text>
 
           {/* Audio player row */}
-          {isPro && (
-            <View style={styles.audioRow}>
+          <View style={styles.audioRow}>
               <Pressable
                 onPress={toggleAudio}
                 disabled={isAudioLoading && isThisStoryActive}
@@ -426,7 +417,6 @@ export default function StoryDetailScreen() {
                 </Text>
               ) : null}
             </View>
-          )}
 
           <Pressable
             onPress={openSource}
@@ -463,11 +453,9 @@ export default function StoryDetailScreen() {
                 </Text>
               </View>
               <Text style={styles.impactText}>
-                {isPro && story.personalized_life_impact
-                  ? story.personalized_life_impact
-                  : story.life_impact}
+                {story.personalized_life_impact ?? story.life_impact}
               </Text>
-              {isPro && story.personalized_life_impact ? (
+              {story.personalized_life_impact ? (
                 <Text style={styles.personalizedBadge}>Personalized for you</Text>
               ) : null}
             </View>
@@ -482,23 +470,6 @@ export default function StoryDetailScreen() {
               </View>
               <Text style={styles.impactText}>{story.wallet_impact}</Text>
             </View>
-          ) : !isPro ? (
-            <Pressable
-              onPress={() => router.push("/subscription/manage")}
-              style={[styles.insightCard, styles.lockedCard]}
-            >
-              <View style={styles.sectionHeader}>
-                <Ionicons name="sparkles" size={16} color={palette.accent} />
-                <Text style={styles.sectionLabel}>Wallet impact</Text>
-              </View>
-              <Text style={styles.lockedPlaceholder}>
-                {"██████████████████████████\n█████████████████"}
-              </Text>
-              <View style={styles.lockedBadge}>
-                <Ionicons name="lock-closed" size={12} color={palette.accent} />
-                <Text style={styles.lockedBadgeText}>Unlock with CRRNT Pro</Text>
-              </View>
-            </Pressable>
           ) : null}
 
           {/* Stock chart */}
@@ -602,23 +573,6 @@ export default function StoryDetailScreen() {
                   </Text>
                 ) : null}
               </View>
-            ) : !isPro ? (
-              <Pressable
-                onPress={() => router.push("/subscription/manage")}
-                style={[styles.stockCard, styles.lockedCard]}
-              >
-                <View style={styles.sectionHeader}>
-                  <Ionicons name="bar-chart-outline" size={16} color={palette.accent} />
-                  <Text style={styles.sectionLabel}>Stock data</Text>
-                </View>
-                <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
-                  <Ionicons name="lock-closed" size={22} color={palette.textMuted} />
-                </View>
-                <View style={styles.lockedBadge}>
-                  <Ionicons name="lock-closed" size={12} color={palette.accent} />
-                  <Text style={styles.lockedBadgeText}>Unlock with CRRNT Pro</Text>
-                </View>
-              </Pressable>
             ) : (
               <View style={styles.noTickerCard}>
                 <Ionicons
@@ -795,21 +749,6 @@ function createStyles(palette: ThemeColors) {
       alignItems: "center",
     },
     badgeRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-    proBadge: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 3,
-      paddingHorizontal: 7,
-      paddingVertical: 3,
-      borderRadius: 10,
-      backgroundColor: palette.accent,
-    },
-    proBadgeText: {
-      fontSize: 10,
-      fontWeight: "800",
-      color: "#000",
-      letterSpacing: 0.5,
-    },
     actionButtons: { flexDirection: "row", alignItems: "center", gap: 10 },
     expiryBadge: {
       flexDirection: "row",
@@ -1013,34 +952,6 @@ function createStyles(palette: ThemeColors) {
       fontSize: 13,
       color: palette.textMuted,
       flex: 1,
-    },
-    lockedCard: {
-      borderColor: palette.accent + "33",
-    },
-    lockedPlaceholder: {
-      fontFamily: "Inter_400Regular",
-      fontSize: 15,
-      lineHeight: 22,
-      color: palette.textMuted,
-      opacity: 0.25,
-      letterSpacing: -1,
-    },
-    lockedBadge: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-      alignSelf: "flex-start",
-      backgroundColor: palette.accent + "18",
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: palette.accent + "44",
-    },
-    lockedBadgeText: {
-      fontFamily: "Inter_600SemiBold",
-      fontSize: 12,
-      color: palette.accent,
     },
     sentimentRow: { flexDirection: "row", alignItems: "center" },
     sentimentBadge: {

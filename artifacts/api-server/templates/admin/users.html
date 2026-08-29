@@ -7,15 +7,8 @@
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-bold text-white">Users</h1>
-      <p class="text-gray-500 text-sm mt-0.5">{{ total }} total · {{ paid_count }} paid</p>
+      <p class="text-gray-500 text-sm mt-0.5">{{ total }} total</p>
     </div>
-  </div>
-
-  <!-- Tier tabs -->
-  <div class="flex gap-1 bg-gray-800 border border-gray-700 rounded-lg p-1 w-fit">
-    <a href="/admin/users" class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {% if not filter_tier %}bg-cyan-600 text-white{% else %}text-gray-400 hover:text-white{% endif %}">All</a>
-    <a href="/admin/users?tier=free" class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {% if filter_tier == 'free' %}bg-cyan-600 text-white{% else %}text-gray-400 hover:text-white{% endif %}">Free</a>
-    <a href="/admin/users?tier=paid" class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {% if filter_tier == 'paid' %}bg-cyan-600 text-white{% else %}text-gray-400 hover:text-white{% endif %}">Paid</a>
   </div>
 
   <!-- Users table -->
@@ -26,11 +19,8 @@
         <thead>
           <tr class="border-b border-gray-700 text-gray-400 text-xs uppercase tracking-wider">
             <th class="px-5 py-3 text-left">Email</th>
-            <th class="px-5 py-3 text-left">Tier</th>
-            <th class="px-5 py-3 text-left">Sub Status</th>
+            <th class="px-5 py-3 text-left">Verified</th>
             <th class="px-5 py-3 text-left">Onboarding</th>
-            <th class="px-5 py-3 text-left">RC ID</th>
-            <th class="px-5 py-3 text-left">Sub Expires</th>
             <th class="px-5 py-3 text-left">Joined</th>
           </tr>
         </thead>
@@ -39,26 +29,13 @@
           <tr class="hover:bg-gray-700/30 transition-colors">
             <td class="px-5 py-3 text-white font-medium">{{ u.email }}</td>
             <td class="px-5 py-3">
-              {% if u.tier == 'paid' %}
-                <span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-900/30 text-yellow-400 border border-yellow-700/40">PRO</span>
-              {% else %}
-                <span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-700 text-green-400">Free</span>
-              {% endif %}
-            </td>
-            <td class="px-5 py-3">
-              {% set ss = u.subscription_status or 'none' %}
-              {% if ss == 'active' %}<span class="text-green-400 text-xs">active</span>
-              {% elif ss == 'cancelled' %}<span class="text-orange-400 text-xs">cancelled</span>
-              {% elif ss == 'expired' %}<span class="text-red-400 text-xs">expired</span>
-              {% elif ss == 'billing_issue' %}<span class="text-red-400 text-xs">billing issue</span>
-              {% else %}<span class="text-gray-500 text-xs">none</span>{% endif %}
+              {% if u.email_verified %}<span class="text-green-400 text-xs">✓ Verified</span>
+              {% else %}<span class="text-gray-500 text-xs">Unverified</span>{% endif %}
             </td>
             <td class="px-5 py-3">
               {% if u.onboarding_complete %}<span class="text-green-400 text-xs">✓ Done</span>
               {% else %}<span class="text-gray-500 text-xs">Pending</span>{% endif %}
             </td>
-            <td class="px-5 py-3 text-gray-400 text-xs font-mono">{{ (u.revenuecat_customer_id or '—')[:16] }}</td>
-            <td class="px-5 py-3 text-gray-400 text-xs font-mono">{{ u.subscription_expires_at[:10] if u.subscription_expires_at else '—' }}</td>
             <td class="px-5 py-3 text-gray-400 text-xs font-mono">{{ u.created_at[:10] if u.created_at else '—' }}</td>
           </tr>
           {% endfor %}

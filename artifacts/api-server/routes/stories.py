@@ -8,18 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from services import app_settings, db, enrichment, fish_audio, personalization  # fish_audio used in audio endpoint
+from services import app_settings, db, enrichment, fish_audio, personalization
 from services.auth_middleware import get_current_user, get_current_user_optional
 
 log = logging.getLogger("crrnt.stories")
 router = APIRouter(prefix="/api/stories", tags=["stories"])
-
-_FREE_STRIP = {"wallet_impact", "stock_note"}
-
-
-def _strip_paid_fields(story: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in story.items() if k not in _FREE_STRIP}
-
 
 ALLOWED_CATEGORIES = {
     "celebrity", "tech", "government", "sports",
@@ -37,26 +30,16 @@ async def daily_feed(
     if category and category not in ALLOWED_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Unknown category '{category}'")
 
-    tier = user.get("tier", "free") if user else "free"
-    prefs = db.get_preferences(user["id"]) if user else {}
+    prefs = await db.get_preferences(user["id"]) if user else {}
 
-    stories = db.get_stories_for_feed()
+    stories = await db.get_stories_for_feed()
 
     if category:
         stories = [s for s in stories if s.get("category") == category]
 
-    # Guests and free users only see free-tier stories
-    if tier != "paid":
-        stories = [s for s in stories if s.get("tier") == "free"]
-
-    ranked = personalization.personalize_feed(stories, prefs, tier, category=category)
-
-    if tier != "paid":
-        ranked = [s for s in ranked if s.get("tier") == "free"]
-        ranked = [_strip_paid_fields(s) for s in ranked]
+    ranked = await personalization.personalize_feed(stories, prefs, category=category)
 
     return {
-        "tier": tier,
         "totalCount": len(ranked),
         "stories": ranked,
     }
@@ -66,7 +49,7 @@ async def daily_feed(
 
 @router.get("/breaking")
 async def breaking_news(user: dict = Depends(get_current_user)) -> dict[str, Any]:
-    card = db.get_active_breaking_news()
+    card = await db.get_active_breaking_news()
     return {"breaking": card}
 
 
@@ -74,7 +57,7 @@ async def breaking_news(user: dict = Depends(get_current_user)) -> dict[str, Any
 
 @router.get("/saved")
 async def get_saved(user: dict = Depends(get_current_user)) -> dict[str, Any]:
-    saved = db.get_saved_stories(user["id"])
+    saved = await db.get_saved_stories(user["id"])
     return {"totalCount": len(saved), "stories": saved}
 
 
@@ -86,10 +69,7 @@ async def search(
     limit: int = Query(default=20, ge=1, le=100),
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    tier = user.get("tier", "free")
-    stories = db.get_stories_for_feed()
-    if tier != "paid":
-        stories = [s for s in stories if s.get("tier") == "free"]
+    stories = await db.get_stories_for_feed()
 
     needle = q.strip().lower()
     results = [
@@ -99,8 +79,6 @@ async def search(
             s.get("wallet_impact"), s.get("stock_note"), s.get("category"),
         ])).lower()
     ]
-    if tier != "paid":
-        results = [_strip_paid_fields(s) for s in results]
     return {"query": q, "totalCount": len(results), "stories": results[:limit]}
 
 
@@ -119,41 +97,29 @@ async def get_story(
     request: Request,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    story = db.get_story(story_id)
+    story = await db.get_story(story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 
-    # Gate paid content
-    if story.get("tier") == "paid" and user.get("tier") != "paid":
-        raise HTTPException(
-            status_code=403,
-            detail="This story requires a CRRNT Pro subscription",
-        )
-
-    is_paid = user.get("tier") == "paid"
     personalized_text: Optional[str] = None
-
-    if not is_paid:
-        story = _strip_paid_fields(story)
-    else:
-        try:
-            prefs = db.get_preferences(user["id"])
-            if prefs:
-                cached = db.get_personalization(user["id"], story_id)
-                if cached:
-                    personalized_text = cached["personalized_text"]
-                    story["personalized_life_impact"] = personalized_text
-                else:
-                    text = await enrichment.personalize_life_impact(story, prefs)
-                    if text:
-                        try:
-                            db.store_personalization(user["id"], story_id, text)
-                        except Exception as e:
-                            log.warning("Failed to cache personalization for %s: %s", story_id, e)
-                        personalized_text = text
-                        story["personalized_life_impact"] = text
-        except Exception as e:
-            log.warning("Personalization block failed for story %s: %s", story_id, e)
+    try:
+        prefs = await db.get_preferences(user["id"])
+        if prefs:
+            cached = await db.get_personalization(user["id"], story_id)
+            if cached:
+                personalized_text = cached["personalized_text"]
+                story["personalized_life_impact"] = personalized_text
+            else:
+                text = await enrichment.personalize_life_impact(story, prefs)
+                if text:
+                    try:
+                        await db.store_personalization(user["id"], story_id, text)
+                    except Exception as e:
+                        log.warning("Failed to cache personalization for %s: %s", story_id, e)
+                    personalized_text = text
+                    story["personalized_life_impact"] = text
+    except Exception as e:
+        log.warning("Personalization block failed for story %s: %s", story_id, e)
 
     # Embed auth token in tts_url so the client can stream audio without extra auth wiring
     token = _extract_request_token(request)
@@ -170,16 +136,13 @@ async def save_story(
     story_id: str,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    story = db.get_story(story_id)
+    story = await db.get_story(story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
-    if story.get("tier") == "paid" and user.get("tier") != "paid":
-        raise HTTPException(status_code=403, detail="Cannot save paid story on free tier")
-    limits = app_settings.get_feed_limits()
-    save_limit = limits["paid"] if user.get("tier") == "paid" else limits["free"]
-    if db.count_saved_stories(user["id"]) >= save_limit:
+    limits = await app_settings.get_feed_limits()
+    if await db.count_saved_stories(user["id"]) >= limits["daily"]:
         raise HTTPException(status_code=403, detail="save_limit_reached")
-    result = db.save_story(user["id"], story_id)
+    result = await db.save_story(user["id"], story_id)
     return {"message": "Story saved", "saved": result}
 
 
@@ -188,7 +151,7 @@ async def unsave_story(
     story_id: str,
     user: dict = Depends(get_current_user),
 ) -> dict[str, str]:
-    db.unsave_story(user["id"], story_id)
+    await db.unsave_story(user["id"], story_id)
     return {"message": "Story removed from saved"}
 
 
@@ -232,41 +195,39 @@ async def get_story_audio(
     request: Request,
     user: dict = Depends(get_current_user),
 ) -> Response:
-    story = db.get_story(story_id)
+    story = await db.get_story(story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 
     user_id = user["id"]
-    is_paid = user.get("tier") == "paid"
 
     # Check per-user cache first
-    cached = db.get_user_audio(user_id, story_id)
+    cached = await db.get_user_audio(user_id, story_id)
     if cached:
         return _serve_audio(cached, request.headers.get("range"))
 
     # Generate full audio for this user — also generate+cache personalization if not yet stored
     personalized_text: Optional[str] = None
-    if is_paid:
-        try:
-            p = db.get_personalization(user_id, story_id)
-            if p:
-                personalized_text = p.get("personalized_text")
-            else:
-                prefs = db.get_preferences(user_id)
-                if prefs:
-                    text = await enrichment.personalize_life_impact(story, prefs)
-                    if text:
-                        db.store_personalization(user_id, story_id, text)
-                        personalized_text = text
-        except Exception as exc:
-            log.warning("Personalization in audio endpoint failed story=%s: %s", story_id, exc)
+    try:
+        p = await db.get_personalization(user_id, story_id)
+        if p:
+            personalized_text = p.get("personalized_text")
+        else:
+            prefs = await db.get_preferences(user_id)
+            if prefs:
+                text = await enrichment.personalize_life_impact(story, prefs)
+                if text:
+                    await db.store_personalization(user_id, story_id, text)
+                    personalized_text = text
+    except Exception as exc:
+        log.warning("Personalization in audio endpoint failed story=%s: %s", story_id, exc)
 
     audio_bytes = await fish_audio.synthesize_for_user(
         story,
         story_id,
         user_id,
         personalized_text=personalized_text,
-        include_wallet=is_paid,
+        include_wallet=True,
     )
     if not audio_bytes:
         raise HTTPException(status_code=503, detail="Audio generation temporarily unavailable")

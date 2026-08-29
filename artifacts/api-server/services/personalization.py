@@ -44,45 +44,37 @@ def score_story(story: dict[str, Any], prefs: dict[str, Any]) -> int:
     return score
 
 
-def personalize_feed(
+async def personalize_feed(
     stories: list[dict[str, Any]],
     prefs: Optional[dict[str, Any]],
-    tier: str,
     category: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """Score and rank stories for a user.
 
     When browsing "All" (no category filter), all available stories are returned.
-    When a specific category is selected, results are capped (free → 5, paid → 15).
+    When a specific category is selected, results are capped at the configured
+    daily limit, guaranteeing at least one story per category first.
     """
     if prefs is None:
         prefs = {}
 
-    if tier == "paid":
-        pool = stories
-    else:
-        pool = [s for s in stories if s.get("tier") == "free"]
-
-    scored = sorted(pool, key=lambda s: score_story(s, prefs), reverse=True)
+    scored = sorted(stories, key=lambda s: score_story(s, prefs), reverse=True)
 
     if category is None:
         return scored
 
-    limits = app_settings.get_feed_limits()
-    limit = limits["paid"] if tier == "paid" else limits["free"]
+    limits = await app_settings.get_feed_limits()
+    limit = limits["daily"]
 
-    if tier != "paid":
-        # Guarantee at least one story per category before applying the limit
-        seen_cats: set[str] = set()
-        guaranteed = []
-        fill = []
-        for s in scored:
-            cat = s.get("category", "")
-            if cat not in seen_cats:
-                seen_cats.add(cat)
-                guaranteed.append(s)
-            else:
-                fill.append(s)
-        return (guaranteed + fill)[:limit]
-
-    return scored[:limit]
+    # Guarantee at least one story per category before applying the limit
+    seen_cats: set[str] = set()
+    guaranteed = []
+    fill = []
+    for s in scored:
+        cat = s.get("category", "")
+        if cat not in seen_cats:
+            seen_cats.add(cat)
+            guaranteed.append(s)
+        else:
+            fill.append(s)
+    return (guaranteed + fill)[:limit]

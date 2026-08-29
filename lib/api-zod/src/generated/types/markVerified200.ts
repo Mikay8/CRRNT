@@ -5,9 +5,7 @@
  * CRRNT API — personalized news, stocks, and auth
  * OpenAPI spec version: 3.0.0
  */
-import type { Story } from "./story";
 
-export interface StoriesResponse {
-  totalCount: number;
-  stories: Story[];
-}
+export type MarkVerified200 = {
+  message: string;
+};

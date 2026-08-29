@@ -57,12 +57,12 @@ async def save_quiz(
     body: QuizPayload,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    prefs = db.upsert_preferences(user["id"], body.model_dump(exclude_none=True))
-    db.update_user(user["id"], {"onboarding_complete": True})
+    prefs = await db.upsert_preferences(user["id"], body.model_dump(exclude_none=True))
+    await db.update_user(user["id"], {"onboarding_complete": True})
     return {"message": "Preferences saved", "preferences": prefs}
 
 
 @router.get("/quiz")
 async def get_quiz(user: dict = Depends(get_current_user)) -> dict[str, Any]:
-    prefs = db.get_preferences(user["id"])
+    prefs = await db.get_preferences(user["id"])
     return {"preferences": prefs}

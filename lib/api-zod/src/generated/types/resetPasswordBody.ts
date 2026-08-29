@@ -5,9 +5,9 @@
  * CRRNT API — personalized news, stocks, and auth
  * OpenAPI spec version: 3.0.0
  */
-import type { Story } from "./story";
 
-export interface StoriesResponse {
-  totalCount: number;
-  stories: Story[];
-}
+export type ResetPasswordBody = {
+  token: string;
+  /** @minLength 8 */
+  password: string;
+};

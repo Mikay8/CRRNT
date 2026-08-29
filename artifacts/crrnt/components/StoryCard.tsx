@@ -10,7 +10,6 @@ import CategoryBadge from "@/components/CategoryBadge";
 import SaveButton from "@/components/SaveButton";
 import { useAudio } from "@/contexts/AudioContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { usePurchases } from "@/contexts/PurchasesContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { formatRelativeTime, isToday } from "@/utils/time";
@@ -83,7 +82,6 @@ export function StoryCard({ story }: StoryCardProps) {
   const { toggleSaved } = useSavedStories();
   const { user } = useAuth();
   const { playStory, isBarVisible, addToQueue } = useAudio();
-  const { isPro } = usePurchases();
   const { theme: palette } = useThemeContext();
   const styles = useMemo(() => createStyles(palette), [palette]);
 
@@ -133,7 +131,7 @@ export function StoryCard({ story }: StoryCardProps) {
       ref={swipeableRef}
       containerStyle={styles.swipeContainer}
       childrenContainerStyle={styles.card}
-      renderLeftActions={isPro ? () => <PlayAction isQueue={isBarVisible} /> : undefined}
+      renderLeftActions={() => <PlayAction isQueue={isBarVisible} />}
       renderRightActions={() => <SaveAction accent={palette.accent} />}
       onSwipeableWillOpen={(_direction) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
@@ -160,15 +158,13 @@ export function StoryCard({ story }: StoryCardProps) {
         <View style={styles.body}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
-              {isPro && (
-                <Pressable
-                  onPress={handlePlayButton}
-                  hitSlop={6}
-                  style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-                >
-                  <Ionicons name="play-circle" size={22} color="#22C55E" />
-                </Pressable>
-              )}
+              <Pressable
+                onPress={handlePlayButton}
+                hitSlop={6}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="play-circle" size={22} color="#22C55E" />
+              </Pressable>
               <CategoryBadge category={story.category} />
             </View>
             <View style={styles.actions}>

@@ -1,12 +1,10 @@
 /**
  * Onboarding flow — runs once after registration.
  *
- * Phase 1 (privacy):  Data & privacy disclosure — required for all new users.
- * Phase 2 (paywall):  RevenueCat paywall presented as a native modal.
- *                     Purchased → quiz.  Dismissed → mark complete, go to feed.
- * Phase 3 (quiz):     Personalization quiz — paid users only.
+ * Phase 1 (privacy): Data & privacy disclosure — required for all new users.
+ * Phase 2 (quiz):     Personalization quiz.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -20,12 +18,11 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
-import { usePurchases } from "@/contexts/PurchasesContext";
 import { useSaveOnboardingQuiz } from "@workspace/api-client-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Phase = "privacy" | "paywall" | "quiz";
+type Phase = "privacy" | "quiz";
 
 // ── Quiz data ─────────────────────────────────────────────────────────────────
 
@@ -133,8 +130,7 @@ function PrivacyScreen({ onContinue }: { onContinue: () => void }) {
 
         <Text style={styles.privacySection}>Third-party services</Text>
         <Text style={styles.privacyBody}>
-          • <Text style={styles.privacyBold}>Supabase</Text> — secure cloud database where your account and preferences are stored{"\n"}
-          • <Text style={styles.privacyBold}>RevenueCat</Text> — handles subscription payments through Apple / Google; CRRNT never sees your card details{"\n"}
+          • <Text style={styles.privacyBold}>Railway</Text> — secure cloud database where your account and preferences are stored{"\n"}
           • <Text style={styles.privacyBold}>Expo / Apple / Google</Text> — push notifications (optional; you can decline)
         </Text>
 
@@ -168,38 +164,6 @@ function PrivacyScreen({ onContinue }: { onContinue: () => void }) {
           )}
         </Pressable>
       </View>
-    </View>
-  );
-}
-
-// ── Paywall gate ──────────────────────────────────────────────────────────────
-
-function PaywallGate({
-  onPurchased,
-  onSkipped,
-}: {
-  onPurchased: () => void;
-  onSkipped: () => void;
-}) {
-  const { presentPaywall } = usePurchases();
-  const called = useRef(false);
-
-  useEffect(() => {
-    if (called.current) return;
-    called.current = true;
-
-    presentPaywall().then((purchased) => {
-      if (purchased) {
-        onPurchased();
-      } else {
-        onSkipped();
-      }
-    });
-  }, []);
-
-  return (
-    <View style={styles.paywallWait}>
-      <ActivityIndicator color="#06B6D4" size="large" />
     </View>
   );
 }
@@ -373,16 +337,7 @@ export default function OnboardingScreen() {
   };
 
   if (phase === "privacy") {
-    return <PrivacyScreen onContinue={() => setPhase("paywall")} />;
-  }
-
-  if (phase === "paywall") {
-    return (
-      <PaywallGate
-        onPurchased={() => setPhase("quiz")}
-        onSkipped={finish}
-      />
-    );
+    return <PrivacyScreen onContinue={() => setPhase("quiz")} />;
   }
 
   return <QuizScreen onComplete={finish} />;
@@ -441,13 +396,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  // ── Paywall waiting ───────────────────────────────────────────────────────────
-  paywallWait: {
-    flex: 1,
-    backgroundColor: "#090D12",
-    alignItems: "center",
-    justifyContent: "center",
-  },
 
   // ── Quiz ──────────────────────────────────────────────────────────────────────
   progressTrack: {

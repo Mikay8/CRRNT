@@ -1,9 +1,8 @@
 """CRRNT FastAPI server.
 
-Architecture v2:
-  - All data stored in Supabase PostgreSQL (no KV / Replit DB)
-  - Supabase Auth for user auth (JWT validated per-request)
-  - RevenueCat webhooks for subscription management
+Architecture v3:
+  - All data stored in Railway PostgreSQL (asyncpg connection pool)
+  - Local JWT auth (bcrypt password hashing, JWT validated per-request)
   - APScheduler for daily ingestion (08:00 ET) and cleanup (03:00 ET)
   - Jinja2 admin portal at /admin (HTTP Basic Auth)
 """
@@ -25,9 +24,8 @@ from routes import health, stocks
 from routes import auth as auth_routes
 from routes import stories as stories_routes
 from routes import onboarding as onboarding_routes
-from routes import subscriptions as subscriptions_routes
 from routes import admin_portal
-from services import log_buffer, scheduler, metrics
+from services import db, log_buffer, scheduler, metrics
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,20 +37,23 @@ log.addHandler(log_buffer.handler)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    log.info("CRRNT API v2 starting up")
+    log.info("CRRNT API v3 starting up")
 
-    # Validate required Supabase env vars (warn but don't crash so healthz works)
-    if not os.environ.get("SUPABASE_URL"):
-        log.warning("SUPABASE_URL is not set — database calls will fail")
-    if not os.environ.get("SUPABASE_SERVICE_KEY"):
-        log.warning("SUPABASE_SERVICE_KEY is not set — database calls will fail")
+    if not os.environ.get("DATABASE_URL"):
+        log.warning("DATABASE_URL is not set — database calls will fail")
+    else:
+        await db.init_pool()
 
-    scheduler.start()
+    if not os.environ.get("JWT_SECRET"):
+        log.warning("JWT_SECRET is not set — auth will fail")
+
+    await scheduler.start()
 
     try:
         yield
     finally:
         scheduler.shutdown()
+        await db.close_pool()
         log.info("CRRNT API shutting down")
 
 
@@ -119,7 +120,6 @@ app.include_router(stocks.router, prefix="/api")
 app.include_router(auth_routes.router)          # already prefixed /api/auth
 app.include_router(stories_routes.router)       # already prefixed /api/stories
 app.include_router(onboarding_routes.router)    # already prefixed /api/onboarding
-app.include_router(subscriptions_routes.router) # already prefixed /api/subscriptions
 
 # ── Legacy push token endpoint (backward compat with old app installs) ────────
 from fastapi import Request
@@ -132,7 +132,7 @@ class PushTokenBody(BaseModel):
 async def register_push_token(body: PushTokenBody) -> dict:
     try:
         from services import push
-        push.add_token(body.token)
+        await push.add_token(body.token)
         return {"status": "registered"}
     except Exception:
         return {"status": "ok"}

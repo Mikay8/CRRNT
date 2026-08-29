@@ -1,5 +1,5 @@
 /**
- * AuthContext — manages Supabase JWT session for the CRRNT app.
+ * AuthContext — manages the JWT session for the CRRNT app.
  *
  * Tokens are persisted in AsyncStorage so the user stays logged in across
  * app restarts.  All API calls that need authentication should call
@@ -50,9 +50,6 @@ function isTokenExpired(token: string): boolean {
 export interface CrrntUser {
   id: string;
   email: string;
-  tier: "free" | "paid";
-  subscription_status: string;
-  subscription_expires_at: string | null;
   onboarding_complete: boolean;
   notification_consent: boolean;
   email_verified?: boolean;

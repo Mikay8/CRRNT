@@ -1,4 +1,4 @@
-"""Ingestion configuration — persisted to Supabase (primary) and JSON file (fallback).
+"""Ingestion configuration — persisted to Postgres (primary) and JSON file (fallback).
 
 Config shape:
   {
@@ -14,14 +14,14 @@ Config shape:
     "trending_count": 25
   }
 
-Supabase is the primary store so settings survive redeployments. The local file
+Postgres is the primary store so settings survive redeployments. The local file
 is kept as a write-through cache for fast reads and offline fallback.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import threading
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +29,7 @@ log = logging.getLogger("crrnt.ingest_config")
 
 _CONFIG_PATH = Path(__file__).parent.parent / "ingest_config.json"
 _DB_KEY = "ingest_config"
-_lock = threading.Lock()
+_lock = asyncio.Lock()
 
 ALL_CATEGORIES = ["celebrity", "tech", "government", "sports", "business", "science"]
 
@@ -49,15 +49,15 @@ def _backfill(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def _load() -> dict[str, Any]:
-    # 1. Try Supabase first
+async def _load() -> dict[str, Any]:
+    # 1. Try Postgres first
     try:
         from services import db
-        stored = db.get_app_setting(_DB_KEY)
+        stored = await db.get_app_setting(_DB_KEY)
         if stored and isinstance(stored, dict):
             return _backfill(stored)
     except Exception as exc:
-        log.warning("Could not load ingest config from Supabase: %s", exc)
+        log.warning("Could not load ingest config from DB: %s", exc)
 
     # 2. Fall back to local file
     try:
@@ -70,19 +70,19 @@ def _load() -> dict[str, Any]:
     return json.loads(json.dumps(_DEFAULTS))
 
 
-def get() -> dict[str, Any]:
-    with _lock:
-        return _load()
+async def get() -> dict[str, Any]:
+    async with _lock:
+        return await _load()
 
 
-def save(cfg: dict[str, Any]) -> None:
-    with _lock:
-        # Primary: Supabase
+async def save(cfg: dict[str, Any]) -> None:
+    async with _lock:
+        # Primary: Postgres
         try:
             from services import db
-            db.set_app_setting(_DB_KEY, cfg)
+            await db.set_app_setting(_DB_KEY, cfg)
         except Exception as exc:
-            log.warning("Could not save ingest config to Supabase: %s", exc)
+            log.warning("Could not save ingest config to DB: %s", exc)
 
         # Write-through: local file
         try:
@@ -93,9 +93,9 @@ def save(cfg: dict[str, Any]) -> None:
         log.info("Ingestion config saved: mode=%s", cfg.get("mode"))
 
 
-def get_run_params() -> dict[str, Any]:
+async def get_run_params() -> dict[str, Any]:
     """Returns kwargs ready to pass to ingestion.run_ingestion()."""
-    cfg = get()
+    cfg = await get()
     if cfg["mode"] == "trending":
         return {"mode": "trending", "trending_count": cfg.get("trending_count", 25)}
     enabled = [

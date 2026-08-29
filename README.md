@@ -2,7 +2,9 @@
 
 **CURRNT: News crrnt, market crrnt.**
 
-A finance-meets-pop-culture mobile app for young adults. Trending stories across Celebrity, Entertainment, Tech, Government, Sports, Business, and Science — each paired with a relevant stock ticker, AI market insight, everyday impact analysis, X/Twitter social sentiment, a live price chart, and audio playback.
+A finance-meets-pop-culture mobile app for young adults. Trending stories across Celebrity, Entertainment, Tech, Government, Sports, Business, and Science — each paired with a relevant stock ticker, an AI market insight ("How does it stocks?"), a personal impact analysis ("How does it affect me?"), an X/Twitter social sentiment summary ("What are people saying?"), a live price chart, and audio playback.
+
+Free for everyone — no paid tier or subscription.
 
 ---
 
@@ -11,12 +13,15 @@ A finance-meets-pop-culture mobile app for young adults. Trending stories across
 | Layer | Technology |
 |---|---|
 | Mobile app | Expo SDK 54 · React Native 0.81.5 · expo-router |
-| Backend API | Python 3.11 · FastAPI · uvicorn |
+| Backend API | Python 3.11 · FastAPI · uvicorn · asyncpg |
+| Database | Railway PostgreSQL |
+| Auth | Local JWT (HS256) + bcrypt — no third-party auth provider |
 | AI enrichment | Anthropic Claude (`claude-haiku-4-5`) |
 | News source | NewsMesh API |
 | Social data | GetXAPI (X / Twitter) |
 | Stock data | yfinance |
-| Cache / KV | Replit DB (HTTP KV store) |
+| Text-to-speech | Fish Audio |
+| Email | Resend (falls back to SMTP if unset) |
 | Monorepo | pnpm workspaces |
 
 ---
@@ -28,6 +33,7 @@ A finance-meets-pop-culture mobile app for young adults. Trending stories across
 | Node.js | 20 | Required for pnpm and Expo tooling |
 | pnpm | 9 | `npm install -g pnpm` |
 | Python | 3.11 | Backend API server |
+| PostgreSQL | any recent | Local dev can point at a Railway instance instead |
 | Expo Go app | latest | Install on your iOS or Android device for live preview |
 
 ---
@@ -38,13 +44,14 @@ A finance-meets-pop-culture mobile app for young adults. Trending stories across
 /
 ├── artifacts/
 │   ├── api-server/          # FastAPI backend
-│   └── crrnt/               # Expo React Native app (CRRNT)
+│   ├── crrnt/                # Expo React Native app (CRRNT)
+│   └── mockup-sandbox/       # Vite component preview tool (design only)
 ├── lib/
-│   ├── api-spec/            # OpenAPI 3.1 schema (single source of truth)
-│   ├── api-client-react/    # React Query hooks (codegen output)
-│   ├── api-client-fetch/    # Fetch client (codegen output)
-│   └── api-zod/             # Zod schemas (codegen output)
-├── scripts/                 # Shared utility scripts
+│   ├── api-spec/             # OpenAPI 3.1 schema (single source of truth)
+│   ├── api-client-react/     # React Query hooks (codegen output)
+│   └── api-zod/              # Zod schemas (codegen output)
+├── scripts/                  # Shared utility scripts
+├── tests/e2e/                 # Playwright end-to-end tests (admin portal + app)
 └── pnpm-workspace.yaml
 ```
 
@@ -52,32 +59,54 @@ A finance-meets-pop-culture mobile app for young adults. Trending stories across
 
 ## Environment variables
 
-Create a `.env` file in `artifacts/api-server/` with the following keys:
+Create a `.env` file in `artifacts/api-server/` (never commit this):
 
 ```env
+# Required — database
+DATABASE_URL=postgresql://user:pass@host:port/dbname
+
+# Required — auth
+JWT_SECRET=<any long random string>
+SESSION_SECRET=<any long random string>
+
 # Required — Anthropic Claude (news enrichment)
 ANTHROPIC_API_KEY=sk-ant-...
 
 # Required — NewsMesh (news fetching)
 NEWSMESH_API_KEY=...
 
-# Required — GetXAPI (X/Twitter social data)
+# Optional — GetXAPI (X/Twitter social sentiment). Skipped if unset.
 XAPI_KEY=...
 
-# Optional — Replit KV store URL.
-# On Replit this is injected automatically — do not add it manually there.
-# For local development outside Replit you can omit it entirely;
-# the server will fall back to an in-memory dictionary (data lost on restart).
-# REPLIT_DB_URL=https://kv.replit.com/v0/...
+# Required — Fish Audio (text-to-speech)
+FISH_AUDIO_API_KEY=...
+FISH_AUDIO_VOICE_ID=...
 
-# Required — Admin portal authentication
-SESSION_SECRET=<any long random string>
+# Required — admin portal (HTTP Basic Auth at /admin/dashboard)
+ADMIN_USERNAME=<your choice>
+ADMIN_PASSWORD=<your choice>
 
-# Optional — port override (defaults to 8000)
-PORT=8000
+# Email — sent via Resend first, falls back to SMTP if RESEND_API_KEY is unset
+RESEND_API_KEY=re_...
+# RESEND_FROM_EMAIL=CRRNT <noreply@yourdomain.com>   # defaults to Resend's sandbox sender
+SMTP_HOST=
+SMTP_PORT=
+SMTP_USER=
+SMTP_PASS=
+APP_RESET_PASSWORD_URL=
+
+# Optional — tune stories fetched per category on manual ingestion
+INGESTION_PER_CATEGORY=
+
+# Port override
+PORT=8080
 ```
 
-> If `REPLIT_DB_URL` is not set, the server falls back to a local in-memory dictionary. Data will not persist across restarts in that mode.
+Create a `.env.local` in `artifacts/crrnt/`:
+
+```env
+EXPO_PUBLIC_API_BASE=http://localhost:8080
+```
 
 ---
 
@@ -88,34 +117,38 @@ PORT=8000
 ```bash
 # From the repository root
 pnpm install
+pip install -r artifacts/api-server/requirements.txt
 ```
 
-### 2 — Start the API server
+### 2 — Run the database schema
+
+Apply `artifacts/api-server/schema.sql` to your Postgres database once:
+
+```bash
+psql "$DATABASE_URL" -f artifacts/api-server/schema.sql
+```
+
+### 3 — Start the API server
 
 ```bash
 cd artifacts/api-server
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --host 0.0.0.0 --port 8080 --env-file .env --reload
 ```
 
-The API will be available at `http://localhost:8000`. You can verify it with:
+Verify it's up:
 
 ```bash
-curl http://localhost:8000/api/healthz
+curl http://localhost:8080/api/healthz
 ```
 
-### 3 — Start the mobile app
-
-Open a second terminal:
+### 4 — Start the mobile app
 
 ```bash
-# From the repository root
-pnpm --filter @workspace/crrnt run dev
+cd artifacts/crrnt
+pnpm exec expo start
 ```
 
-This starts the Expo Metro bundler. Scan the QR code with the **Expo Go** app on your phone, or press `w` to open the web preview in your browser.
-
-> The mobile app expects the API at `/api`. When running on Replit the shared reverse proxy handles routing automatically. For purely local development outside Replit, set `EXPO_PUBLIC_API_BASE=http://localhost:8000` in `artifacts/crrnt/.env.local` and update the API client base URL accordingly.
+Scan the QR code with the **Expo Go** app on your phone, or press `w` for web, `a` for Android emulator, `i` for iOS simulator.
 
 ---
 
@@ -131,57 +164,152 @@ pnpm --filter @workspace/api-spec run codegen
 
 ## Admin portal
 
-The admin portal lives at:
+Login at `/admin/dashboard` with HTTP Basic Auth (`ADMIN_USERNAME` / `ADMIN_PASSWORD`):
 
-```
-http://localhost:8000/api/admin/portal?token=<SESSION_SECRET>
-```
-
-If your `SESSION_SECRET` contains special characters, URL-encode the token value (e.g. `+` → `%2B`, `/` → `%2F`, `=` → `%3D`).
-
-From the portal you can:
-- View live ingestion status
-- See cache stats (stories, batches, stock entries, push tokens)
-- Adjust stories-per-category (1–25)
-- Trigger a manual news refresh
-- Delete all cached stories
+- Live ingestion status, story browser, user list, breaking news editor
+- Ingestion config (which categories run, how many stories each), feed limits, cron schedule
+- Digest email recipients, environment secret status
+- Manual ingestion/cleanup trigger
 
 ---
 
-## Seeding mock data (when NewsMesh credits are exhausted)
+## End-to-end tests
 
-```bash
-curl -X POST http://localhost:8000/api/admin/seed \
-  -H "X-Admin-Token: <SESSION_SECRET>"
-```
-
-This writes 9 realistic mock stories across all 7 categories directly into the KV cache so the app has content to display without consuming NewsMesh API credits.
+Playwright tests live in `tests/e2e`, covering the admin portal and the Expo web app. See `tests/e2e/README.md` for how to run them.
 
 ---
 
-## Key API endpoints
+## Architecture
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/healthz` | Health check |
-| GET | `/api/news` | List stories (optional `?category=`) |
-| GET | `/api/news/{id}` | Single story detail |
-| GET | `/api/search?q=` | Full-text search |
-| GET | `/api/stock/{ticker}?range=` | Price history (`1d` / `5d` / `1mo` / `1y`) |
-| POST | `/api/simulate` | What-if investment simulator |
-| POST | `/api/push-token` | Register Expo push notification token |
-| GET | `/api/admin/portal` | Web admin portal (requires `?token=`) |
-| POST | `/api/admin/refresh` | Trigger news ingestion (X-Admin-Token header) |
-| DELETE | `/api/admin/stories` | Clear all cached stories (X-Admin-Token header) |
+pnpm monorepo with two production artifacts:
 
----
+- `artifacts/api-server` (Python FastAPI) — ingests news, serves story/user data, admin portal
+- `artifacts/crrnt` (Expo React Native) — mobile app
 
-## Secrets reference
+Internal tooling:
 
-| Variable | Where used |
+- `artifacts/mockup-sandbox` — Vite-based component preview server (design only)
+- `lib/api-spec` — single source of truth OpenAPI 3.1 schema (`openapi.yaml`)
+- `lib/api-client-react` / `lib/api-zod` — codegen targets driven by `pnpm --filter @workspace/api-spec run codegen`
+
+### Backend (`artifacts/api-server`)
+
+- **Stack**: FastAPI + uvicorn (Python 3.11), asyncpg, httpx, anthropic SDK, yfinance, APScheduler, python-jose, bcrypt, Jinja2
+- **Entrypoint**: `main.py` — mounts all routers, initializes the Postgres pool, configures Jinja2 templates
+- **Routers**:
+  - `routes/auth.py` — register, login, refresh, forgot/reset password, email verification, logout, me, delete account
+  - `routes/stories.py` — daily feed, story detail, breaking news, save/unsave, search, per-user audio
+  - `routes/onboarding.py` — quiz GET/POST
+  - `routes/stocks.py` — price history + simulate
+  - `routes/admin_portal.py` — Jinja2 admin UI, HTTP Basic Auth
+  - `routes/health.py` — `/api/healthz`
+- **Services**:
+  - `services/db.py` — asyncpg connection pool + typed helpers for all tables
+  - `services/auth.py` — JWT issuance/verification, password hashing
+  - `services/auth_middleware.py` — JWT extraction + user lookup dependency
+  - `services/ingestion.py` — orchestrates fetch → enrich → persist to Postgres
+  - `services/enrichment.py` — Claude claude-haiku-4-5 two-pass enrichment (insight + sentiment)
+  - `services/news_fetcher.py` — NewsMesh API, per category
+  - `services/fish_audio.py` — Fish Audio TTS, cached per user in Postgres
+  - `services/xapi.py` — GetXAPI Twitter/X client for sentiment tweet fetching
+  - `services/personalization.py` — story scoring based on onboarding preferences
+  - `services/stock_service.py` — yfinance OHLC (1D/1W/1M/1Y)
+  - `services/push.py` — Expo push notification token storage
+  - `services/scheduler.py` — APScheduler: daily ingestion + cleanup, admin-configurable times
+  - `services/email_service.py` — Resend/SMTP transactional email + admin digest
+  - `services/log_buffer.py` — in-memory recent log ring buffer for admin portal
+
+### API endpoints
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/healthz` | — | Health check |
+| POST | `/api/auth/register` | — | Create account |
+| POST | `/api/auth/login` | — | Login, returns JWT |
+| POST | `/api/auth/refresh` | — | Exchange refresh token for a new session |
+| POST | `/api/auth/forgot-password` | — | Request a password reset email |
+| POST | `/api/auth/reset-password` | — | Reset password with a token |
+| POST | `/api/auth/send-verification` | JWT | Send email verification |
+| POST | `/api/auth/mark-verified` | JWT | Mark email verified |
+| POST | `/api/auth/logout` | JWT | Logout |
+| GET | `/api/auth/me` | JWT | Current user profile |
+| DELETE | `/api/auth/account` | JWT | Permanently delete account |
+| GET | `/api/stories/daily` | optional JWT | Personalized feed |
+| GET | `/api/stories/{id}` | JWT | Story detail |
+| GET | `/api/stories/{id}/audio` | JWT | Per-user story audio (range requests supported) |
+| GET | `/api/stories/breaking` | JWT | Active breaking news |
+| POST | `/api/stories/{id}/save` | JWT | Save a story |
+| DELETE | `/api/stories/{id}/save` | JWT | Unsave a story |
+| GET | `/api/stories/saved` | JWT | User's saved stories |
+| GET | `/api/stories/search` | JWT | Full-text story search |
+| GET | `/api/onboarding` | JWT | Fetch onboarding preferences |
+| POST | `/api/onboarding` | JWT | Submit quiz answers |
+| GET | `/api/stock/{ticker}?range=` | — | Price history |
+| POST | `/api/simulate` | — | What-if investment |
+| POST | `/api/push-token` | — | Register Expo push token |
+| GET | `/admin/dashboard` | Basic | Admin portal |
+
+### Frontend (`artifacts/crrnt`)
+
+- **Stack**: Expo SDK 54, expo-router, React Native 0.81.5, expo-audio, expo-av (lock-screen controls), expo-speech, expo-notifications, react-native-svg, @tanstack/react-query
+- **Auth**: local JWT (access + refresh token pair) stored in AsyncStorage
+- **Screens**:
+  - `app/login.tsx` / `app/register.tsx` — auth screens
+  - `app/auth/forgot-password.tsx` — password reset request
+  - `app/onboarding.tsx` — privacy disclosure + personalization quiz
+  - `app/(tabs)/index.tsx` — home feed (category filter, search, personalized)
+  - `app/(tabs)/saved.tsx` — saved stories
+  - `app/(tabs)/settings.tsx` — account, preferences, appearance, sign out, delete account
+  - `app/story/[id].tsx` — story detail (audio, chart, sentiment, save)
+- **Contexts**: `AuthContext`, `SavedStoriesContext`, `AudioContext`, `ThemeContext`
+- **Theme**: dark/light mode, neon accent palette in `constants/theme.ts`
+
+### Database schema
+
+Applied via `artifacts/api-server/schema.sql`.
+
+| Table | Purpose |
 |---|---|
-| `ANTHROPIC_API_KEY` | Claude enrichment (insight, impact, sentiment) |
-| `NEWSMESH_API_KEY` | Fetching latest news per category |
-| `XAPI_KEY` | GetXAPI — tweet search for social sentiment |
-| `SESSION_SECRET` | Admin portal auth (`X-Admin-Token` header) |
-| `REPLIT_DB_URL` | Replit KV store (auto-set on Replit) |
+| `users` | App users — email, password hash, onboarding/verification flags |
+| `user_preferences` | Onboarding quiz answers |
+| `stories` | Enriched news stories with sentiment, expiry |
+| `story_audio` | Ingestion-time shared audio (currently unused — audio is generated per user instead) |
+| `saved_stories` | User ↔ story bookmarks |
+| `breaking_news` | Breaking alerts with 6-hour expiry |
+| `ingestion_logs` | One row per ingestion run |
+| `push_tokens` | Expo device push tokens |
+| `story_personalizations` | Cached per-user personalized story text |
+| `user_story_audio` | Cached per-user generated audio (BYTEA) |
+| `app_settings` | Admin-configurable key/value config (feed limits, schedule, ingestion config, digest recipients) |
+| `password_reset_tokens` | One-time password reset tokens |
+
+### Secrets reference
+
+| Secret | Used by | Purpose |
+|---|---|---|
+| `DATABASE_URL` | backend | Postgres connection string |
+| `JWT_SECRET` | backend | Signs/verifies access & refresh tokens |
+| `SESSION_SECRET` | backend | General session signing |
+| `ANTHROPIC_API_KEY` | backend | Claude enrichment |
+| `NEWSMESH_API_KEY` | backend | News source API |
+| `XAPI_KEY` | backend | GetXAPI Twitter/X search (optional — sentiment step skipped if unset) |
+| `FISH_AUDIO_API_KEY` / `FISH_AUDIO_VOICE_ID` | backend | Text-to-speech |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | backend | Admin portal HTTP Basic auth |
+| `RESEND_API_KEY` / `RESEND_FROM_EMAIL` | backend | Transactional + digest email |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | backend | Email fallback if Resend is unset |
+| `APP_RESET_PASSWORD_URL` | backend | Deep link used in password reset emails |
+| `INGESTION_PER_CATEGORY` | backend | Default story count per category on manual ingestion |
+
+### Daily quotas
+
+- **NewsMesh** free tier: 25 req/day
+- **Claude**: two passes per story (insight + sentiment)
+- **GetXAPI**: one search per story with a resolvable ticker
+
+---
+
+## Notes for contributors (human or agent)
+
+- Never use `console.log`/`print` in backend code — use the `logging` module (see `crrnt.*` loggers already set up in each service).
+- Keep story ranking/scoring logic in `services/personalization.py`, not in routes.
+- The app has no paid tier — don't reintroduce tier-gating without an explicit product decision.

@@ -36,19 +36,28 @@ def _set_status(s: dict[str, Any]) -> None:
 
 # ── Expiry helper ─────────────────────────────────────────────────────────────
 
-async def _expires_at(published_at: Optional[str], days: Optional[int] = None) -> str:
+def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
+    """Parse an ISO datetime string from an upstream API into a real datetime.
+
+    asyncpg requires an actual datetime/date object for TIMESTAMPTZ columns —
+    unlike the old Supabase REST client, it will not coerce a string.
+    """
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+async def _expires_at(published_at: Optional[datetime], days: Optional[int] = None) -> datetime:
     if days is None:
         days = (await app_settings.get_story_expiry())["days"]
-    if published_at:
-        try:
-            base = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
-            return (base + timedelta(days=days)).isoformat()
-        except ValueError:
-            pass
-    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    base = published_at or datetime.now(timezone.utc)
+    return base + timedelta(days=days)
 
 
-# ── Map enrichment output to Supabase row ─────────────────────────────────────
+# ── Map enrichment output to a stories row ─────────────────────────────────────
 
 async def _to_story_row(raw: dict[str, Any]) -> dict[str, Any]:
     """Convert enriched story dict to a stories table row."""
@@ -57,7 +66,7 @@ async def _to_story_row(raw: dict[str, Any]) -> dict[str, Any]:
     stock_note_parts = [p for p in [ticker, f"({company})" if company else None] if p]
     stock_note = " ".join(stock_note_parts) if stock_note_parts else None
 
-    pub = raw.get("publishedDate") or raw.get("published_at")
+    pub = _parse_datetime(raw.get("publishedDate") or raw.get("published_at"))
 
     sentiment_label = raw.get("sentimentLabel") or raw.get("sentiment_label")
     sentiment_score = raw.get("sentimentScore") or raw.get("sentiment_score")

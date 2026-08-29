@@ -4,7 +4,7 @@
  * All keys are identical across both themes so any component
  * can swap schemes without structural changes.
  *
- * Usage: import { useTheme } from "@/hooks/useTheme"
+ * Usage: import { useThemeContext } from "@/contexts/ThemeContext"
  */
 
 export interface ThemeColors {

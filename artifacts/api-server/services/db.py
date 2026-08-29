@@ -88,17 +88,6 @@ async def get_story_by_external_id(external_id: str) -> Optional[dict[str, Any]]
     return _row(r)
 
 
-async def update_story(story_id: str, fields: dict[str, Any]) -> Optional[dict[str, Any]]:
-    if not fields:
-        return await get_story(story_id)
-    cols = list(fields.keys())
-    set_clause = ", ".join(f"{c} = ${i+2}" for i, c in enumerate(cols))
-    sql = f"UPDATE stories SET {set_clause} WHERE id = $1 RETURNING *"
-    async with get_pool().acquire() as conn:
-        r = await conn.fetchrow(sql, story_id, *fields.values())
-    return _row(r)
-
-
 async def delete_story(story_id: str) -> None:
     # ON DELETE CASCADE on saved_stories/story_personalizations/user_story_audio/
     # story_audio handles the child rows.
@@ -196,15 +185,6 @@ async def count_saved_stories(user_id: str) -> int:
         return await conn.fetchval(
             "SELECT COUNT(*) FROM saved_stories WHERE user_id = $1", user_id
         ) or 0
-
-
-async def is_story_saved(user_id: str, story_id: str) -> bool:
-    async with get_pool().acquire() as conn:
-        r = await conn.fetchval(
-            "SELECT 1 FROM saved_stories WHERE user_id = $1 AND story_id = $2",
-            user_id, story_id,
-        )
-    return r is not None
 
 
 # ── Breaking news ──────────────────────────────────────────────────────────────
@@ -460,25 +440,6 @@ async def store_user_audio(user_id: str, story_id: str, mp3_bytes: bytes) -> Non
     )
     async with get_pool().acquire() as conn:
         await conn.execute(sql, user_id, story_id, mp3_bytes)
-
-
-# ── Story audio (shared, ingestion-time TTS) ───────────────────────────────────
-
-async def get_story_audio(story_id: str) -> Optional[bytes]:
-    async with get_pool().acquire() as conn:
-        r = await conn.fetchval(
-            "SELECT mp3_data FROM story_audio WHERE story_id = $1", story_id
-        )
-    return bytes(r) if r is not None else None
-
-
-async def store_story_audio(story_id: str, mp3_bytes: bytes) -> None:
-    sql = (
-        "INSERT INTO story_audio (story_id, mp3_data) VALUES ($1, $2) "
-        "ON CONFLICT (story_id) DO UPDATE SET mp3_data = EXCLUDED.mp3_data"
-    )
-    async with get_pool().acquire() as conn:
-        await conn.execute(sql, story_id, mp3_bytes)
 
 
 # ── Push tokens ─────────────────────────────────────────────────────────────────

@@ -222,7 +222,7 @@ export default function SettingsScreen() {
     const confirmDelete = () => {
       setDialog({
         title: "Are you absolutely sure?",
-        message: "Your stories, preferences, and subscription will be removed immediately.",
+        message: "Your saved stories and preferences will be removed immediately.",
         buttons: [
           { text: "Cancel", style: "cancel", onPress: closeDialog },
           { text: "Yes, delete everything", style: "destructive", onPress: doDelete },

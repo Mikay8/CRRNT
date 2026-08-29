@@ -1,8 +1,9 @@
 """Fish Audio TTS service.
 
 Generates per-user story audio on first play request.
-MP3 bytes are cached in the user_story_audio Supabase table.
-Paid users get a personalized full audio; free users get a generic version.
+MP3 bytes are cached in the user_story_audio Postgres table.
+Audio is personalized when the user has onboarding preferences on file,
+generic otherwise.
 """
 from __future__ import annotations
 
@@ -111,7 +112,7 @@ async def synthesize_for_user(
         return None
 
     try:
-        db_svc.store_user_audio(user_id, story_id, audio_bytes)
+        await db_svc.store_user_audio(user_id, story_id, audio_bytes)
     except Exception as exc:
         log.warning("Failed to store user audio story=%s: %s", story_id, exc)
 

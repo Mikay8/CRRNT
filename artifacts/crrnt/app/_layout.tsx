@@ -111,7 +111,7 @@ function AuthTokenWirer() {
 }
 
 function AuthGate() {
-  const { user, isGuest, hydrated } = useAuth();
+  const { user, isGuest, hydrated, enterGuestMode } = useAuth();
   const segments = useSegments();
 
   useEffect(() => {
@@ -123,7 +123,7 @@ function AuthGate() {
     const isPublicScreen = seg0 === "login" || seg0 === "register" || inAuthGroup;
 
     if (!user && !isGuest && !isPublicScreen) {
-      router.replace("/login" as any);
+      enterGuestMode();
       return;
     }
 

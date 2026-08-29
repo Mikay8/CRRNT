@@ -160,7 +160,7 @@ export default function FeedScreen() {
                 onPress={() => router.push("/login" as any)}
                 style={styles.getAccountBtn}
               >
-                <Text style={styles.getAccountText}>Get account</Text>
+                <Text style={styles.getAccountText}>Log in or sign up</Text>
               </Pressable>
             )}
             {!searchVisible && isFetching && stories.length > 0 ? (

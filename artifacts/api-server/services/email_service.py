@@ -1,13 +1,20 @@
-"""Admin email digest — sent after the morning ingestion cron.
+"""Transactional + admin digest email — sent via Resend (HTTP API), falling
+back to raw SMTP if RESEND_API_KEY is not set.
 
-Required env vars (SMTP credentials only — recipients are managed in app_settings):
+Required env vars — Resend (preferred):
+  RESEND_API_KEY    — Resend API key
+  RESEND_FROM_EMAIL — verified sender, e.g. "CRRNT <noreply@yourdomain.com>"
+                       (defaults to Resend's sandbox sender if unset — only
+                       deliverable to the address on your Resend account)
+
+Required env vars — SMTP (fallback):
   SMTP_HOST  — e.g. smtp.gmail.com
   SMTP_PORT  — 587 (STARTTLS, default) or 465 (SSL)
   SMTP_USER  — sender address / login
   SMTP_PASS  — SMTP password or app-specific password
 
-Recipients are stored in the app_settings table under the key "admin_emails"
-and managed via the admin portal Settings page.
+Recipients for the admin digest are stored in the app_settings table under
+the key "admin_emails" and managed via the admin portal Settings page.
 """
 from __future__ import annotations
 
@@ -19,9 +26,14 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
 
+import httpx
+
 from services import app_settings
 
 log = logging.getLogger("crrnt.email")
+
+RESEND_API_URL = "https://api.resend.com/emails"
+_DEFAULT_RESEND_FROM = "CRRNT <onboarding@resend.dev>"
 
 
 def _smtp_config() -> tuple[str, int, str, str]:
@@ -33,17 +45,35 @@ def _smtp_config() -> tuple[str, int, str, str]:
     )
 
 
-def send_email(to: str, subject: str, text: str, html: str) -> bool:
-    """Send a single transactional email (password reset, etc). Returns True on success."""
+def _send_via_resend(to: list[str], subject: str, text: str, html: str) -> bool:
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    if not api_key:
+        return False
+
+    from_addr = os.environ.get("RESEND_FROM_EMAIL", _DEFAULT_RESEND_FROM)
+    try:
+        resp = httpx.post(
+            RESEND_API_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"from": from_addr, "to": to, "subject": subject, "text": text, "html": html},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as exc:
+        log.warning("Resend send failed (to=%s): %s", to, exc)
+        return False
+
+
+def _send_via_smtp(to: list[str], subject: str, text: str, html: str) -> bool:
     smtp_host, smtp_port, smtp_user, smtp_pass = _smtp_config()
     if not (smtp_host and smtp_user and smtp_pass):
-        log.warning("send_email(%s) skipped — SMTP not fully configured", to)
         return False
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = smtp_user
-    msg["To"] = to
+    msg["To"] = ", ".join(to)
     msg.attach(MIMEText(text, "plain"))
     msg.attach(MIMEText(html, "html"))
 
@@ -51,17 +81,28 @@ def send_email(to: str, subject: str, text: str, html: str) -> bool:
         if smtp_port == 465:
             with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
                 server.login(smtp_user, smtp_pass)
-                server.sendmail(smtp_user, [to], msg.as_string())
+                server.sendmail(smtp_user, to, msg.as_string())
         else:
             with smtplib.SMTP(smtp_host, smtp_port) as server:
                 server.ehlo()
                 server.starttls()
                 server.login(smtp_user, smtp_pass)
-                server.sendmail(smtp_user, [to], msg.as_string())
+                server.sendmail(smtp_user, to, msg.as_string())
         return True
     except Exception as exc:
-        log.warning("send_email(%s) failed: %s", to, exc)
+        log.warning("SMTP send failed (to=%s): %s", to, exc)
         return False
+
+
+def send_email(to: str, subject: str, text: str, html: str) -> bool:
+    """Send a single transactional email (password reset, etc). Returns True on success."""
+    recipients = [to]
+    if _send_via_resend(recipients, subject, text, html):
+        return True
+    if _send_via_smtp(recipients, subject, text, html):
+        return True
+    log.warning("send_email(%s) skipped — no email provider configured", to)
+    return False
 
 
 def send_password_reset(to: str, reset_url: str) -> bool:
@@ -89,58 +130,24 @@ def send_password_reset(to: str, reset_url: str) -> bool:
 async def send_digest(stories: list[dict[str, Any]], cleanup: dict[str, int]) -> None:
     """Send the morning ingestion digest to all admin_emails recipients."""
     recipients = await app_settings.get_admin_emails()
-    smtp_host = os.environ.get("SMTP_HOST", "")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_pass = os.environ.get("SMTP_PASS", "")
-
-    log.info(
-        "Email digest: recipients=%s smtp_host=%s smtp_port=%d smtp_user=%s",
-        recipients, smtp_host or "(not set)", smtp_port, smtp_user or "(not set)",
-    )
-
     if not recipients:
         log.warning("Email digest skipped — no admin_emails configured in app_settings")
-        return
-    if not smtp_host:
-        log.warning("Email digest skipped — SMTP_HOST not set")
-        return
-    if not smtp_user:
-        log.warning("Email digest skipped — SMTP_USER not set")
-        return
-    if not smtp_pass:
-        log.warning("Email digest skipped — SMTP_PASS not set")
         return
 
     now = datetime.now(timezone.utc)
     subject = f"CRRNT Daily Digest — {now.strftime('%B')} {now.day}, {now.year}"
+    text = _build_text(stories, cleanup, now)
+    html = _build_html(stories, cleanup, now)
+
     log.info("Sending digest: subject=%r to=%s stories=%d", subject, recipients, len(stories))
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = smtp_user
-    msg["To"] = ", ".join(recipients)
-    msg.attach(MIMEText(_build_text(stories, cleanup, now), "plain"))
-    msg.attach(MIMEText(_build_html(stories, cleanup, now), "html"))
-
-    try:
-        if smtp_port == 465:
-            log.info("Connecting via SMTP_SSL to %s:%d", smtp_host, smtp_port)
-            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
-                server.login(smtp_user, smtp_pass)
-                log.info("Authenticated — sending...")
-                server.sendmail(smtp_user, recipients, msg.as_string())
-        else:
-            log.info("Connecting via SMTP+STARTTLS to %s:%d", smtp_host, smtp_port)
-            with smtplib.SMTP(smtp_host, smtp_port) as server:
-                server.ehlo()
-                server.starttls()
-                server.login(smtp_user, smtp_pass)
-                log.info("Authenticated — sending...")
-                server.sendmail(smtp_user, recipients, msg.as_string())
-        log.info("Digest email sent successfully to %s (%d stories)", recipients, len(stories))
-    except Exception as exc:
-        log.warning("Failed to send digest email: %s", exc)
+    if _send_via_resend(recipients, subject, text, html):
+        log.info("Digest email sent via Resend to %s (%d stories)", recipients, len(stories))
+        return
+    if _send_via_smtp(recipients, subject, text, html):
+        log.info("Digest email sent via SMTP to %s (%d stories)", recipients, len(stories))
+        return
+    log.warning("Digest email skipped — no email provider configured")
 
 
 def _build_text(stories: list[dict], cleanup: dict, now: datetime) -> str:

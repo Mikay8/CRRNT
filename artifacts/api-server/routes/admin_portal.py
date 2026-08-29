@@ -238,6 +238,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
         "XAPI_KEY": bool(os.environ.get("XAPI_KEY")),
         "FISH_AUDIO_API_KEY": bool(os.environ.get("FISH_AUDIO_API_KEY")),
         "ADMIN_PASSWORD": bool(os.environ.get("ADMIN_PASSWORD")),
+        "RESEND_API_KEY": bool(os.environ.get("RESEND_API_KEY")),
         "SMTP_HOST": bool(os.environ.get("SMTP_HOST")),
         "SMTP_USER": bool(os.environ.get("SMTP_USER")),
         "SMTP_PASS": bool(os.environ.get("SMTP_PASS")),

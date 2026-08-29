@@ -124,6 +124,15 @@ export default function SettingsScreen() {
   const { user, logout, forgotPassword, accessToken, isGuest, sendVerificationEmail, deleteAccount } = useAuth();
   const [sendingVerification, setSendingVerification] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [dialog, setDialog] = useState<{
+    title: string;
+    message?: string;
+    buttons: AlertButton[];
+  } | null>(null);
+
+  const { data: quizData } = useGetOnboardingQuiz();
 
   const handleSendVerification = async () => {
     setSendingVerification(true);
@@ -135,16 +144,9 @@ export default function SettingsScreen() {
   if (isGuest || !user) {
     return <Redirect href={"/login" as any} />;
   }
-  const [signingOut, setSigningOut] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [dialog, setDialog] = useState<{
-    title: string;
-    message?: string;
-    buttons: AlertButton[];
-  } | null>(null);
+
   const closeDialog = () => setDialog(null);
 
-  const { data: quizData } = useGetOnboardingQuiz();
   const prefs = quizData?.preferences;
 
   const interestsSummary = prefs?.interests?.length

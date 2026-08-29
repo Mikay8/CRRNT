@@ -243,14 +243,34 @@ async def get_recent_breaking_news(limit: int = 10) -> list[dict[str, Any]]:
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
+# password_hash is never included in any function below except
+# get_user_with_password_hash — that is the only place it should be read,
+# and only to verify a login attempt. Every route response goes through one
+# of the other getters so a hash can never leak into an API response.
+
+_USER_PUBLIC_COLUMNS = (
+    "id, email, created_at, notification_consent, onboarding_complete, email_verified"
+)
+
 
 async def get_user(user_id: str) -> Optional[dict[str, Any]]:
     async with get_pool().acquire() as conn:
-        r = await conn.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
+        r = await conn.fetchrow(
+            f"SELECT {_USER_PUBLIC_COLUMNS} FROM users WHERE id = $1", user_id
+        )
     return _row(r)
 
 
 async def get_user_by_email(email: str) -> Optional[dict[str, Any]]:
+    async with get_pool().acquire() as conn:
+        r = await conn.fetchrow(
+            f"SELECT {_USER_PUBLIC_COLUMNS} FROM users WHERE email = $1", email
+        )
+    return _row(r)
+
+
+async def get_user_with_password_hash(email: str) -> Optional[dict[str, Any]]:
+    """Only for verifying a login attempt — never return this dict from a route."""
     async with get_pool().acquire() as conn:
         r = await conn.fetchrow("SELECT * FROM users WHERE email = $1", email)
     return _row(r)
@@ -258,7 +278,8 @@ async def get_user_by_email(email: str) -> Optional[dict[str, Any]]:
 
 async def create_user(email: str, password_hash: str) -> dict[str, Any]:
     sql = (
-        "INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING *"
+        f"INSERT INTO users (email, password_hash) VALUES ($1, $2) "
+        f"RETURNING {_USER_PUBLIC_COLUMNS}"
     )
     async with get_pool().acquire() as conn:
         r = await conn.fetchrow(sql, email, password_hash)
@@ -270,14 +291,14 @@ async def update_user(user_id: str, fields: dict[str, Any]) -> Optional[dict[str
         return await get_user(user_id)
     cols = list(fields.keys())
     set_clause = ", ".join(f"{c} = ${i+2}" for i, c in enumerate(cols))
-    sql = f"UPDATE users SET {set_clause} WHERE id = $1 RETURNING *"
+    sql = f"UPDATE users SET {set_clause} WHERE id = $1 RETURNING {_USER_PUBLIC_COLUMNS}"
     async with get_pool().acquire() as conn:
         r = await conn.fetchrow(sql, user_id, *fields.values())
     return _row(r)
 
 
 async def list_users(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
-    sql = "SELECT * FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2"
+    sql = f"SELECT {_USER_PUBLIC_COLUMNS} FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2"
     async with get_pool().acquire() as conn:
         rs = await conn.fetch(sql, limit, offset)
     return _rows(rs)

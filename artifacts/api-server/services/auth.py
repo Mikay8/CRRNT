@@ -38,10 +38,12 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def _create_token(user_id: str, ttl: timedelta, token_type: str) -> str:
+def _create_token(user_id: Any, ttl: timedelta, token_type: str) -> str:
     now = datetime.now(timezone.utc)
     payload = {
-        "sub": user_id,
+        # str() so a raw asyncpg UUID (or any other id type) is always
+        # JSON-serializable — jose signs with json.dumps, not jsonable_encoder.
+        "sub": str(user_id),
         "type": token_type,
         "iat": now,
         "exp": now + ttl,
@@ -49,15 +51,15 @@ def _create_token(user_id: str, ttl: timedelta, token_type: str) -> str:
     return jwt.encode(payload, _secret(), algorithm=_ALGORITHM)
 
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(user_id: Any) -> str:
     return _create_token(user_id, ACCESS_TOKEN_TTL, "access")
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(user_id: Any) -> str:
     return _create_token(user_id, REFRESH_TOKEN_TTL, "refresh")
 
 
-def create_session(user_id: str) -> dict[str, Any]:
+def create_session(user_id: Any) -> dict[str, Any]:
     return {
         "access_token": create_access_token(user_id),
         "refresh_token": create_refresh_token(user_id),

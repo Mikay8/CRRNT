@@ -53,13 +53,16 @@ async def register(body: RegisterRequest) -> dict[str, Any]:
 
 @router.post("/login")
 async def login(body: LoginRequest) -> dict[str, Any]:
-    user = await db.get_user_by_email(body.email)
-    if not user or not auth.verify_password(body.password, user["password_hash"]):
+    user_with_hash = await db.get_user_with_password_hash(body.email)
+    if not user_with_hash or not auth.verify_password(
+        body.password, user_with_hash["password_hash"]
+    ):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
+    user = await db.get_user(user_with_hash["id"])
     return {
         "user": user,
-        "session": auth.create_session(user["id"]),
+        "session": auth.create_session(user_with_hash["id"]),
     }
 
 

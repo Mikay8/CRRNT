@@ -1,5 +1,6 @@
-"""APScheduler wrapper — runs ingestion daily at 8 AM Eastern,
-cleanup daily at 3 AM Eastern.
+"""APScheduler wrapper — runs ingestion daily at 6 AM Eastern,
+cleanup daily at 3 AM Eastern. Both times are admin-configurable
+(app_settings.schedule_times) and take effect immediately via reschedule().
 """
 from __future__ import annotations
 

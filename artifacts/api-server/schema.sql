@@ -158,5 +158,5 @@ INSERT INTO app_settings (key, value) VALUES
   ('feed_limits',   '{"daily":15}'::jsonb),
   ('story_expiry',  '{"days":7,"extension_days":30}'::jsonb),
   ('admin_emails',   '{"emails":[]}'::jsonb),
-  ('schedule_times', '{"ingest_hour":8,"ingest_minute":0,"cleanup_hour":3,"cleanup_minute":0}'::jsonb)
+  ('schedule_times', '{"ingest_hour":6,"ingest_minute":0,"cleanup_hour":3,"cleanup_minute":0}'::jsonb)
 ON CONFLICT (key) DO NOTHING;

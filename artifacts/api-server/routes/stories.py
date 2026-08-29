@@ -95,31 +95,32 @@ def _extract_request_token(request: Request) -> Optional[str]:
 async def get_story(
     story_id: str,
     request: Request,
-    user: dict = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user_optional),
 ) -> dict[str, Any]:
     story = await db.get_story(story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 
     personalized_text: Optional[str] = None
-    try:
-        prefs = await db.get_preferences(user["id"])
-        if prefs:
-            cached = await db.get_personalization(user["id"], story_id)
-            if cached:
-                personalized_text = cached["personalized_text"]
-                story["personalized_life_impact"] = personalized_text
-            else:
-                text = await enrichment.personalize_life_impact(story, prefs)
-                if text:
-                    try:
-                        await db.store_personalization(user["id"], story_id, text)
-                    except Exception as e:
-                        log.warning("Failed to cache personalization for %s: %s", story_id, e)
-                    personalized_text = text
-                    story["personalized_life_impact"] = text
-    except Exception as e:
-        log.warning("Personalization block failed for story %s: %s", story_id, e)
+    if user:
+        try:
+            prefs = await db.get_preferences(user["id"])
+            if prefs:
+                cached = await db.get_personalization(user["id"], story_id)
+                if cached:
+                    personalized_text = cached["personalized_text"]
+                    story["personalized_life_impact"] = personalized_text
+                else:
+                    text = await enrichment.personalize_life_impact(story, prefs)
+                    if text:
+                        try:
+                            await db.store_personalization(user["id"], story_id, text)
+                        except Exception as e:
+                            log.warning("Failed to cache personalization for %s: %s", story_id, e)
+                        personalized_text = text
+                        story["personalized_life_impact"] = text
+        except Exception as e:
+            log.warning("Personalization block failed for story %s: %s", story_id, e)
 
     # Embed auth token in tts_url so the client can stream audio without extra auth wiring
     token = _extract_request_token(request)

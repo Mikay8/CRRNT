@@ -89,8 +89,9 @@ async def get_story_by_external_id(external_id: str) -> Optional[dict[str, Any]]
 
 
 async def delete_story(story_id: str) -> None:
-    # ON DELETE CASCADE on saved_stories/story_personalizations/user_story_audio/
-    # story_audio handles the child rows.
+    # ON DELETE CASCADE on saved_stories/story_personalizations handles those
+    # child rows. Audio lives in S3, not Postgres — callers must delete the
+    # S3 object separately (see services.ingestion.run_cleanup).
     async with get_pool().acquire() as conn:
         await conn.execute("DELETE FROM stories WHERE id = $1", story_id)
 
@@ -380,7 +381,7 @@ async def get_ingestion_logs(limit: int = 10) -> list[dict[str, Any]]:
 # ── Story expiry cleanup ──────────────────────────────────────────────────────
 
 async def get_expired_stories() -> list[dict[str, Any]]:
-    sql = "SELECT id FROM stories WHERE expires_at < NOW()"
+    sql = "SELECT id, tts_url FROM stories WHERE expires_at < NOW()"
     async with get_pool().acquire() as conn:
         rs = await conn.fetch(sql)
     return _rows(rs)
@@ -419,27 +420,13 @@ async def store_personalization(user_id: str, story_id: str, text: str) -> None:
         await conn.execute(sql, user_id, story_id, text)
 
 
-# ── Per-user full story audio ─────────────────────────────────────────────────
+# ── Story audio (S3 object key, generated once at ingestion) ──────────────────
 
-async def get_user_audio(user_id: str, story_id: str) -> Optional[bytes]:
-    try:
-        async with get_pool().acquire() as conn:
-            r = await conn.fetchval(
-                "SELECT mp3_data FROM user_story_audio WHERE user_id = $1 AND story_id = $2",
-                user_id, story_id,
-            )
-        return bytes(r) if r is not None else None
-    except Exception:
-        return None
-
-
-async def store_user_audio(user_id: str, story_id: str, mp3_bytes: bytes) -> None:
-    sql = (
-        "INSERT INTO user_story_audio (user_id, story_id, mp3_data) VALUES ($1, $2, $3) "
-        "ON CONFLICT (user_id, story_id) DO UPDATE SET mp3_data = EXCLUDED.mp3_data"
-    )
+async def update_story_tts_key(story_id: str, s3_key: str) -> None:
     async with get_pool().acquire() as conn:
-        await conn.execute(sql, user_id, story_id, mp3_bytes)
+        await conn.execute(
+            "UPDATE stories SET tts_url = $2 WHERE id = $1", story_id, s3_key
+        )
 
 
 # ── Push tokens ─────────────────────────────────────────────────────────────────

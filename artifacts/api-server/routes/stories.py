@@ -4,11 +4,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from services import app_settings, db, enrichment, fish_audio, personalization
+from services import app_settings, audio_storage, db, enrichment, personalization
 from services.auth_middleware import get_current_user, get_current_user_optional
 
 log = logging.getLogger("crrnt.stories")
@@ -18,6 +18,13 @@ ALLOWED_CATEGORIES = {
     "celebrity", "tech", "government", "sports",
     "business", "science", "entertainment",
 }
+
+
+def _with_presigned_audio(story: dict[str, Any]) -> dict[str, Any]:
+    """tts_url in the DB holds the S3 object key — swap it for a time-limited GET URL."""
+    s3_key = story.get("tts_url")
+    story["tts_url"] = audio_storage.presigned_audio_url(s3_key) if s3_key else None
+    return story
 
 
 # ── Daily feed ────────────────────────────────────────────────────────────────
@@ -38,6 +45,7 @@ async def daily_feed(
         stories = [s for s in stories if s.get("category") == category]
 
     ranked = await personalization.personalize_feed(stories, prefs, category=category)
+    ranked = [_with_presigned_audio(s) for s in ranked]
 
     return {
         "totalCount": len(ranked),
@@ -57,7 +65,7 @@ async def breaking_news(user: dict = Depends(get_current_user)) -> dict[str, Any
 
 @router.get("/saved")
 async def get_saved(user: dict = Depends(get_current_user)) -> dict[str, Any]:
-    saved = await db.get_saved_stories(user["id"])
+    saved = [_with_presigned_audio(s) for s in await db.get_saved_stories(user["id"])]
     return {"totalCount": len(saved), "stories": saved}
 
 
@@ -79,22 +87,15 @@ async def search(
             s.get("wallet_impact"), s.get("stock_note"), s.get("category"),
         ])).lower()
     ]
-    return {"query": q, "totalCount": len(results), "stories": results[:limit]}
+    page = [_with_presigned_audio(s) for s in results[:limit]]
+    return {"query": q, "totalCount": len(results), "stories": page}
 
 
 # ── Story detail ──────────────────────────────────────────────────────────────
 
-def _extract_request_token(request: Request) -> Optional[str]:
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        return auth[7:].strip()
-    return request.query_params.get("token") or None
-
-
 @router.get("/{story_id}")
 async def get_story(
     story_id: str,
-    request: Request,
     user: Optional[dict] = Depends(get_current_user_optional),
 ) -> dict[str, Any]:
     story = await db.get_story(story_id)
@@ -122,12 +123,7 @@ async def get_story(
         except Exception as e:
             log.warning("Personalization block failed for story %s: %s", story_id, e)
 
-    # Embed auth token in tts_url so the client can stream audio without extra auth wiring
-    token = _extract_request_token(request)
-    if token:
-        story["tts_url"] = f"/api/stories/{story_id}/audio?token={token}"
-
-    return story
+    return _with_presigned_audio(story)
 
 
 # ── Save / unsave ─────────────────────────────────────────────────────────────
@@ -158,79 +154,21 @@ async def unsave_story(
 
 # ── Audio ─────────────────────────────────────────────────────────────────────
 
-def _serve_audio(audio_bytes: bytes, range_header: Optional[str]) -> Response:
-    total = len(audio_bytes)
-    if range_header:
-        try:
-            units, _, ranges = range_header.partition("=")
-            if units.strip().lower() != "bytes" or not ranges:
-                raise ValueError("bad range unit")
-            raw_start, _, raw_end = ranges.partition("-")
-            start = int(raw_start) if raw_start.strip() else 0
-            end = int(raw_end) if raw_end.strip() else total - 1
-            start = max(0, min(start, total - 1))
-            end = max(start, min(end, total - 1))
-        except ValueError:
-            return Response(status_code=416, headers={"Content-Range": f"bytes */{total}"})
-        chunk = audio_bytes[start : end + 1]
-        return Response(
-            content=chunk,
-            status_code=206,
-            media_type="audio/mpeg",
-            headers={
-                "Accept-Ranges": "bytes",
-                "Content-Range": f"bytes {start}-{end}/{total}",
-                "Content-Length": str(len(chunk)),
-            },
-        )
-    return Response(
-        content=audio_bytes,
-        media_type="audio/mpeg",
-        headers={"Accept-Ranges": "bytes", "Content-Length": str(total)},
-    )
-
-
 @router.get("/{story_id}/audio")
-async def get_story_audio(
-    story_id: str,
-    request: Request,
-    user: dict = Depends(get_current_user),
-) -> Response:
+async def get_story_audio(story_id: str) -> RedirectResponse:
+    """Legacy fallback for old tts_url?token= links — redirects to a fresh
+    presigned S3 URL. Audio itself is generated once at ingestion time
+    (see services/ingestion.py), not on request."""
     story = await db.get_story(story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 
-    user_id = user["id"]
+    s3_key = story.get("tts_url")
+    if not s3_key:
+        raise HTTPException(status_code=404, detail="Audio not available for this story")
 
-    # Check per-user cache first
-    cached = await db.get_user_audio(user_id, story_id)
-    if cached:
-        return _serve_audio(cached, request.headers.get("range"))
+    url = audio_storage.presigned_audio_url(s3_key)
+    if not url:
+        raise HTTPException(status_code=503, detail="Audio storage temporarily unavailable")
 
-    # Generate full audio for this user — also generate+cache personalization if not yet stored
-    personalized_text: Optional[str] = None
-    try:
-        p = await db.get_personalization(user_id, story_id)
-        if p:
-            personalized_text = p.get("personalized_text")
-        else:
-            prefs = await db.get_preferences(user_id)
-            if prefs:
-                text = await enrichment.personalize_life_impact(story, prefs)
-                if text:
-                    await db.store_personalization(user_id, story_id, text)
-                    personalized_text = text
-    except Exception as exc:
-        log.warning("Personalization in audio endpoint failed story=%s: %s", story_id, exc)
-
-    audio_bytes = await fish_audio.synthesize_for_user(
-        story,
-        story_id,
-        user_id,
-        personalized_text=personalized_text,
-        include_wallet=True,
-    )
-    if not audio_bytes:
-        raise HTTPException(status_code=503, detail="Audio generation temporarily unavailable")
-
-    return _serve_audio(audio_bytes, request.headers.get("range"))
+    return RedirectResponse(url)

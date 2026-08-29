@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import app_settings, db, enrichment, news_fetcher
+from services import app_settings, audio_storage, db, enrichment, fish_audio, news_fetcher
 
 log = logging.getLogger("crrnt.ingestion")
 
@@ -180,12 +180,21 @@ async def run_ingestion(
                 if not external_id:
                     row.pop("external_id", None)
 
-                await db.insert_story(row)
+                inserted = await db.insert_story(row)
                 enriched_count += 1
                 inserted_stories.append({
                     "title": row.get("title"),
                     "category": row.get("category"),
                 })
+
+                try:
+                    audio_bytes = await fish_audio.synthesize_for_story(inserted)
+                    if audio_bytes:
+                        s3_key = audio_storage.upload_story_audio(inserted["id"], audio_bytes)
+                        if s3_key:
+                            await db.update_story_tts_key(inserted["id"], s3_key)
+                except Exception as exc:
+                    log.warning("Audio generation failed for story %s: %s", inserted.get("id"), exc)
 
             except Exception as exc:
                 log.exception("Failed to store story: %s", exc)
@@ -263,6 +272,8 @@ async def run_cleanup() -> dict[str, int]:
         story_id = row["id"]
         save_count = await db.saved_story_count(story_id)
         if save_count == 0:
+            if row.get("tts_url"):
+                audio_storage.delete_story_audio(story_id)
             await db.delete_story(story_id)
             deleted += 1
         else:

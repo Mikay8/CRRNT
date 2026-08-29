@@ -1,13 +1,11 @@
 """Fish Audio TTS service.
 
-Generates per-user story audio on first play request.
-MP3 bytes are cached in the user_story_audio Postgres table.
-Audio is personalized when the user has onboarding preferences on file,
-generic otherwise.
+Generates one shared MP3 per story at ingestion time and uploads it to
+object storage (see services/audio_storage). Not personalized per user —
+personalization is text-only (see routes/stories.py life-impact override).
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from typing import Any, Optional
@@ -17,19 +15,10 @@ import httpx
 log = logging.getLogger("crrnt.fish_audio")
 
 FISH_AUDIO_URL = "https://api.fish.audio/v1/tts"
-MAX_CONCURRENCY = 2
 
 
-def build_full_audio_text(
-    story: dict[str, Any],
-    personalized_text: Optional[str] = None,
-    include_wallet: bool = False,
-) -> str:
-    """Build full story audio text for per-user generation.
-
-    personalized_text: if provided, replaces generic life_impact.
-    include_wallet: True for paid users (wallet_impact + one_liner section).
-    """
+def build_full_audio_text(story: dict[str, Any]) -> str:
+    """Build full story audio text from the story's own fields."""
     parts: list[str] = []
     title = (story.get("title") or "").strip()
     if title:
@@ -38,19 +27,15 @@ def build_full_audio_text(
     if summary:
         parts.append("[break]" + summary)
 
-    if personalized_text and personalized_text.strip():
-        parts.append("[break] Based on your profile. " + personalized_text.strip())
-    else:
-        life = (story.get("life_impact") or "").strip()
-        if life:
-            parts.append("[break] Here's how it affects you. " + life)
+    life = (story.get("life_impact") or "").strip()
+    if life:
+        parts.append("[break] Here's how it affects you. " + life)
 
-    if include_wallet:
-        insight = (story.get("one_liner") or "").strip()
-        wallet = (story.get("wallet_impact") or "").strip()
-        wallet_line = " ".join(filter(None, [insight, wallet]))
-        if wallet_line:
-            parts.append("[break] How does this affect your wallet? " + wallet_line)
+    insight = (story.get("one_liner") or "").strip()
+    wallet = (story.get("wallet_impact") or "").strip()
+    wallet_line = " ".join(filter(None, [insight, wallet]))
+    if wallet_line:
+        parts.append("[break] How does this affect your wallet? " + wallet_line)
 
     people_say = (story.get("people_say") or "").strip()
     if people_say:
@@ -58,24 +43,14 @@ def build_full_audio_text(
     return " ".join(parts)
 
 
-
-
-async def synthesize_for_user(
-    story: dict[str, Any],
-    story_id: str,
-    user_id: str,
-    personalized_text: Optional[str] = None,
-    include_wallet: bool = False,
-) -> Optional[bytes]:
-    """Generate full per-user audio, cache in user_story_audio, return MP3 bytes."""
-    from services import db as db_svc
-
+async def synthesize_for_story(story: dict[str, Any]) -> Optional[bytes]:
+    """Generate MP3 bytes for a story via Fish Audio. Returns None on any failure."""
     api_key = os.environ.get("FISH_AUDIO_API_KEY")
     if not api_key:
-        log.warning("FISH_AUDIO_API_KEY not set — skipping audio for user %s story %s", user_id, story_id)
+        log.warning("FISH_AUDIO_API_KEY not set — skipping audio for story %s", story.get("id"))
         return None
 
-    text = build_full_audio_text(story, personalized_text=personalized_text, include_wallet=include_wallet)
+    text = build_full_audio_text(story)
     if not text.strip():
         return None
 
@@ -106,14 +81,7 @@ async def synthesize_for_user(
                 json=payload,
             )
             resp.raise_for_status()
-            audio_bytes = resp.content
+            return resp.content
     except Exception as exc:
-        log.warning("synthesize_for_user failed story=%s: %s", story_id, exc)
+        log.warning("synthesize_for_story failed story=%s: %s", story.get("id"), exc)
         return None
-
-    try:
-        await db_svc.store_user_audio(user_id, story_id, audio_bytes)
-    except Exception as exc:
-        log.warning("Failed to store user audio story=%s: %s", story_id, exc)
-
-    return audio_bytes

@@ -321,8 +321,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       audioDurationMsRef.current = 0;
       setAudioPositionMs(0);
 
-      // Always derive the audio URL — on-demand generation means tts_url may be unset
+      // tts_url is a fully-qualified presigned S3 URL when audio was generated
+      // at ingestion; the /api/stories/{id}/audio fallback path is relative to
+      // our own API and still needs baseUrl prepended.
       const audioPath = newStory.tts_url ?? `/api/stories/${newStory.id}/audio`;
+      const isAbsoluteAudioUrl = /^https?:\/\//i.test(audioPath);
       const baseUrl = getBaseUrl() ?? "";
       let audioStarted = false;
 
@@ -330,11 +333,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         await configureAudioSession();
 
         if (typeof document !== "undefined") {
-          // Web: fetch with auth header; decode base64 if needed (PostgREST BYTEA quirk)
-          const fullUrl = `${baseUrl}${audioPath}`;
+          // Web: fetch (auth header only for our own API — a presigned S3 URL
+          // is self-authenticating and an extra Authorization header on a
+          // cross-origin request to it can fail CORS preflight)
+          const fullUrl = isAbsoluteAudioUrl ? audioPath : `${baseUrl}${audioPath}`;
           if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
           try {
-            const res = await fetch(fullUrl, { headers: getAuthHeader() });
+            const res = await fetch(fullUrl, {
+              headers: isAbsoluteAudioUrl ? undefined : getAuthHeader(),
+            });
             if (res.ok) {
               const rawBlob = await res.blob();
               // Detect base64 response: if first char is ASCII printable (not 0xFF), decode it
@@ -371,16 +378,23 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             // fall through to speech synthesis
           }
         } else {
-          // Native: tts_url from server already has ?token= embedded; only append if missing
+          // Native: a presigned S3 URL is self-authenticating and already
+          // has its own query string — only our own API's fallback path
+          // needs baseUrl and a ?token= appended.
           if (blobUrlRef.current) {
             URL.revokeObjectURL(blobUrlRef.current);
             blobUrlRef.current = null;
           }
-          const alreadyHasToken = audioPath.includes("token=");
-          const nativeUrl =
-            !alreadyHasToken && accessToken
-              ? `${baseUrl}${audioPath}?token=${encodeURIComponent(accessToken)}`
-              : `${baseUrl}${audioPath}`;
+          let nativeUrl: string;
+          if (isAbsoluteAudioUrl) {
+            nativeUrl = audioPath;
+          } else {
+            const alreadyHasToken = audioPath.includes("token=");
+            nativeUrl =
+              !alreadyHasToken && accessToken
+                ? `${baseUrl}${audioPath}?token=${encodeURIComponent(accessToken)}`
+                : `${baseUrl}${audioPath}`;
+          }
           player.replace({ uri: nativeUrl });
           audioStarted = true;
         }

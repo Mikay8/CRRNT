@@ -54,6 +54,28 @@
   </div>
   {% endif %}
 
+  <!-- Scheduled jobs -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+    <div class="text-gray-400 text-xs font-medium uppercase tracking-wider mb-2">Scheduled Jobs</div>
+    {% if scheduled_jobs %}
+    <div class="flex flex-wrap gap-4">
+      {% for job in scheduled_jobs %}
+      <div class="text-sm">
+        <span class="text-gray-300 font-mono">{{ job.id }}</span>
+        <span class="text-gray-500"> next run: </span>
+        {% if job.next_run %}
+        <span class="text-green-400">{{ job.next_run[:19] }} {{ job.next_run[19:] }}</span>
+        {% else %}
+        <span class="text-red-400">not scheduled</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <span class="text-red-400 text-sm">Scheduler not running — no jobs registered</span>
+    {% endif %}
+  </div>
+
   <!-- Breaking news alert -->
   {% if breaking %}
   <div class="bg-red-900/30 border border-red-700 rounded-xl p-4 flex items-start justify-between">

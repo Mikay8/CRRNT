@@ -31,7 +31,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from services import app_settings, db, ingestion, ingest_config, log_buffer, metrics
+from services import app_settings, db, ingestion, ingest_config, log_buffer, metrics, scheduler
 
 log = logging.getLogger("crrnt.admin")
 
@@ -107,6 +107,7 @@ async def dashboard(request: Request, _: None = Depends(_verify_admin)):
     breaking = await _safe_db(db.get_active_breaking_news(), None)
     ingest_status = ingestion.get_status()
     recent_logs = log_buffer.get_logs()
+    scheduled_jobs = scheduler.get_job_status()
 
     return templates.TemplateResponse(
         request,
@@ -119,6 +120,7 @@ async def dashboard(request: Request, _: None = Depends(_verify_admin)):
             "breaking": breaking,
             "ingest_status": ingest_status,
             "recent_logs": recent_logs,
+            "scheduled_jobs": scheduled_jobs,
         },
     )
 
@@ -414,12 +416,49 @@ def _dashboard_links() -> list[dict]:
     ]
 
 
+# Rough, clearly-labeled cost estimate — not wired to real token/character
+# counts (those aren't tracked per-call), so this is a ballpark only.
+# Claude Haiku 4.5 ~$1/$5 per M input/output tokens; enrichment runs one
+# pass per story (~1200 input + ~700 output tokens) unless X API sentiment
+# is enabled (adds a second, smaller pass).
+_CLAUDE_INPUT_TOKENS_PER_STORY = 1200
+_CLAUDE_OUTPUT_TOKENS_PER_STORY = 700
+_CLAUDE_INPUT_COST_PER_M = 1.00
+_CLAUDE_OUTPUT_COST_PER_M = 5.00
+# Fish Audio ~$15 per M characters; a full story script is ~600 characters.
+_FISH_AUDIO_CHARS_PER_STORY = 600
+_FISH_AUDIO_COST_PER_M_CHARS = 15.00
+
+
+def _estimate_cost(totals: dict[str, int]) -> dict[str, Any]:
+    enriched = totals.get("enriched", 0)
+    tts = totals.get("tts_generated", 0)
+
+    claude_cost = (
+        enriched * _CLAUDE_INPUT_TOKENS_PER_STORY / 1_000_000 * _CLAUDE_INPUT_COST_PER_M
+        + enriched * _CLAUDE_OUTPUT_TOKENS_PER_STORY / 1_000_000 * _CLAUDE_OUTPUT_COST_PER_M
+    )
+    fish_cost = tts * _FISH_AUDIO_CHARS_PER_STORY / 1_000_000 * _FISH_AUDIO_COST_PER_M_CHARS
+
+    return {
+        "enriched": enriched,
+        "tts": tts,
+        "claude_cost": round(claude_cost, 2),
+        "fish_cost": round(fish_cost, 2),
+        "total_cost": round(claude_cost + fish_cost, 2),
+    }
+
+
 @router.get("/usage", response_class=HTMLResponse)
 async def admin_usage(request: Request, _: None = Depends(_verify_admin)):
     rows = metrics.get_all()
     total_calls = sum(r["calls"] for r in rows)
     total_errors = sum(r["errors"] for r in rows)
     error_rate = round(total_errors / total_calls * 100, 1) if total_calls else 0
+    ingestion_totals = await _safe_db(
+        db.get_ingestion_totals(), {"fetched": 0, "enriched": 0, "tts_generated": 0}
+    )
+    cost_estimate = _estimate_cost(ingestion_totals)
     return templates.TemplateResponse(
         request,
         "admin/usage.html",
@@ -431,6 +470,7 @@ async def admin_usage(request: Request, _: None = Depends(_verify_admin)):
             "error_rate": error_rate,
             "endpoints": len(rows),
             "dashboards": _dashboard_links(),
+            "cost_estimate": cost_estimate,
         },
     )
 

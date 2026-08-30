@@ -75,6 +75,22 @@ def reschedule(ingest_hour: int, ingest_minute: int, cleanup_hour: int, cleanup_
     )
 
 
+def get_job_status() -> list[dict]:
+    """next_run_time for each scheduled job, for the admin dashboard —
+    lets us confirm a job is actually armed instead of finding out by a
+    missed run."""
+    if _scheduler is None:
+        return []
+    rows = []
+    for job in _scheduler.get_jobs():
+        next_run = job.next_run_time
+        rows.append({
+            "id": job.id,
+            "next_run": next_run.isoformat() if next_run else None,
+        })
+    return rows
+
+
 def shutdown() -> None:
     global _scheduler
     if _scheduler is not None:

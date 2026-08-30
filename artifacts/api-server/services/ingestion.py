@@ -166,6 +166,7 @@ async def run_ingestion(
         log.info("Enriched %d stories", len(enriched))
 
         inserted_stories: list[dict] = []
+        tts_count = 0
         for story in enriched:
             try:
                 row = await _to_story_row(story)
@@ -193,6 +194,7 @@ async def run_ingestion(
                         s3_key = audio_storage.upload_story_audio(inserted["id"], audio_bytes)
                         if s3_key:
                             await db.update_story_tts_key(inserted["id"], s3_key)
+                            tts_count += 1
                 except Exception as exc:
                     log.warning("Audio generation failed for story %s: %s", inserted.get("id"), exc)
 
@@ -220,7 +222,7 @@ async def run_ingestion(
             "startedAt": started_at.isoformat(),
             "finishedAt": datetime.now(timezone.utc).isoformat(),
         })
-        await _write_log(fetched_count, enriched_count, error_count, status_str)
+        await _write_log(fetched_count, enriched_count, error_count, status_str, tts_generated=tts_count)
 
         try:
             from services import email_service
@@ -246,12 +248,13 @@ async def run_ingestion(
 
 async def _write_log(
     fetched: int, enriched: int, errors: int,
-    status: str, notes: Optional[str] = None,
+    status: str, notes: Optional[str] = None, tts_generated: int = 0,
 ) -> None:
     try:
         await db.insert_ingestion_log({
             "stories_fetched": fetched,
             "stories_enriched": enriched,
+            "tts_generated": tts_generated,
             "errors": errors,
             "status": status,
             "notes": notes,

@@ -378,6 +378,23 @@ async def get_ingestion_logs(limit: int = 10) -> list[dict[str, Any]]:
     return _rows(rs)
 
 
+async def get_ingestion_totals() -> dict[str, int]:
+    """All-time sums across every ingestion_logs row, for cost estimation."""
+    sql = (
+        "SELECT COALESCE(SUM(stories_fetched), 0) AS fetched, "
+        "COALESCE(SUM(stories_enriched), 0) AS enriched, "
+        "COALESCE(SUM(tts_generated), 0) AS tts_generated "
+        "FROM ingestion_logs"
+    )
+    async with get_pool().acquire() as conn:
+        r = await conn.fetchrow(sql)
+    return {
+        "fetched": r["fetched"],
+        "enriched": r["enriched"],
+        "tts_generated": r["tts_generated"],
+    }
+
+
 # ── Story expiry cleanup ──────────────────────────────────────────────────────
 
 async def get_expired_stories() -> list[dict[str, Any]]:

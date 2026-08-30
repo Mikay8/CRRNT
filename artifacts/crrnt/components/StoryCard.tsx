@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -90,19 +90,8 @@ export function StoryCard({ story }: StoryCardProps) {
   const timestamp = story.published_at ?? null;
 
   const handleSave = () => {
+    if (!user) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
-    if (!user) {
-      Alert.alert(
-        "Create a free account",
-        "Sign up to save stories and pick up where you left off.",
-        [
-          { text: "Sign in", onPress: () => router.push("/login" as any) },
-          { text: "Create account", onPress: () => router.push("/auth/register" as any) },
-          { text: "Not now", style: "cancel" },
-        ]
-      );
-      return;
-    }
     toggleSaved(story).catch(() => undefined);
   };
 
@@ -132,7 +121,7 @@ export function StoryCard({ story }: StoryCardProps) {
       containerStyle={styles.swipeContainer}
       childrenContainerStyle={styles.card}
       renderLeftActions={() => <PlayAction isQueue={isBarVisible} />}
-      renderRightActions={() => <SaveAction accent={palette.accent} />}
+      renderRightActions={user ? () => <SaveAction accent={palette.accent} /> : undefined}
       onSwipeableWillOpen={(_direction) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
       }}
@@ -173,7 +162,7 @@ export function StoryCard({ story }: StoryCardProps) {
                   <Text style={styles.tickerText}>${ticker}</Text>
                 </View>
               ) : null}
-              <SaveButton story={story} />
+              {user ? <SaveButton story={story} /> : null}
             </View>
           </View>
 

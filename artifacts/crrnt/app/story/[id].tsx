@@ -25,6 +25,7 @@ import {
 import { getCategoryMeta } from "@/constants/categories";
 import { useAudio } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import CategoryBadge from "@/components/CategoryBadge";
@@ -114,6 +115,7 @@ export default function StoryDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
   const { saved } = useSavedStories();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
   const [audioTrackWidth, setAudioTrackWidth] = useState(0);
@@ -349,7 +351,7 @@ export default function StoryDetailScreen() {
               })()}
             </View>
             <View style={styles.actionButtons}>
-              <SaveButton story={story} size={26} />
+              {user ? <SaveButton story={story} size={26} /> : null}
             </View>
           </View>
 

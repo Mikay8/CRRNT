@@ -242,6 +242,11 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
         "SMTP_HOST": bool(os.environ.get("SMTP_HOST")),
         "SMTP_USER": bool(os.environ.get("SMTP_USER")),
         "SMTP_PASS": bool(os.environ.get("SMTP_PASS")),
+        "S3_BUCKET": bool(os.environ.get("S3_BUCKET")),
+        "S3_ENDPOINT": bool(os.environ.get("S3_ENDPOINT")),
+        "S3_ACCESS_KEY_ID": bool(os.environ.get("S3_ACCESS_KEY_ID")),
+        "S3_SECRET_ACCESS_KEY": bool(os.environ.get("S3_SECRET_ACCESS_KEY")),
+        "S3_REGION": bool(os.environ.get("S3_REGION")),
     }
     system_info = [
         {"label": "Schedule", "value": "08:00 America/New_York (daily)"},

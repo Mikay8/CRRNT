@@ -57,10 +57,10 @@ All secrets live in **Replit's Secrets manager** (the padlock icon in the sideba
 
 | Secret key | Required | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Yes | Claude AI — story enrichment (Pass 1 ticker/insight, Pass 2 sentiment) |
+| `ANTHROPIC_API_KEY` | Yes | Claude AI — story enrichment (Pass 1 ticker/insight) |
 | `NEWSMESH_API_KEY` | Yes | NewsMesh — news source, 6 req/ingestion, 25 req/day free tier |
 | `SESSION_SECRET` | Yes | Admin portal auth token AND fallback X-Admin-Token for admin endpoints |
-| `XAPI_KEY` | Yes | GetXAPI (getxapi.com) — Twitter/X tweet search, ~30 searches/ingestion |
+| `XAI_API_KEY` | Yes | xAI Grok (x.ai) — Pass 2 sentiment via x_search, ~30 searches/ingestion |
 
 To add a secret in Replit: open **Secrets** → **+ New Secret** → paste key + value → **Add Secret**.
 
@@ -95,7 +95,7 @@ REPLIT_DB_URL=https://kv.replit.com/v0/<your-token>
 ANTHROPIC_API_KEY=...
 NEWSMESH_API_KEY=...
 SESSION_SECRET=...
-XAPI_KEY=...
+XAI_API_KEY=...
 ```
 
 The server loads `.env` automatically on startup via python-dotenv — no need to `source` it manually. Get the current `REPLIT_DB_URL` by running `echo $REPLIT_DB_URL` in the Replit shell. Note it contains an expiring JWT (~24–48 hrs) so you'll need to refresh it periodically.

@@ -1,9 +1,9 @@
 """Ingestion orchestration — fetch, enrich, store in Postgres.
 
 Pipeline:
-  1. NewsMesh fetch (per category)
+  1. APITube fetch (per category)
   2. Claude Pass 1 — summary, life_impact, wallet_impact, one_liner, stock_note
-  3. X API + Claude Pass 2 — sentiment_label, sentiment_score, people_say
+  3. Grok x_search Pass 2 — sentiment_label, sentiment_score, people_say, featured_posts
   4. Insert story row to Postgres (get UUID)
   5. Fish Audio TTS — upload, set tts_url
   6. Write ingestion_log row
@@ -11,15 +11,16 @@ Pipeline:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import app_settings, audio_storage, db, enrichment, fish_audio, news_fetcher
+from services import apitube, app_settings, audio_storage, db, enrichment, fish_audio
 
 log = logging.getLogger("crrnt.ingestion")
 
-ALL_CATEGORIES = news_fetcher.ALL_CATEGORIES
+ALL_CATEGORIES = apitube.ALL_CATEGORIES
 _DEFAULT_PER_CATEGORY = 10
 _status_lock = asyncio.Lock()
 _ingestion_status: dict[str, Any] = {"state": "idle"}
@@ -91,6 +92,7 @@ async def _to_story_row(raw: dict[str, Any]) -> dict[str, Any]:
         "sentiment_label": sentiment_label,
         "sentiment_score": sentiment_score,
         "people_say": raw.get("peopleSay") or raw.get("people_say"),
+        "featured_posts": json.dumps(raw.get("featuredPosts") or raw.get("featured_posts") or []),
         "expires_at": await _expires_at(pub),
     }
 
@@ -122,20 +124,20 @@ async def run_ingestion(
     try:
         if mode == "trending":
             log.info("Ingestion starting (mode=trending, count=%d)", trending_count)
-            raw = await news_fetcher.fetch_trending(limit=trending_count)
+            raw = await apitube.fetch_trending(limit=trending_count)
             for a in raw:
                 a["_is_trending"] = True
         elif mode == "both":
             log.info("Ingestion starting (mode=both, trending=%d)", trending_count)
-            trending_raw = await news_fetcher.fetch_trending(limit=trending_count)
+            trending_raw = await apitube.fetch_trending(limit=trending_count)
             for a in trending_raw:
                 a["_is_trending"] = True
             await asyncio.sleep(1.0)
             if per_category_map:
-                cat_raw = await news_fetcher.fetch_categories_with_map(per_category_map)
+                cat_raw = await apitube.fetch_categories_with_map(per_category_map)
             else:
                 selected = categories or ALL_CATEGORIES
-                cat_raw = await news_fetcher.fetch_all_categories(selected, per_category=per_category)
+                cat_raw = await apitube.fetch_all_categories(selected, per_category=per_category)
             for a in cat_raw:
                 a["_is_trending"] = False
             # Dedup by articleId — trending wins if a story appears in both pulls
@@ -149,11 +151,11 @@ async def run_ingestion(
         elif per_category_map:
             # Per-category counts — fetch each separately
             log.info("Ingestion starting (mode=category, per_category_map=%s)", per_category_map)
-            raw = await news_fetcher.fetch_categories_with_map(per_category_map)
+            raw = await apitube.fetch_categories_with_map(per_category_map)
         else:
             selected = categories or ALL_CATEGORIES
             log.info("Ingestion starting (per_category=%d, categories=%s)", per_category, selected)
-            raw = await news_fetcher.fetch_all_categories(selected, per_category=per_category)
+            raw = await apitube.fetch_all_categories(selected, per_category=per_category)
         fetched_count = len(raw)
         log.info("Fetched %d raw articles", fetched_count)
 

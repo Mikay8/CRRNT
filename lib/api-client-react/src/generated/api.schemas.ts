@@ -19,6 +19,8 @@ export const Category = {
   business: "business",
   science: "science",
   entertainment: "entertainment",
+  world: "world",
+  health: "health",
 } as const;
 
 export type StorySentimentLabel =
@@ -32,6 +34,15 @@ export const StorySentimentLabel = {
   surprisingly_calm: "surprisingly calm",
   not_enough_data: "not enough data",
 } as const;
+
+export type StoryFeaturedPostsItem = {
+  /** Poster's X handle, without the @ sign */
+  handle: string;
+  /** Quoted or closely paraphrased post text */
+  text: string;
+  /** Link to the original post on X */
+  url: string;
+};
 
 export interface Story {
   id: string;
@@ -63,6 +74,8 @@ export interface Story {
   sentiment_score?: number | null;
   /** AI-generated social sentiment summary */
   people_say?: string | null;
+  /** Representative X posts backing up people_say */
+  featured_posts?: StoryFeaturedPostsItem[] | null;
   expires_at?: string;
   created_at?: string;
   saved_at?: string | null;

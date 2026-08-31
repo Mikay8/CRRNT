@@ -7,7 +7,9 @@ export type Category =
   | "sports"
   | "business"
   | "science"
-  | "entertainment";
+  | "entertainment"
+  | "world"
+  | "health";
 
 export interface CategoryMeta {
   key: Category;
@@ -21,7 +23,9 @@ export interface CategoryMeta {
     | "trophy"
     | "briefcase"
     | "planet"
-    | "film";
+    | "film"
+    | "globe"
+    | "heart";
 }
 
 export const CATEGORIES: CategoryMeta[] = [
@@ -32,6 +36,8 @@ export const CATEGORIES: CategoryMeta[] = [
   { key: "sports",        label: "Sports",        short: "Sports", color: palette.sports,        icon: "trophy"        },
   { key: "business",      label: "Business",      short: "Biz",    color: palette.business,      icon: "briefcase"     },
   { key: "science",       label: "Science",       short: "Sci",    color: palette.science,       icon: "planet"        },
+  { key: "world",         label: "World",         short: "World",  color: palette.world,         icon: "globe"         },
+  { key: "health",        label: "Health",        short: "Health", color: palette.health,        icon: "heart"         },
 ];
 
 export function getCategoryMeta(key: string | null | undefined): CategoryMeta | null {

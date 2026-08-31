@@ -17,6 +17,7 @@ router = APIRouter(prefix="/api/stories", tags=["stories"])
 ALLOWED_CATEGORIES = {
     "celebrity", "tech", "government", "sports",
     "business", "science", "entertainment",
+    "world", "health",
 }
 
 

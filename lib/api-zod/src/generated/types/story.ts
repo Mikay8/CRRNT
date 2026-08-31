@@ -6,6 +6,7 @@
  * OpenAPI spec version: 3.0.0
  */
 import type { Category } from "./category";
+import type { StoryFeaturedPostsItem } from "./storyFeaturedPostsItem";
 import type { StorySentimentLabel } from "./storySentimentLabel";
 
 export interface Story {
@@ -38,6 +39,8 @@ export interface Story {
   sentiment_score?: number | null;
   /** AI-generated social sentiment summary */
   people_say?: string | null;
+  /** Representative X posts backing up people_say */
+  featured_posts?: StoryFeaturedPostsItem[] | null;
   expires_at?: string;
   created_at?: string;
   saved_at?: string | null;

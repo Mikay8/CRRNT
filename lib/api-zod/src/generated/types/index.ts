@@ -39,6 +39,7 @@ export * from "./stockHistory";
 export * from "./stockPricePoint";
 export * from "./storiesResponse";
 export * from "./story";
+export * from "./storyFeaturedPostsItem";
 export * from "./storySentimentLabel";
 export * from "./unsaveStory200";
 export * from "./userPreferences";

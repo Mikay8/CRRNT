@@ -31,6 +31,8 @@ export interface ThemeColors {
   business: string;
   science: string;
   entertainment: string;
+  world: string;
+  health: string;
 }
 
 export const darkTheme: ThemeColors = {
@@ -57,6 +59,8 @@ export const darkTheme: ThemeColors = {
   business: "#F97316",
   science: "#2DD4BF",
   entertainment: "#C084FC",
+  world: "#94A3B8",
+  health: "#FB7185",
 };
 
 export const lightTheme: ThemeColors = {
@@ -83,6 +87,8 @@ export const lightTheme: ThemeColors = {
   business: "#D4600A",
   science: "#0D9488",
   entertainment: "#9333EA",
+  world: "#64748B",
+  health: "#E11D48",
 };
 export type ColorScheme = "dark" | "light";
 

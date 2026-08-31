@@ -18,7 +18,7 @@ Free for everyone — no paid tier or subscription.
 | Auth | Local JWT (HS256) + bcrypt — no third-party auth provider |
 | AI enrichment | Anthropic Claude (`claude-haiku-4-5`) |
 | News source | NewsMesh API |
-| Social data | GetXAPI (X / Twitter) |
+| Social data | xAI Grok (`grok-4.6`, `x_search` tool) |
 | Stock data | yfinance |
 | Text-to-speech | Fish Audio |
 | Email | Resend (falls back to SMTP if unset) |
@@ -75,8 +75,8 @@ ANTHROPIC_API_KEY=sk-ant-...
 # Required — NewsMesh (news fetching)
 NEWSMESH_API_KEY=...
 
-# Optional — GetXAPI (X/Twitter social sentiment). Skipped if unset.
-XAPI_KEY=...
+# Optional — xAI Grok (X social sentiment via x_search). Skipped if unset.
+XAI_API_KEY=...
 
 # Required — Fish Audio (text-to-speech)
 FISH_AUDIO_API_KEY=...
@@ -208,10 +208,9 @@ Internal tooling:
   - `services/auth.py` — JWT issuance/verification, password hashing
   - `services/auth_middleware.py` — JWT extraction + user lookup dependency
   - `services/ingestion.py` — orchestrates fetch → enrich → persist to Postgres
-  - `services/enrichment.py` — Claude claude-haiku-4-5 two-pass enrichment (insight + sentiment)
+  - `services/enrichment.py` — Claude claude-haiku-4-5 (insight) + Grok grok-4.6 x_search (sentiment) two-pass enrichment
   - `services/news_fetcher.py` — NewsMesh API, per category
   - `services/fish_audio.py` — Fish Audio TTS, cached per user in Postgres
-  - `services/xapi.py` — GetXAPI Twitter/X client for sentiment tweet fetching
   - `services/personalization.py` — story scoring based on onboarding preferences
   - `services/stock_service.py` — yfinance OHLC (1D/1W/1M/1Y)
   - `services/push.py` — Expo push notification token storage
@@ -292,7 +291,7 @@ Applied via `artifacts/api-server/schema.sql`.
 | `SESSION_SECRET` | backend | General session signing |
 | `ANTHROPIC_API_KEY` | backend | Claude enrichment |
 | `NEWSMESH_API_KEY` | backend | News source API |
-| `XAPI_KEY` | backend | GetXAPI Twitter/X search (optional — sentiment step skipped if unset) |
+| `XAI_API_KEY` | backend | xAI Grok x_search (optional — sentiment step skipped if unset) |
 | `FISH_AUDIO_API_KEY` / `FISH_AUDIO_VOICE_ID` | backend | Text-to-speech |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | backend | Admin portal HTTP Basic auth |
 | `RESEND_API_KEY` / `RESEND_FROM_EMAIL` | backend | Transactional + digest email |
@@ -303,8 +302,8 @@ Applied via `artifacts/api-server/schema.sql`.
 ### Daily quotas
 
 - **NewsMesh** free tier: 25 req/day
-- **Claude**: two passes per story (insight + sentiment)
-- **GetXAPI**: one search per story with a resolvable ticker
+- **Claude**: one pass per story (insight)
+- **Grok**: one x_search pass per story with a resolvable ticker, person, or topic
 
 ---
 

@@ -157,6 +157,8 @@ export const ListStoriesQueryParams = zod.object({
       "business",
       "science",
       "entertainment",
+      "world",
+      "health",
     ])
     .optional(),
 });
@@ -179,6 +181,8 @@ export const ListStoriesResponse = zod.object({
         "business",
         "science",
         "entertainment",
+        "world",
+        "health",
       ]),
       published_at: zod.string().optional(),
       source_url: zod.string().optional(),
@@ -225,6 +229,20 @@ export const ListStoriesResponse = zod.object({
         .string()
         .nullish()
         .describe("AI-generated social sentiment summary"),
+      featured_posts: zod
+        .array(
+          zod.object({
+            handle: zod
+              .string()
+              .describe("Poster's X handle, without the @ sign"),
+            text: zod
+              .string()
+              .describe("Quoted or closely paraphrased post text"),
+            url: zod.string().describe("Link to the original post on X"),
+          }),
+        )
+        .nullish()
+        .describe("Representative X posts backing up people_say"),
       expires_at: zod.string().optional(),
       created_at: zod.string().optional(),
       saved_at: zod.string().nullish(),
@@ -267,6 +285,8 @@ export const GetSavedStoriesResponse = zod.object({
         "business",
         "science",
         "entertainment",
+        "world",
+        "health",
       ]),
       published_at: zod.string().optional(),
       source_url: zod.string().optional(),
@@ -313,6 +333,20 @@ export const GetSavedStoriesResponse = zod.object({
         .string()
         .nullish()
         .describe("AI-generated social sentiment summary"),
+      featured_posts: zod
+        .array(
+          zod.object({
+            handle: zod
+              .string()
+              .describe("Poster's X handle, without the @ sign"),
+            text: zod
+              .string()
+              .describe("Quoted or closely paraphrased post text"),
+            url: zod.string().describe("Link to the original post on X"),
+          }),
+        )
+        .nullish()
+        .describe("Representative X posts backing up people_say"),
       expires_at: zod.string().optional(),
       created_at: zod.string().optional(),
       saved_at: zod.string().nullish(),
@@ -356,6 +390,8 @@ export const SearchStoriesResponse = zod.object({
         "business",
         "science",
         "entertainment",
+        "world",
+        "health",
       ]),
       published_at: zod.string().optional(),
       source_url: zod.string().optional(),
@@ -402,6 +438,20 @@ export const SearchStoriesResponse = zod.object({
         .string()
         .nullish()
         .describe("AI-generated social sentiment summary"),
+      featured_posts: zod
+        .array(
+          zod.object({
+            handle: zod
+              .string()
+              .describe("Poster's X handle, without the @ sign"),
+            text: zod
+              .string()
+              .describe("Quoted or closely paraphrased post text"),
+            url: zod.string().describe("Link to the original post on X"),
+          }),
+        )
+        .nullish()
+        .describe("Representative X posts backing up people_say"),
       expires_at: zod.string().optional(),
       created_at: zod.string().optional(),
       saved_at: zod.string().nullish(),
@@ -431,6 +481,8 @@ export const GetStoryResponse = zod.object({
     "business",
     "science",
     "entertainment",
+    "world",
+    "health",
   ]),
   published_at: zod.string().optional(),
   source_url: zod.string().optional(),
@@ -477,6 +529,16 @@ export const GetStoryResponse = zod.object({
     .string()
     .nullish()
     .describe("AI-generated social sentiment summary"),
+  featured_posts: zod
+    .array(
+      zod.object({
+        handle: zod.string().describe("Poster's X handle, without the @ sign"),
+        text: zod.string().describe("Quoted or closely paraphrased post text"),
+        url: zod.string().describe("Link to the original post on X"),
+      }),
+    )
+    .nullish()
+    .describe("Representative X posts backing up people_say"),
   expires_at: zod.string().optional(),
   created_at: zod.string().optional(),
   saved_at: zod.string().nullish(),

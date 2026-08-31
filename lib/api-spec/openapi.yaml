@@ -514,7 +514,7 @@ components:
 
     Category:
       type: string
-      enum: [celebrity, tech, government, sports, business, science, entertainment]
+      enum: [celebrity, tech, government, sports, business, science, entertainment, world, health]
 
     Story:
       type: object
@@ -571,6 +571,26 @@ components:
           type: string
           nullable: true
           description: AI-generated social sentiment summary
+        featured_posts:
+          type: array
+          nullable: true
+          description: Representative X posts backing up people_say
+          items:
+            type: object
+            properties:
+              handle:
+                type: string
+                description: Poster's X handle, without the @ sign
+              text:
+                type: string
+                description: Quoted or closely paraphrased post text
+              url:
+                type: string
+                description: Link to the original post on X
+            required:
+              - handle
+              - text
+              - url
         expires_at:
           type: string
         created_at:

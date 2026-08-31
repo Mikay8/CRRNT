@@ -10,6 +10,8 @@ Config shape:
       "sports":      {"enabled": true, "count": 10},
       "business":    {"enabled": true, "count": 10},
       "science":     {"enabled": true, "count": 10},
+      "world":       {"enabled": true, "count": 10},
+      "health":      {"enabled": true, "count": 10},
     },
     "trending_count": 25
   }
@@ -31,7 +33,7 @@ _CONFIG_PATH = Path(__file__).parent.parent / "ingest_config.json"
 _DB_KEY = "ingest_config"
 _lock = asyncio.Lock()
 
-ALL_CATEGORIES = ["celebrity", "tech", "government", "sports", "business", "science"]
+ALL_CATEGORIES = ["celebrity", "tech", "government", "sports", "business", "science", "world", "health"]
 
 _DEFAULTS: dict[str, Any] = {
     "mode": "both",

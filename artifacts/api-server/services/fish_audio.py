@@ -31,10 +31,10 @@ def build_full_audio_text(story: dict[str, Any]) -> str:
     if life:
         parts.append("[break] Here's how it affects you. " + life)
 
-    insight = (story.get("one_liner") or "").strip()
     wallet = (story.get("wallet_impact") or "").strip()
-    wallet_line = " ".join(filter(None, [insight, wallet]))
-    if wallet_line:
+    if wallet:
+        insight = (story.get("one_liner") or "").strip()
+        wallet_line = " ".join(filter(None, [insight, wallet]))
         parts.append("[break] How does this affect your wallet? " + wallet_line)
 
     people_say = (story.get("people_say") or "").strip()

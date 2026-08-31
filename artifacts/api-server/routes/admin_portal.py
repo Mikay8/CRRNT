@@ -155,6 +155,8 @@ async def admin_stories(
                 "business",
                 "science",
                 "entertainment",
+                "world",
+                "health",
             ],
         },
     )
@@ -236,8 +238,8 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
         "DATABASE_URL": bool(os.environ.get("DATABASE_URL")),
         "JWT_SECRET": bool(os.environ.get("JWT_SECRET")),
         "ANTHROPIC_API_KEY": bool(os.environ.get("ANTHROPIC_API_KEY")),
-        "NEWSMESH_API_KEY": bool(os.environ.get("NEWSMESH_API_KEY")),
-        "XAPI_KEY": bool(os.environ.get("XAPI_KEY")),
+        "APITUBE_API_KEY": bool(os.environ.get("APITUBE_API_KEY")),
+        "XAI_API_KEY": bool(os.environ.get("XAI_API_KEY")),
         "FISH_AUDIO_API_KEY": bool(os.environ.get("FISH_AUDIO_API_KEY")),
         "ADMIN_PASSWORD": bool(os.environ.get("ADMIN_PASSWORD")),
         "RESEND_API_KEY": bool(os.environ.get("RESEND_API_KEY")),
@@ -253,7 +255,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
     system_info = [
         {"label": "Schedule", "value": "08:00 America/New_York (daily)"},
         {"label": "Cleanup", "value": "03:00 America/New_York (daily)"},
-        {"label": "NewsMesh daily quota", "value": "25 requests/day"},
+        {"label": "APITube rate limit", "value": "10 requests/minute"},
     ]
     return templates.TemplateResponse(
         request,
@@ -393,17 +395,17 @@ def _dashboard_links() -> list[dict]:
             ),
         },
         {
-            "name": "NewsMesh",
-            "description": "Daily request quota and news API usage",
+            "name": "APITube",
+            "description": "Request quota and news API usage",
             "url": os.environ.get(
-                "NEWSMESH_DASHBOARD_URL", "https://newsmesh.co/dashboard"
+                "APITUBE_DASHBOARD_URL", "https://dashboard.apitube.io/"
             ),
         },
         {
-            "name": "GetXAPI (Twitter/X)",
-            "description": "Tweet search quota and API usage",
+            "name": "xAI (Grok)",
+            "description": "Grok API usage and X search quota",
             "url": os.environ.get(
-                "XAPI_DASHBOARD_URL", "https://getxapi.com/dashboard"
+                "XAI_DASHBOARD_URL", "https://console.x.ai/team/default/usage"
             ),
         },
         {
@@ -428,24 +430,65 @@ _CLAUDE_OUTPUT_COST_PER_M = 5.00
 # Fish Audio ~$15 per M characters; a full story script is ~600 characters.
 _FISH_AUDIO_CHARS_PER_STORY = 600
 _FISH_AUDIO_COST_PER_M_CHARS = 15.00
+# Grok 4.6 sentiment pass (services/enrichment.py::enrich_story_tweets), only
+# run for stories with a ticker/person/topic (not every enriched story) —
+# $2/$6 per M input/output tokens under 200k context, plus $5 per 1000
+# x_search tool calls. Observed live: ~11k-17k input tokens (mostly tool
+# context, much of it cache-eligible on repeat runs), ~300-500 completion
+# tokens, ~1000-1500 reasoning tokens (billed as output), and 1-8 x_search
+# calls per story (averaging ~4) depending on how many searches Grok needs
+# to find a confident read.
+_GROK_INPUT_TOKENS_PER_STORY = 14000
+_GROK_OUTPUT_TOKENS_PER_STORY = 1700
+_GROK_INPUT_COST_PER_M = 2.00
+_GROK_OUTPUT_COST_PER_M = 6.00
+_GROK_SEARCH_CALLS_PER_STORY = 4
+_GROK_SEARCH_COST_PER_CALL = 0.005
+# Not every enriched story gets a Grok sentiment pass — enrich_all() skips
+# Buzzfeed quizzes and stories with no ticker/people/topics. This is a rough
+# share, not an exact count (that per-story skip isn't logged anywhere).
+_GROK_SHARE_OF_ENRICHED = 0.7
+# APITube (services/apitube.py) — request-based, not per-story. A "both" mode
+# ingestion run (the default) makes 1 trending request + 1 request per
+# enabled category (up to len(ALL_CATEGORIES) = 8), so ~9 requests/run.
+# APITube isn't billed per-token; treating each request as pay-as-you-go
+# overage ($0.01/request) is a simplification — the Basic plan's flat
+# monthly subscription isn't reflected here, so this undercounts true spend
+# until the plan's included monthly points are exhausted. Real usage/billing
+# lives on the APITube dashboard link below.
+_APITUBE_REQUESTS_PER_RUN = 9
+_APITUBE_COST_PER_REQUEST = 0.01
 
 
 def _estimate_cost(totals: dict[str, int]) -> dict[str, Any]:
     enriched = totals.get("enriched", 0)
     tts = totals.get("tts_generated", 0)
+    runs = totals.get("runs", 0)
+    grok_stories = round(enriched * _GROK_SHARE_OF_ENRICHED)
+    apitube_requests = runs * _APITUBE_REQUESTS_PER_RUN
 
     claude_cost = (
         enriched * _CLAUDE_INPUT_TOKENS_PER_STORY / 1_000_000 * _CLAUDE_INPUT_COST_PER_M
         + enriched * _CLAUDE_OUTPUT_TOKENS_PER_STORY / 1_000_000 * _CLAUDE_OUTPUT_COST_PER_M
     )
     fish_cost = tts * _FISH_AUDIO_CHARS_PER_STORY / 1_000_000 * _FISH_AUDIO_COST_PER_M_CHARS
+    grok_cost = (
+        grok_stories * _GROK_INPUT_TOKENS_PER_STORY / 1_000_000 * _GROK_INPUT_COST_PER_M
+        + grok_stories * _GROK_OUTPUT_TOKENS_PER_STORY / 1_000_000 * _GROK_OUTPUT_COST_PER_M
+        + grok_stories * _GROK_SEARCH_CALLS_PER_STORY * _GROK_SEARCH_COST_PER_CALL
+    )
+    apitube_cost = apitube_requests * _APITUBE_COST_PER_REQUEST
 
     return {
         "enriched": enriched,
         "tts": tts,
+        "grok_stories": grok_stories,
+        "apitube_requests": apitube_requests,
         "claude_cost": round(claude_cost, 2),
         "fish_cost": round(fish_cost, 2),
-        "total_cost": round(claude_cost + fish_cost, 2),
+        "grok_cost": round(grok_cost, 2),
+        "apitube_cost": round(apitube_cost, 2),
+        "total_cost": round(claude_cost + fish_cost + grok_cost + apitube_cost, 2),
     }
 
 
@@ -456,7 +499,8 @@ async def admin_usage(request: Request, _: None = Depends(_verify_admin)):
     total_errors = sum(r["errors"] for r in rows)
     error_rate = round(total_errors / total_calls * 100, 1) if total_calls else 0
     ingestion_totals = await _safe_db(
-        db.get_ingestion_totals(), {"fetched": 0, "enriched": 0, "tts_generated": 0}
+        db.get_ingestion_totals(),
+        {"fetched": 0, "enriched": 0, "tts_generated": 0, "runs": 0},
     )
     cost_estimate = _estimate_cost(ingestion_totals)
     return templates.TemplateResponse(

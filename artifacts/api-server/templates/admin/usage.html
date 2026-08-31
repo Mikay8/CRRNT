@@ -118,12 +118,28 @@
         <div class="text-2xl font-bold text-white mt-1">{{ cost_estimate.tts }}</div>
       </div>
       <div>
+        <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Grok Sentiment Runs</div>
+        <div class="text-2xl font-bold text-white mt-1">~{{ cost_estimate.grok_stories }}</div>
+      </div>
+      <div>
+        <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">APITube Requests</div>
+        <div class="text-2xl font-bold text-white mt-1">~{{ cost_estimate.apitube_requests }}</div>
+      </div>
+      <div>
         <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Claude (est.)</div>
         <div class="text-2xl font-bold text-white mt-1">${{ "%.2f"|format(cost_estimate.claude_cost) }}</div>
       </div>
       <div>
+        <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Grok (est.)</div>
+        <div class="text-2xl font-bold text-white mt-1">${{ "%.2f"|format(cost_estimate.grok_cost) }}</div>
+      </div>
+      <div>
         <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Fish Audio (est.)</div>
         <div class="text-2xl font-bold text-white mt-1">${{ "%.2f"|format(cost_estimate.fish_cost) }}</div>
+      </div>
+      <div>
+        <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">APITube (est.)</div>
+        <div class="text-2xl font-bold text-white mt-1">${{ "%.2f"|format(cost_estimate.apitube_cost) }}</div>
       </div>
     </div>
     <div class="px-5 py-3 border-t border-gray-700 flex items-center justify-between">

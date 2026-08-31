@@ -7,6 +7,7 @@ a user_id/story_id that the caller is actually allowed to touch (the JWT
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -43,18 +44,24 @@ def get_pool() -> asyncpg.Pool:
     return _pool
 
 
-def _serialize(value: Any) -> Any:
-    """asyncpg returns native datetime objects; the API/templates expect ISO
-    strings, matching the shape the old Supabase REST client returned."""
+_JSONB_COLUMNS = {"featured_posts"}
+
+
+def _serialize(key: str, value: Any) -> Any:
+    """asyncpg returns native datetime objects and raw JSON text for JSONB
+    columns; the API/templates expect ISO strings and parsed JSON, matching
+    the shape the old Supabase REST client returned."""
     if isinstance(value, datetime):
         return value.isoformat()
+    if key in _JSONB_COLUMNS and isinstance(value, str):
+        return json.loads(value)
     return value
 
 
 def _row(r: Optional[asyncpg.Record]) -> Optional[dict[str, Any]]:
     if r is None:
         return None
-    return {k: _serialize(v) for k, v in dict(r).items()}
+    return {k: _serialize(k, v) for k, v in dict(r).items()}
 
 
 def _rows(rs: list[asyncpg.Record]) -> list[dict[str, Any]]:
@@ -383,7 +390,8 @@ async def get_ingestion_totals() -> dict[str, int]:
     sql = (
         "SELECT COALESCE(SUM(stories_fetched), 0) AS fetched, "
         "COALESCE(SUM(stories_enriched), 0) AS enriched, "
-        "COALESCE(SUM(tts_generated), 0) AS tts_generated "
+        "COALESCE(SUM(tts_generated), 0) AS tts_generated, "
+        "COUNT(*) AS runs "
         "FROM ingestion_logs"
     )
     async with get_pool().acquire() as conn:
@@ -392,6 +400,7 @@ async def get_ingestion_totals() -> dict[str, int]:
         "fetched": r["fetched"],
         "enriched": r["enriched"],
         "tts_generated": r["tts_generated"],
+        "runs": r["runs"],
     }
 
 

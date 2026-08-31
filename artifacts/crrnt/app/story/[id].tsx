@@ -629,6 +629,35 @@ export default function StoryDetailScreen() {
               {story.people_say ? (
                 <Text style={styles.peopleSay}>{story.people_say}</Text>
               ) : null}
+
+              {story.featured_posts && story.featured_posts.length > 0 ? (
+                <View style={styles.postsList}>
+                  {story.featured_posts.map((post, i) => (
+                    <Pressable
+                      key={post.url ?? i}
+                      onPress={() => {
+                        if (post.url) {
+                          Linking.openURL(post.url).catch(() => undefined);
+                        }
+                      }}
+                      style={({ pressed }) => [
+                        styles.postCard,
+                        { opacity: pressed ? 0.7 : 1 },
+                      ]}
+                    >
+                      <View style={styles.postHeader}>
+                        <Text style={styles.postHandle}>@{post.handle}</Text>
+                        <Ionicons
+                          name="open-outline"
+                          size={13}
+                          color={palette.textDim}
+                        />
+                      </View>
+                      <Text style={styles.postText}>{post.text}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -971,6 +1000,34 @@ function createStyles(palette: ThemeColors) {
       fontSize: 14,
       lineHeight: 21,
       color: palette.textMuted,
+    },
+    postsList: {
+      gap: 8,
+      marginTop: 4,
+    },
+    postCard: {
+      backgroundColor: palette.bgElevated,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: "#1DA1F222",
+      padding: 12,
+      gap: 4,
+    },
+    postHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    postHandle: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 12,
+      color: "#1DA1F2",
+    },
+    postText: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 13,
+      lineHeight: 19,
+      color: palette.text,
     },
     sourceBtn: {
       flexDirection: "row",

@@ -33,7 +33,12 @@ import httpx
 log = logging.getLogger("crrnt.apitube")
 
 APITUBE_BASE = "https://api.apitube.io/v1/news"
+APITUBE_ACCOUNT_BASE = "https://api.apitube.io/v1"
 _MAX_PER_PAGE = 10  # plan limit
+# $0.01 per point is APITube's published pay-as-you-go overage rate. Points
+# consumed per request vary by endpoint/query, so this is only meaningful as
+# an estimate once actual points-remaining is known via get_balance().
+_COST_PER_POINT = 0.01
 
 CATEGORY_MAP: dict[str, str] = {
     "celebrity": "medtop:20000505",
@@ -67,6 +72,31 @@ def _get_key() -> str:
     if not api_key:
         raise ApitubeError("APITUBE_API_KEY is not set")
     return api_key
+
+
+async def get_balance() -> dict[str, Any]:
+    """Fetch real account balance from APITube's /v1/balance endpoint.
+
+    Returns {"points": int, "plan": str}. This is authoritative — unlike
+    estimating cost from ingestion_logs row counts, it reflects APITube's
+    own accounting directly. Rate-limited separately at 30 req/min, so it
+    doesn't compete with the 10 req/min news-fetch budget.
+    """
+    api_key = _get_key()
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(
+            f"{APITUBE_ACCOUNT_BASE}/balance",
+            headers={"X-API-Key": api_key},
+        )
+        if resp.status_code >= 400:
+            log.info("APITube /balance -> %s: %s", resp.status_code, resp.text[:300])
+            raise ApitubeError(f"APITube /balance failed ({resp.status_code})")
+        payload = resp.json()
+
+    return {
+        "points": payload.get("points"),
+        "plan": payload.get("plan"),
+    }
 
 
 async def fetch_category(
@@ -317,6 +347,7 @@ __all__ = [
     "fetch_all_categories",
     "fetch_categories_with_map",
     "fetch_trending",
+    "get_balance",
     "ALL_CATEGORIES",
     "ApitubeError",
 ]

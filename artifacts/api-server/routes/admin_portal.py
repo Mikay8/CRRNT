@@ -448,24 +448,12 @@ _GROK_SEARCH_COST_PER_CALL = 0.005
 # Buzzfeed quizzes and stories with no ticker/people/topics. This is a rough
 # share, not an exact count (that per-story skip isn't logged anywhere).
 _GROK_SHARE_OF_ENRICHED = 0.7
-# APITube (services/apitube.py) — request-based, not per-story. A "both" mode
-# ingestion run (the default) makes 1 trending request + 1 request per
-# enabled category (up to len(ALL_CATEGORIES) = 8), so ~9 requests/run.
-# APITube isn't billed per-token; treating each request as pay-as-you-go
-# overage ($0.01/request) is a simplification — the Basic plan's flat
-# monthly subscription isn't reflected here, so this undercounts true spend
-# until the plan's included monthly points are exhausted. Real usage/billing
-# lives on the APITube dashboard link below.
-_APITUBE_REQUESTS_PER_RUN = 9
-_APITUBE_COST_PER_REQUEST = 0.01
 
 
 def _estimate_cost(totals: dict[str, int]) -> dict[str, Any]:
     enriched = totals.get("enriched", 0)
     tts = totals.get("tts_generated", 0)
-    runs = totals.get("runs", 0)
     grok_stories = round(enriched * _GROK_SHARE_OF_ENRICHED)
-    apitube_requests = runs * _APITUBE_REQUESTS_PER_RUN
 
     claude_cost = (
         enriched * _CLAUDE_INPUT_TOKENS_PER_STORY / 1_000_000 * _CLAUDE_INPUT_COST_PER_M
@@ -477,19 +465,33 @@ def _estimate_cost(totals: dict[str, int]) -> dict[str, Any]:
         + grok_stories * _GROK_OUTPUT_TOKENS_PER_STORY / 1_000_000 * _GROK_OUTPUT_COST_PER_M
         + grok_stories * _GROK_SEARCH_CALLS_PER_STORY * _GROK_SEARCH_COST_PER_CALL
     )
-    apitube_cost = apitube_requests * _APITUBE_COST_PER_REQUEST
 
     return {
         "enriched": enriched,
         "tts": tts,
         "grok_stories": grok_stories,
-        "apitube_requests": apitube_requests,
         "claude_cost": round(claude_cost, 2),
         "fish_cost": round(fish_cost, 2),
         "grok_cost": round(grok_cost, 2),
-        "apitube_cost": round(apitube_cost, 2),
-        "total_cost": round(claude_cost + fish_cost + grok_cost + apitube_cost, 2),
+        "total_cost": round(claude_cost + fish_cost + grok_cost, 2),
     }
+
+
+# APITube doesn't fit the "estimated cost so far" pattern the other
+# providers use — its /v1/balance endpoint returns real points REMAINING,
+# not spend, and it exposes no historical usage. So it's shown as its own
+# live account-status tile (points + plan) rather than folded into a
+# fabricated cost figure.
+async def _get_apitube_status() -> dict[str, Any]:
+    """Live APITube balance for the usage page. Never raises — falls back
+    to a null/unknown state if the API is unreachable or the key is unset."""
+    try:
+        from services import apitube
+        bal = await apitube.get_balance()
+        return {"available": True, "points": bal.get("points"), "plan": bal.get("plan")}
+    except Exception as exc:
+        log.warning("Could not fetch APITube balance: %s", exc)
+        return {"available": False, "points": None, "plan": None}
 
 
 @router.get("/usage", response_class=HTMLResponse)
@@ -503,6 +505,7 @@ async def admin_usage(request: Request, _: None = Depends(_verify_admin)):
         {"fetched": 0, "enriched": 0, "tts_generated": 0, "runs": 0},
     )
     cost_estimate = _estimate_cost(ingestion_totals)
+    apitube_status = await _get_apitube_status()
     return templates.TemplateResponse(
         request,
         "admin/usage.html",
@@ -515,6 +518,7 @@ async def admin_usage(request: Request, _: None = Depends(_verify_admin)):
             "endpoints": len(rows),
             "dashboards": _dashboard_links(),
             "cost_estimate": cost_estimate,
+            "apitube_status": apitube_status,
         },
     )
 

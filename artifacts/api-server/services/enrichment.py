@@ -354,6 +354,14 @@ def _is_buzzfeed_quiz(story: dict[str, Any]) -> bool:
     return "buzzfeed" in source and "quiz" in title
 
 
+# Categories where social sentiment is either predictable (everyone feels the
+# same about a natural disaster) or low-value to surface (a health crisis
+# isn't "controversial") - skip the Grok sentiment pass there entirely to cut
+# cost. Keep it for categories where opinion is genuinely split: government,
+# business, celebrity, sports, tech, science, entertainment.
+_SENTIMENT_SKIP_CATEGORIES = {"world", "health"}
+
+
 async def personalize_life_impact(
     story: dict[str, Any], prefs: dict[str, Any]
 ) -> str:
@@ -435,6 +443,8 @@ async def enrich_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     async def _bounded_tweets(s: dict[str, Any]) -> dict[str, Any]:
         if _is_buzzfeed_quiz(s):
+            return s
+        if (s.get("category") or "").strip().lower() in _SENTIMENT_SKIP_CATEGORIES:
             return s
         if not (s.get("ticker") or s.get("people") or s.get("topics")):
             return s

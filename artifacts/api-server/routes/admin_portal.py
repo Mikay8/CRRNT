@@ -445,9 +445,11 @@ _GROK_OUTPUT_COST_PER_M = 6.00
 _GROK_SEARCH_CALLS_PER_STORY = 4
 _GROK_SEARCH_COST_PER_CALL = 0.005
 # Not every enriched story gets a Grok sentiment pass — enrich_all() skips
-# Buzzfeed quizzes and stories with no ticker/people/topics. This is a rough
-# share, not an exact count (that per-story skip isn't logged anywhere).
-_GROK_SHARE_OF_ENRICHED = 0.7
+# Buzzfeed quizzes, stories with no ticker/people/topics, and (as of the
+# world/health category exclusion) any story in a category where sentiment
+# is predictable or low-value rather than genuinely controversial. This is a
+# rough share, not an exact count (that per-story skip isn't logged anywhere).
+_GROK_SHARE_OF_ENRICHED = 0.5
 
 
 def _estimate_cost(totals: dict[str, int]) -> dict[str, Any]:

@@ -98,8 +98,16 @@ async def save(cfg: dict[str, Any]) -> None:
 async def get_run_params() -> dict[str, Any]:
     """Returns kwargs ready to pass to ingestion.run_ingestion()."""
     cfg = await get()
+
+    from services import app_settings
+    source_domains = await app_settings.get_allowed_sources()
+
     if cfg["mode"] == "trending":
-        return {"mode": "trending", "trending_count": cfg.get("trending_count", 25)}
+        return {
+            "mode": "trending",
+            "trending_count": cfg.get("trending_count", 25),
+            "source_domains": source_domains,
+        }
     enabled = [
         cat for cat, v in cfg["categories"].items() if v.get("enabled", True)
     ]
@@ -114,9 +122,11 @@ async def get_run_params() -> dict[str, Any]:
             "trending_count": cfg.get("trending_count", 25),
             "categories": enabled,
             "per_category_map": per_category_map,
+            "source_domains": source_domains,
         }
     return {
         "mode": "category",
         "categories": enabled,
         "per_category_map": per_category_map,
+        "source_domains": source_domains,
     }

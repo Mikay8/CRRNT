@@ -105,6 +105,7 @@ async def run_ingestion(
     mode: str = "category",
     per_category_map: Optional[dict[str, int]] = None,
     trending_count: int = 25,
+    source_domains: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Full ingestion pipeline. Returns a status dict."""
     async with _status_lock:
@@ -124,20 +125,20 @@ async def run_ingestion(
     try:
         if mode == "trending":
             log.info("Ingestion starting (mode=trending, count=%d)", trending_count)
-            raw = await apitube.fetch_trending(limit=trending_count)
+            raw = await apitube.fetch_trending(limit=trending_count, source_domains=source_domains)
             for a in raw:
                 a["_is_trending"] = True
         elif mode == "both":
             log.info("Ingestion starting (mode=both, trending=%d)", trending_count)
-            trending_raw = await apitube.fetch_trending(limit=trending_count)
+            trending_raw = await apitube.fetch_trending(limit=trending_count, source_domains=source_domains)
             for a in trending_raw:
                 a["_is_trending"] = True
             await asyncio.sleep(1.0)
             if per_category_map:
-                cat_raw = await apitube.fetch_categories_with_map(per_category_map)
+                cat_raw = await apitube.fetch_categories_with_map(per_category_map, source_domains=source_domains)
             else:
                 selected = categories or ALL_CATEGORIES
-                cat_raw = await apitube.fetch_all_categories(selected, per_category=per_category)
+                cat_raw = await apitube.fetch_all_categories(selected, per_category=per_category, source_domains=source_domains)
             for a in cat_raw:
                 a["_is_trending"] = False
             # Dedup by articleId — trending wins if a story appears in both pulls
@@ -151,11 +152,11 @@ async def run_ingestion(
         elif per_category_map:
             # Per-category counts — fetch each separately
             log.info("Ingestion starting (mode=category, per_category_map=%s)", per_category_map)
-            raw = await apitube.fetch_categories_with_map(per_category_map)
+            raw = await apitube.fetch_categories_with_map(per_category_map, source_domains=source_domains)
         else:
             selected = categories or ALL_CATEGORIES
             log.info("Ingestion starting (per_category=%d, categories=%s)", per_category, selected)
-            raw = await apitube.fetch_all_categories(selected, per_category=per_category)
+            raw = await apitube.fetch_all_categories(selected, per_category=per_category, source_domains=source_domains)
         fetched_count = len(raw)
         log.info("Fetched %d raw articles", fetched_count)
 

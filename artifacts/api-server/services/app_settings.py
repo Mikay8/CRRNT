@@ -16,6 +16,7 @@ _FEED_LIMITS_KEY = "feed_limits"
 _STORY_EXPIRY_KEY = "story_expiry"
 _ADMIN_EMAILS_KEY = "admin_emails"
 _SCHEDULE_KEY = "schedule_times"
+_ALLOWED_SOURCES_KEY = "allowed_sources"
 _TTL = 300.0  # seconds
 
 _DEFAULTS: dict[str, Any] = {
@@ -23,6 +24,8 @@ _DEFAULTS: dict[str, Any] = {
     _STORY_EXPIRY_KEY: {"days": 7, "extension_days": 30},
     _ADMIN_EMAILS_KEY: {"emails": []},
     _SCHEDULE_KEY: {"ingest_hour": 8, "ingest_minute": 0, "cleanup_hour": 3, "cleanup_minute": 0},
+    # Empty list = no source restriction (fetch from any source APITube returns).
+    _ALLOWED_SOURCES_KEY: {"domains": []},
 }
 
 _cache: dict[str, Any] = {}
@@ -95,3 +98,14 @@ async def save_schedule_times(ingest_hour: int, ingest_minute: int, cleanup_hour
         "cleanup_minute": cleanup_minute,
     })
     log.info("Schedule saved: ingestion=%02d:%02d ET cleanup=%02d:%02d ET", ingest_hour, ingest_minute, cleanup_hour, cleanup_minute)
+
+
+async def get_allowed_sources() -> list[str]:
+    """Domains APITube is restricted to (e.g. 'nytimes.com'). Empty = unrestricted."""
+    val = await _get(_ALLOWED_SOURCES_KEY)
+    return val.get("domains", [])
+
+
+async def save_allowed_sources(domains: list[str]) -> None:
+    await _save(_ALLOWED_SOURCES_KEY, {"domains": domains})
+    log.info("Allowed sources saved: %s", domains)

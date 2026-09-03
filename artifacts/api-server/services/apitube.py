@@ -103,19 +103,27 @@ async def fetch_category(
     crrnt_category: str,
     *,
     limit: int = 10,
+    source_domains: Optional[list[str]] = None,
 ) -> list[dict[str, Any]]:
-    """Fetch the latest articles for a CRRNT category."""
+    """Fetch the latest articles for a CRRNT category.
+
+    source_domains: if non-empty, restricts results to these domains via
+    APITube's source.domain filter (comma-separated = OR). Empty/None means
+    no restriction.
+    """
     api_key = _get_key()
 
     category_id = CATEGORY_MAP.get(crrnt_category)
     if not category_id:
         raise ApitubeError(f"Unknown category: {crrnt_category}")
 
-    params = {
+    params: dict[str, Any] = {
         "per_page": min(limit, _MAX_PER_PAGE),
         "language.code": "en",
         "category.id": category_id,
     }
+    if source_domains:
+        params["source.domain"] = ",".join(source_domains)
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
@@ -198,7 +206,10 @@ def _normalize(article: dict[str, Any], crrnt_category: str) -> dict[str, Any]:
 
 
 async def fetch_all_categories(
-    categories: list[str], per_category: int = 10
+    categories: list[str],
+    per_category: int = 10,
+    *,
+    source_domains: Optional[list[str]] = None,
 ) -> list[dict[str, Any]]:
     """Fetch articles for the specified CRRNT categories sequentially.
 
@@ -211,7 +222,9 @@ async def fetch_all_categories(
         if idx > 0:
             await asyncio.sleep(6.0)
         try:
-            results.append(await fetch_category(cat, limit=per_category))
+            results.append(
+                await fetch_category(cat, limit=per_category, source_domains=source_domains)
+            )
         except Exception as exc:  # noqa: BLE001
             log.info("Failed to fetch category %s: %s", cat, exc)
             results.append([])
@@ -231,7 +244,9 @@ async def fetch_all_categories(
     return flattened
 
 
-async def fetch_trending(limit: int = 25) -> list[dict[str, Any]]:
+async def fetch_trending(
+    limit: int = 25, *, source_domains: Optional[list[str]] = None
+) -> list[dict[str, Any]]:
     """Fetch top headlines across all categories from APITube /top-headlines.
 
     /top-headlines only returns high-authority sources (source.rank.opr >= 5),
@@ -243,10 +258,12 @@ async def fetch_trending(limit: int = 25) -> list[dict[str, Any]]:
     """
     api_key = _get_key()
 
-    params = {
+    params: dict[str, Any] = {
         "per_page": min(limit, _MAX_PER_PAGE),
         "language.code": "en",
     }
+    if source_domains:
+        params["source.domain"] = ",".join(source_domains)
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
@@ -312,6 +329,8 @@ def _infer_category(article: dict[str, Any]) -> str:
 
 async def fetch_categories_with_map(
     per_category_map: dict[str, int],
+    *,
+    source_domains: Optional[list[str]] = None,
 ) -> list[dict[str, Any]]:
     """Fetch categories using individual per-category counts.
 
@@ -324,7 +343,9 @@ async def fetch_categories_with_map(
         if idx > 0:
             await asyncio.sleep(6.0)
         try:
-            results.append(await fetch_category(cat, limit=count))
+            results.append(
+                await fetch_category(cat, limit=count, source_domains=source_domains)
+            )
         except Exception as exc:
             log.info("Failed to fetch category %s: %s", cat, exc)
             results.append([])

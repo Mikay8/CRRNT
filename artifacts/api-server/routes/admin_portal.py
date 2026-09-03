@@ -15,12 +15,14 @@ Actions (POST, redirect back):
   POST /admin/breaking/{id}/dismiss
   POST /admin/stories/{id}/delete
   POST /admin/settings/save
+  POST /admin/allowed-sources/save
 
 """
 
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import logging
 from pathlib import Path
@@ -234,6 +236,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
     story_expiry = await app_settings.get_story_expiry()
     admin_emails = await app_settings.get_admin_emails()
     schedule_times = await app_settings.get_schedule_times()
+    allowed_sources = await app_settings.get_allowed_sources()
     env_status = {
         "DATABASE_URL": bool(os.environ.get("DATABASE_URL")),
         "JWT_SECRET": bool(os.environ.get("JWT_SECRET")),
@@ -267,6 +270,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
             "story_expiry": story_expiry,
             "admin_emails": admin_emails,
             "schedule_times": schedule_times,
+            "allowed_sources": allowed_sources,
             "env_status": env_status,
             "system_info": system_info,
         },
@@ -343,6 +347,33 @@ async def save_admin_emails(request: Request, _: None = Depends(_verify_admin)):
     raw = form.get("emails", "")
     emails = [e.strip() for e in raw.replace(",", "\n").splitlines() if e.strip()]
     await app_settings.save_admin_emails(emails)
+    return RedirectResponse(url="/admin/settings", status_code=302)
+
+
+def _normalize_domain(raw: str) -> str:
+    """Strip scheme/www/path/whitespace so pasted URLs behave like bare domains."""
+    d = raw.strip().lower()
+    d = re.sub(r"^https?://", "", d)
+    d = re.sub(r"^www\.", "", d)
+    d = d.split("/")[0]
+    return d
+
+
+@router.post("/allowed-sources/save")
+async def save_allowed_sources(request: Request, _: None = Depends(_verify_admin)):
+    form = dict(await request.form())
+    raw = form.get("domains", "")
+    domains = [
+        _normalize_domain(d) for d in raw.replace(",", "\n").splitlines() if d.strip()
+    ]
+    # Dedupe, preserve order
+    seen: set[str] = set()
+    deduped = []
+    for d in domains:
+        if d and d not in seen:
+            seen.add(d)
+            deduped.append(d)
+    await app_settings.save_allowed_sources(deduped)
     return RedirectResponse(url="/admin/settings", status_code=302)
 
 

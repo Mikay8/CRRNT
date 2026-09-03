@@ -316,6 +316,53 @@
     </div>
   </form>
 
+  <!-- ── Allowed News Sources ─────────────────────────────────────────── -->
+  <form method="POST" action="/admin/allowed-sources/save" id="sources-form">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
+      <div>
+        <h2 class="text-sm font-semibold text-white">Allowed News Sources</h2>
+        <p class="text-xs text-gray-500 mt-0.5">Restrict APITube fetches to these domains only (e.g. nytimes.com, apnews.com, reuters.com). Leave empty to allow any source.</p>
+      </div>
+
+      <!-- Hidden input — JS keeps this in sync with the chip list -->
+      <input type="hidden" name="domains" id="domains-hidden" value="{{ allowed_sources | join(',') }}">
+
+      <!-- Chip list -->
+      <div id="source-chips" class="flex flex-wrap gap-2 min-h-[2rem]">
+        {% for domain in allowed_sources %}
+        <span class="source-chip inline-flex items-center gap-1.5 px-3 py-1 bg-gray-700 border border-gray-600 rounded-full text-sm text-white">
+          {{ domain }}
+          <button type="button" onclick="removeSource('{{ domain }}')"
+            class="text-gray-400 hover:text-red-400 transition-colors leading-none">
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          </button>
+        </span>
+        {% else %}
+        <span id="empty-source-hint" class="text-sm text-gray-600 italic">No restriction — all sources allowed</span>
+        {% endfor %}
+      </div>
+
+      <!-- Add input -->
+      <div class="flex gap-2">
+        <input
+          type="text"
+          id="new-source-input"
+          placeholder="nytimes.com"
+          class="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();addSource();}">
+        <button type="button" onclick="addSource()"
+          class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
+          Add
+        </button>
+      </div>
+
+      <button type="submit"
+        class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-lg transition-colors">
+        Save Sources
+      </button>
+    </div>
+  </form>
+
   <!-- ── System info (read-only) ───────────────────────────────────────── -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
     <h2 class="text-sm font-semibold text-white mb-4">System Defaults</h2>
@@ -447,6 +494,58 @@ function removeEmail(email) {
 document.querySelectorAll('#email-chips .email-chip').forEach(chip => {
   const text = chip.childNodes[0].textContent.trim();
   chip.dataset.email = text;
+});
+
+// ── Allowed news sources ─────────────────────────────────────────────────────
+
+function _normalizeDomain(val) {
+  return val.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+}
+
+function _syncSourcesHidden() {
+  const chips = [...document.querySelectorAll('#source-chips .source-chip')];
+  document.getElementById('domains-hidden').value = chips.map(c => c.dataset.domain).join(',');
+}
+
+function addSource() {
+  const input = document.getElementById('new-source-input');
+  const val = _normalizeDomain(input.value);
+  if (!val || !val.includes('.')) return;
+
+  const existing = [...document.querySelectorAll('#source-chips .source-chip')].map(c => c.dataset.domain);
+  if (existing.includes(val)) { input.value = ''; return; }
+
+  const hint = document.getElementById('empty-source-hint');
+  if (hint) hint.remove();
+
+  const chip = document.createElement('span');
+  chip.className = 'source-chip inline-flex items-center gap-1.5 px-3 py-1 bg-gray-700 border border-gray-600 rounded-full text-sm text-white';
+  chip.dataset.domain = val;
+  chip.innerHTML = `${val}<button type="button" onclick="removeSource('${val}')" class="text-gray-400 hover:text-red-400 transition-colors leading-none ml-0.5"><svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></button>`;
+  document.getElementById('source-chips').appendChild(chip);
+  _syncSourcesHidden();
+  input.value = '';
+  input.focus();
+}
+
+function removeSource(domain) {
+  document.querySelectorAll('#source-chips .source-chip').forEach(chip => {
+    if (chip.dataset.domain === domain) chip.remove();
+  });
+  if (!document.querySelector('#source-chips .source-chip')) {
+    const hint = document.createElement('span');
+    hint.id = 'empty-source-hint';
+    hint.className = 'text-sm text-gray-600 italic';
+    hint.textContent = 'No restriction — all sources allowed';
+    document.getElementById('source-chips').appendChild(hint);
+  }
+  _syncSourcesHidden();
+}
+
+// Set data-domain on server-rendered chips so JS can reference them
+document.querySelectorAll('#source-chips .source-chip').forEach(chip => {
+  const text = chip.childNodes[0].textContent.trim();
+  chip.dataset.domain = text;
 });
 </script>
 {% endblock %}

@@ -68,6 +68,16 @@ async def _to_story_row(raw: dict[str, Any]) -> dict[str, Any]:
     stock_note = " ".join(stock_note_parts) if stock_note_parts else None
 
     pub = _parse_datetime(raw.get("publishedDate") or raw.get("published_at"))
+    if pub is None:
+        # A NULL published_at silently excludes the row from every feed query
+        # (`published_at >= $1` is never true against NULL) — fall back to now
+        # rather than insert a story the feed can never surface.
+        log.warning(
+            "Missing/unparseable publishedDate for '%s' (raw=%r) — defaulting to now",
+            raw.get("title", "")[:60],
+            raw.get("publishedDate") or raw.get("published_at"),
+        )
+        pub = datetime.now(timezone.utc)
 
     sentiment_label = raw.get("sentimentLabel") or raw.get("sentiment_label")
     sentiment_score = raw.get("sentimentScore") or raw.get("sentiment_score")

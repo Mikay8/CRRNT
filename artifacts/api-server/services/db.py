@@ -141,7 +141,7 @@ async def get_stories_for_feed(published_since_days: int = 7) -> list[dict[str, 
     cutoff = datetime.now(timezone.utc) - timedelta(days=published_since_days)
     sql = (
         "SELECT * FROM stories "
-        "WHERE published_at >= $1 AND (expires_at IS NULL OR expires_at > NOW()) "
+        "WHERE (published_at IS NULL OR published_at >= $1) AND (expires_at IS NULL OR expires_at > NOW()) "
         "ORDER BY published_at DESC LIMIT 200"
     )
     async with get_pool().acquire() as conn:

@@ -92,7 +92,7 @@ function PrivacyScreen({ onContinue }: { onContinue: () => void }) {
             setDeclining(true);
             try {
               await deleteAccount();
-              // AuthGate will redirect to /login once user is null
+              router.replace("/login");
             } catch {
               setDeclining(false);
               Alert.alert("Error", "Could not delete account. Please try again.");

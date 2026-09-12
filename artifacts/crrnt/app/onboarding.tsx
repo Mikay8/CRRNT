@@ -8,7 +8,6 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSaveOnboardingQuiz } from "@workspace/api-client-react";
+import { AlertDialog, type AlertButton } from "@/components/AlertDialog";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -79,16 +79,18 @@ const QUIZ_STEPS: QuizStep[] = [
 function PrivacyScreen({
   onContinue,
   exitButton,
+  showDialog,
 }: {
   onContinue: () => void;
   exitButton: ReactNode;
+  showDialog: (title: string, message: string, buttons: AlertButton[]) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { deleteAccount } = useAuth();
   const [declining, setDeclining] = useState(false);
 
   const handleDecline = () => {
-    Alert.alert(
+    showDialog(
       "Decline & delete account",
       "This will permanently delete your account and all associated data. This cannot be undone.",
       [
@@ -103,7 +105,9 @@ function PrivacyScreen({
               router.replace("/login");
             } catch {
               setDeclining(false);
-              Alert.alert("Error", "Could not delete account. Please try again.");
+              showDialog("Error", "Could not delete account. Please try again.", [
+                { text: "OK" },
+              ]);
             }
           },
         },
@@ -343,6 +347,27 @@ export default function OnboardingScreen() {
   const { user, updateUser, logout, enterGuestMode } = useAuth();
   const [phase, setPhase] = useState<Phase>("privacy");
   const [exiting, setExiting] = useState(false);
+  const [dialog, setDialog] = useState<{
+    title: string;
+    message?: string;
+    buttons: AlertButton[];
+  } | null>(null);
+
+  const closeDialog = () => setDialog(null);
+
+  const showDialog = (title: string, message: string, buttons: AlertButton[]) => {
+    setDialog({
+      title,
+      message,
+      buttons: buttons.map((b) => ({
+        ...b,
+        onPress: () => {
+          closeDialog();
+          b.onPress?.();
+        },
+      })),
+    });
+  };
 
   useEffect(() => {
     if (user?.onboarding_complete) {
@@ -357,7 +382,7 @@ export default function OnboardingScreen() {
 
   const handleExit = () => {
     if (exiting) return;
-    Alert.alert(
+    showDialog(
       "Continue as guest?",
       "You'll be signed out and can browse without an account. You can log back in anytime.",
       [
@@ -372,7 +397,9 @@ export default function OnboardingScreen() {
               router.replace("/(tabs)");
             } catch {
               setExiting(false);
-              Alert.alert("Error", "Something went wrong. Please try again.");
+              showDialog("Error", "Something went wrong. Please try again.", [
+                { text: "OK" },
+              ]);
             }
           },
         },
@@ -391,11 +418,25 @@ export default function OnboardingScreen() {
     </Pressable>
   );
 
-  if (phase === "privacy") {
-    return <PrivacyScreen onContinue={() => setPhase("quiz")} exitButton={exitButton} />;
-  }
-
-  return <QuizScreen onComplete={finish} exitButton={exitButton} />;
+  return (
+    <>
+      {phase === "privacy" ? (
+        <PrivacyScreen
+          onContinue={() => setPhase("quiz")}
+          exitButton={exitButton}
+          showDialog={showDialog}
+        />
+      ) : (
+        <QuizScreen onComplete={finish} exitButton={exitButton} />
+      )}
+      <AlertDialog
+        visible={dialog !== null}
+        title={dialog?.title ?? ""}
+        message={dialog?.message}
+        buttons={dialog?.buttons ?? []}
+      />
+    </>
+  );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────

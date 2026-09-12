@@ -4,6 +4,7 @@
  * Phase 1 (privacy): Data & privacy disclosure — required for all new users.
  * Phase 2 (quiz):     Personalization quiz.
  */
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,6 +17,7 @@ import {
   View,
 } from "react-native";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSaveOnboardingQuiz } from "@workspace/api-client-react";
@@ -74,7 +76,13 @@ const QUIZ_STEPS: QuizStep[] = [
 
 // ── Privacy screen ─────────────────────────────────────────────────────────────
 
-function PrivacyScreen({ onContinue }: { onContinue: () => void }) {
+function PrivacyScreen({
+  onContinue,
+  exitButton,
+}: {
+  onContinue: () => void;
+  exitButton: ReactNode;
+}) {
   const insets = useSafeAreaInsets();
   const { deleteAccount } = useAuth();
   const [declining, setDeclining] = useState(false);
@@ -105,6 +113,7 @@ function PrivacyScreen({ onContinue }: { onContinue: () => void }) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 24 }]}>
+      <View style={styles.exitRow}>{exitButton}</View>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.privacyContent}
@@ -170,7 +179,13 @@ function PrivacyScreen({ onContinue }: { onContinue: () => void }) {
 
 // ── Quiz screen ───────────────────────────────────────────────────────────────
 
-function QuizScreen({ onComplete }: { onComplete: () => Promise<void> }) {
+function QuizScreen({
+  onComplete,
+  exitButton,
+}: {
+  onComplete: () => Promise<void>;
+  exitButton: ReactNode;
+}) {
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({ ...QUIZ_DEFAULTS });
@@ -245,9 +260,12 @@ function QuizScreen({ onComplete }: { onComplete: () => Promise<void> }) {
 
       <View style={styles.stepIndicator}>
         <Text style={styles.stepText}>{step + 1} / {total}</Text>
-        <Pressable onPress={handleSkip}>
-          <Text style={styles.skipText}>Skip</Text>
-        </Pressable>
+        <View style={styles.stepIndicatorRight}>
+          <Pressable onPress={handleSkip}>
+            <Text style={styles.skipText}>Skip</Text>
+          </Pressable>
+          {exitButton}
+        </View>
       </View>
 
       <ScrollView
@@ -322,8 +340,9 @@ function QuizScreen({ onComplete }: { onComplete: () => Promise<void> }) {
 // ── Root orchestrator ─────────────────────────────────────────────────────────
 
 export default function OnboardingScreen() {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, logout, enterGuestMode } = useAuth();
   const [phase, setPhase] = useState<Phase>("privacy");
+  const [exiting, setExiting] = useState(false);
 
   useEffect(() => {
     if (user?.onboarding_complete) {
@@ -336,11 +355,47 @@ export default function OnboardingScreen() {
     router.replace("/(tabs)");
   };
 
+  const handleExit = () => {
+    if (exiting) return;
+    Alert.alert(
+      "Continue as guest?",
+      "You'll be signed out and can browse without an account. You can log back in anytime.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Continue as guest",
+          onPress: async () => {
+            setExiting(true);
+            try {
+              await logout();
+              await enterGuestMode();
+              router.replace("/(tabs)");
+            } catch {
+              setExiting(false);
+              Alert.alert("Error", "Something went wrong. Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const exitButton = (
+    <Pressable
+      style={({ pressed }) => [styles.exitBtn, pressed && styles.exitBtnPressed]}
+      onPress={handleExit}
+      disabled={exiting}
+      hitSlop={12}
+    >
+      <Ionicons name="close" size={22} color="#6B7280" />
+    </Pressable>
+  );
+
   if (phase === "privacy") {
-    return <PrivacyScreen onContinue={() => setPhase("quiz")} />;
+    return <PrivacyScreen onContinue={() => setPhase("quiz")} exitButton={exitButton} />;
   }
 
-  return <QuizScreen onComplete={finish} />;
+  return <QuizScreen onComplete={finish} exitButton={exitButton} />;
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -348,6 +403,22 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#090D12" },
   scroll: { flex: 1 },
+
+  // ── Exit ─────────────────────────────────────────────────────────────────────
+  exitRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: 20,
+    paddingBottom: 4,
+  },
+  exitBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  exitBtnPressed: { opacity: 0.6 },
 
   // ── Privacy ──────────────────────────────────────────────────────────────────
   privacyContent: {
@@ -421,6 +492,11 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     fontSize: 13,
     color: "#6B7280",
+  },
+  stepIndicatorRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
   },
   skipText: {
     fontFamily: "Inter_500Medium",

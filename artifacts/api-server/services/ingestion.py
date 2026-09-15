@@ -51,6 +51,35 @@ def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
+# Some APITube category/source combinations fall back to stale wire-archive
+# filler (observed: articles over a year old, sometimes duplicated verbatim
+# with different articleIds) when a narrow source filter starves that
+# category's index of fresh content. Drop anything older than this window
+# and collapse same-title duplicates within a single fetch before spending
+# Claude/Grok calls enriching junk.
+_MAX_ARTICLE_AGE_DAYS = 3
+
+
+def _filter_fresh_and_unique(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=_MAX_ARTICLE_AGE_DAYS)
+    seen_titles: set[str] = set()
+    kept: list[dict[str, Any]] = []
+    for a in articles:
+        title_key = (a.get("title") or "").strip().lower()
+        if title_key and title_key in seen_titles:
+            continue
+        pub = _parse_datetime(a.get("publishedDate") or a.get("published_at"))
+        if pub is not None and pub < cutoff:
+            continue
+        if title_key:
+            seen_titles.add(title_key)
+        kept.append(a)
+    dropped = len(articles) - len(kept)
+    if dropped:
+        log.info("Filtered out %d stale/duplicate article(s) before enrichment", dropped)
+    return kept
+
+
 async def _expires_at(published_at: Optional[datetime], days: Optional[int] = None) -> datetime:
     if days is None:
         days = (await app_settings.get_story_expiry())["days"]
@@ -167,6 +196,7 @@ async def run_ingestion(
             selected = categories or ALL_CATEGORIES
             log.info("Ingestion starting (per_category=%d, categories=%s)", per_category, selected)
             raw = await apitube.fetch_all_categories(selected, per_category=per_category, source_domains=source_domains)
+        raw = _filter_fresh_and_unique(raw)
         fetched_count = len(raw)
         log.info("Fetched %d raw articles", fetched_count)
 

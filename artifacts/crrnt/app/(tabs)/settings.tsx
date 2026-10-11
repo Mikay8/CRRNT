@@ -15,6 +15,7 @@ import { useThemeContext } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGetOnboardingQuiz } from "@workspace/api-client-react";
 import type { ThemeColors } from "@/constants/theme";
+import { AUTH_ENABLED } from "@/constants/features";
 import { AlertDialog, type AlertButton } from "@/components/AlertDialog";
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -142,7 +143,7 @@ export default function SettingsScreen() {
   };
 
   if (isGuest || !user) {
-    return <Redirect href={"/login" as any} />;
+    return <Redirect href={(AUTH_ENABLED ? "/login" : "/(tabs)") as any} />;
   }
 
   const closeDialog = () => setDialog(null);

@@ -27,6 +27,7 @@ import {
 } from "@workspace/api-client-react";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { AUTH_ENABLED } from "@/constants/features";
 import MiniAudioBar from "@/components/MiniAudioBar";
 import { ThemeProvider, useThemeContext } from "@/contexts/ThemeContext";
 import { AudioProvider } from "@/contexts/AudioContext";
@@ -121,6 +122,13 @@ function AuthGate() {
     const inAuthGroup = seg0 === "auth";
     const inOnboarding = seg0 === "onboarding";
     const isPublicScreen = seg0 === "login" || seg0 === "register" || inAuthGroup;
+
+    // Auth hidden: bounce any direct visit to login/register/forgot-password back to the feed
+    if (!AUTH_ENABLED && isPublicScreen) {
+      if (!user && !isGuest) enterGuestMode();
+      router.replace("/(tabs)" as any);
+      return;
+    }
 
     if (!user && !isGuest && !isPublicScreen) {
       enterGuestMode();

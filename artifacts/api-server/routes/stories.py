@@ -76,7 +76,7 @@ async def get_saved(user: dict = Depends(get_current_user)) -> dict[str, Any]:
 async def search(
     q: str = Query(..., min_length=1, max_length=200),
     limit: int = Query(default=20, ge=1, le=100),
-    user: dict = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user_optional),
 ) -> dict[str, Any]:
     stories = await db.get_stories_for_feed()
 

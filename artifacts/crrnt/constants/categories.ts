@@ -1,3 +1,4 @@
+import type { Ionicons } from "@expo/vector-icons";
 import palette from "@/constants/colors";
 
 export type Category =
@@ -39,6 +40,19 @@ export const CATEGORIES: CategoryMeta[] = [
   { key: "world",         label: "World",         short: "World",  color: palette.world,         icon: "globe"         },
   { key: "health",        label: "Health",        short: "Health", color: palette.health,        icon: "heart"         },
 ];
+
+// Keyed by every CategoryMeta icon, so adding a category without an icon is a type error.
+export const CATEGORY_ICONS: Record<CategoryMeta["icon"], keyof typeof Ionicons.glyphMap> = {
+  mic: "mic",
+  "hardware-chip": "hardware-chip",
+  business: "business",
+  trophy: "trophy",
+  briefcase: "briefcase-outline",
+  planet: "planet-outline",
+  film: "film-outline",
+  globe: "globe-outline",
+  heart: "heart-outline",
+};
 
 export function getCategoryMeta(key: string | null | undefined): CategoryMeta | null {
   if (!key) return null;

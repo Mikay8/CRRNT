@@ -2,24 +2,12 @@ import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
 import { useThemeContext } from "@/contexts/ThemeContext";
-import { CATEGORIES, type Category } from "@/constants/categories";
+import { CATEGORIES, CATEGORY_ICONS, type Category } from "@/constants/categories";
 
 interface CategoryFilterProps {
   active: Category | null;
   onChange: (next: Category | null) => void;
 }
-
-const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
-  mic: "mic",
-  "hardware-chip": "hardware-chip",
-  business: "business",
-  trophy: "trophy",
-  briefcase: "briefcase-outline",
-  planet: "planet-outline",
-  film: "film-outline",
-  globe: "globe-outline",
-  heart: "heart-outline",
-};
 
 export function CategoryFilter({ active, onChange }: CategoryFilterProps) {
   const { theme: palette } = useThemeContext();
@@ -46,7 +34,7 @@ export function CategoryFilter({ active, onChange }: CategoryFilterProps) {
         <Chip
           key={cat.key}
           label={cat.label}
-          icon={ICON_MAP[cat.icon]}
+          icon={CATEGORY_ICONS[cat.icon]}
           color={cat.color}
           active={active === cat.key}
           onPress={() => handle(cat.key)}

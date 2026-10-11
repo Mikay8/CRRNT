@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import { BlurView } from "expo-blur";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -24,6 +25,7 @@ import StoryCard from "@/components/StoryCard";
 import CategoryFilter from "@/components/CategoryFilter";
 import EmptyState from "@/components/EmptyState";
 import type { Category } from "@/constants/categories";
+import { AUTH_ENABLED } from "@/constants/features";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -155,7 +157,7 @@ export default function FeedScreen() {
           )}
 
           <View style={styles.headerActions}>
-            {isGuest && !searchVisible && (
+            {AUTH_ENABLED && isGuest && !searchVisible && (
               <Pressable
                 onPress={() => router.push("/login" as any)}
                 style={styles.getAccountBtn}
@@ -270,6 +272,22 @@ export default function FeedScreen() {
           ) : null
         }
       />
+
+      {/* Blur the feed behind the search bar until there's a query; tap to dismiss */}
+      {searchVisible && !isSearchActive ? (
+        <Pressable
+          style={styles.searchBackdrop}
+          onPress={closeSearch}
+          accessibilityLabel="Close search"
+        >
+          <BlurView
+            intensity={40}
+            tint={isDark ? "dark" : "light"}
+            experimentalBlurMethod="dimezisBlurView"
+            style={StyleSheet.absoluteFill}
+          />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -323,6 +341,10 @@ function createStyles(palette: ThemeColors) {
       fontFamily: "Inter_400Regular",
       fontSize: 15,
       marginRight: 10,
+    },
+    searchBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 5,
     },
     searchMeta: {
       height: 36,

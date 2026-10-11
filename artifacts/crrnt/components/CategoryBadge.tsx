@@ -1,18 +1,11 @@
 import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { getCategoryMeta } from "@/constants/categories";
+import { CATEGORY_ICONS, getCategoryMeta } from "@/constants/categories";
 
 interface CategoryBadgeProps {
   category: string | null | undefined;
   size?: "sm" | "md";
 }
-
-const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
-  mic: "mic",
-  "hardware-chip": "hardware-chip",
-  business: "business",
-  trophy: "trophy",
-};
 
 export function CategoryBadge({ category, size = "sm" }: CategoryBadgeProps) {
   const meta = getCategoryMeta(category);
@@ -33,7 +26,7 @@ export function CategoryBadge({ category, size = "sm" }: CategoryBadgeProps) {
         },
       ]}
     >
-      <Ionicons name={ICON_MAP[meta.icon]} size={dims.icon} color={meta.color} />
+      <Ionicons name={CATEGORY_ICONS[meta.icon]} size={dims.icon} color={meta.color} />
       <Text style={[styles.text, { color: meta.color, fontSize: dims.font }]}>
         {meta.label}
       </Text>

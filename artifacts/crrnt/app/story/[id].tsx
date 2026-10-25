@@ -2,7 +2,6 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
-  Image,
   Linking,
   Platform,
   Pressable,
@@ -23,6 +22,7 @@ import {
   type Story,
 } from "@workspace/api-client-react";
 import { getCategoryMeta } from "@/constants/categories";
+import StoryImage from "@/components/StoryImage";
 import { useAudio } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -317,15 +317,7 @@ export default function StoryDetailScreen() {
         scrollIndicatorInsets={{ top: insets.top, bottom: insets.bottom }}
         automaticallyAdjustsScrollIndicatorInsets={false}
       >
-        {story.media_url ? (
-          <Image
-            source={{ uri: story.media_url }}
-            style={styles.hero}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={[styles.hero, styles.heroPlaceholder]} />
-        )}
+        <StoryImage uri={story.media_url} category={story.category} style={styles.hero} />
 
         <View style={[styles.heroOverlay, { height: insets.top + 220 }]} />
 
@@ -759,7 +751,6 @@ function createStyles(palette: ThemeColors) {
       backgroundColor: palette.bg,
     },
     hero: { width: "100%", height: 280, backgroundColor: palette.surfaceHigh },
-    heroPlaceholder: { backgroundColor: palette.surfaceHigh },
     heroOverlay: {
       position: "absolute",
       top: 0,

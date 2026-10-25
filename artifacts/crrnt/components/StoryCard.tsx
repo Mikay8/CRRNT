@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,6 +8,7 @@ import ReanimatedSwipeable, {
 } from "react-native-gesture-handler/ReanimatedSwipeable";
 import CategoryBadge from "@/components/CategoryBadge";
 import SaveButton from "@/components/SaveButton";
+import StoryImage from "@/components/StoryImage";
 import { useAudio } from "@/contexts/AudioContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
@@ -138,11 +139,7 @@ export function StoryCard({ story }: StoryCardProps) {
         onPress={onPress}
         style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
       >
-        {story.media_url ? (
-          <Image source={{ uri: story.media_url }} style={styles.media} resizeMode="cover" />
-        ) : (
-          <View style={[styles.media, styles.mediaPlaceholder]} />
-        )}
+        <StoryImage uri={story.media_url} category={story.category} style={styles.media} />
 
         <View style={styles.body}>
           <View style={styles.row}>
@@ -215,9 +212,6 @@ function createStyles(palette: ThemeColors) {
     media: {
       width: "100%",
       height: 180,
-      backgroundColor: palette.surfaceHigh,
-    },
-    mediaPlaceholder: {
       backgroundColor: palette.surfaceHigh,
     },
     body: {

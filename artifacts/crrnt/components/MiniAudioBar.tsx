@@ -1,7 +1,6 @@
 import {
   Animated,
   FlatList,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -15,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useAudio } from "@/contexts/AudioContext";
 import { getCategoryMeta } from "@/constants/categories";
+import StoryImage from "@/components/StoryImage";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import type { Story } from "@workspace/api-client-react";
@@ -76,11 +76,7 @@ function QueueItem({
       onPress={onPlay}
       style={({ pressed }) => [queueItemStyles.item, { opacity: pressed ? 0.7 : 1 }]}
     >
-      {story.media_url ? (
-        <Image source={{ uri: story.media_url }} style={queueItemStyles.thumb} resizeMode="cover" />
-      ) : (
-        <View style={[queueItemStyles.thumb, { backgroundColor: palette.border }]} />
-      )}
+      <StoryImage uri={story.media_url} category={story.category} style={queueItemStyles.thumb} />
       <View style={queueItemStyles.info}>
         <Text style={[queueItemStyles.title, { color: palette.text }]} numberOfLines={2}>
           {story.title}
@@ -354,11 +350,7 @@ export default function MiniAudioBar() {
               <View style={styles.queueSection}>
                 <Text style={styles.sectionLabel}>NOW PLAYING</Text>
                 <View style={styles.nowPlayingRow}>
-                  {story.media_url ? (
-                    <Image source={{ uri: story.media_url }} style={styles.nowPlayingThumb} resizeMode="cover" />
-                  ) : (
-                    <View style={[styles.nowPlayingThumb, { backgroundColor: palette.border }]} />
-                  )}
+                  <StoryImage uri={story.media_url} category={story.category} style={styles.nowPlayingThumb} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.nowPlayingTitle} numberOfLines={2}>{story.title}</Text>
                     <Text style={styles.nowPlayingMeta}>{categoryMeta?.label ?? story.category}</Text>

@@ -15,7 +15,6 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { updateNowPlayingInfo, registerRemoteControls } from "@/utils/nowPlaying";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface AudioContextType {
@@ -149,28 +148,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }, 200);
     return () => clearInterval(timer);
   }, [player]);
-
-  useEffect(() => {
-    const cleanup = registerRemoteControls({
-      onPlay: () => player.play(),
-      onPause: () => player.pause(),
-      onSeek: (ms) => player.seekTo(ms / 1000),
-    });
-    return cleanup;
-  }, [player]);
-
-  useEffect(() => {
-    if (!isAudioMode || !storyRef.current) return;
-    const s = storyRef.current;
-    updateNowPlayingInfo({
-      title: s.title,
-      artist: "CRRNT",
-      artworkUri: (s as any).media_url ?? undefined,
-      positionMs: audioPositionMs,
-      durationMs: audioDurationMs,
-      isPlaying: audioIsPlaying,
-    });
-  }, [audioPositionMs, audioDurationMs, audioIsPlaying, isAudioMode]);
 
   const _setStory = (s: Story | null) => {
     storyRef.current = s;
@@ -410,14 +387,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             artworkUrl: (newStory as any).media_url ?? undefined,
           });
         } catch {}
-        updateNowPlayingInfo({
-          title: newStory.title,
-          artist: "CRRNT",
-          artworkUri: (newStory as any).media_url ?? undefined,
-          positionMs: 0,
-          durationMs: 0,
-          isPlaying: true,
-        });
       } else {
         // No audio URL or audio fetch failed — fall back to speech synthesis
         setIsAudioLoading(false);

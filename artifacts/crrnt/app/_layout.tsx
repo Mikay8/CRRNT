@@ -10,6 +10,7 @@ import {
   Outfit_700Bold,
 } from "@expo-google-fonts/outfit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Image } from "expo-image";
@@ -77,7 +78,10 @@ async function registerPushToken(): Promise<void> {
       });
     }
 
-    const tokenData = await Notifications.getExpoPushTokenAsync();
+    // Standalone (TestFlight/App Store) builds need the EAS project ID that
+    // `eas init` writes to app.json; Expo Go can infer it.
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+    const tokenData = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
     const base = apiDomain ? `https://${apiDomain}` : "";
     await fetch(`${base}/api/push-token`, {
       method: "POST",

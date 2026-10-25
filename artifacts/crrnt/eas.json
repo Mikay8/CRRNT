@@ -9,9 +9,6 @@
       "ios": {
         "simulator": false,
         "buildConfiguration": "Debug"
-      },
-      "env": {
-        "EXPO_PUBLIC_DOMAIN": ""
       }
     },
     "simulator": {
@@ -26,19 +23,19 @@
       "distribution": "internal",
       "ios": {
         "buildConfiguration": "Release"
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "api-server-production-1079.up.railway.app"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "api-server-production-1079.up.railway.app"
+      }
     }
   },
   "submit": {
-    "production": {
-      "ios": {
-        "appleId": "",
-        "ascAppId": "",
-        "appleTeamId": ""
-      }
-    }
+    "production": {}
   }
 }

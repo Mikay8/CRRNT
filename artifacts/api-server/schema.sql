@@ -155,7 +155,7 @@ CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user
 -- ─────────────────────────────────────────
 
 INSERT INTO app_settings (key, value) VALUES
-  ('ingest_config', '{"mode":"both","categories":{"celebrity":{"enabled":true,"count":10},"tech":{"enabled":true,"count":10},"government":{"enabled":true,"count":10},"sports":{"enabled":true,"count":10},"business":{"enabled":true,"count":10},"science":{"enabled":true,"count":10},"world":{"enabled":true,"count":10},"health":{"enabled":true,"count":10}},"trending_count":25}'::jsonb),
+  ('ingest_config', '{"categories":{"celebrity":{"enabled":true,"count":10},"tech":{"enabled":true,"count":10},"government":{"enabled":true,"count":10},"sports":{"enabled":true,"count":10},"business":{"enabled":true,"count":10},"science":{"enabled":true,"count":10},"world":{"enabled":true,"count":10},"health":{"enabled":true,"count":10}}}'::jsonb),
   ('feed_limits',   '{"daily":15}'::jsonb),
   ('story_expiry',  '{"days":7,"extension_days":30}'::jsonb),
   ('admin_emails',   '{"emails":[]}'::jsonb),

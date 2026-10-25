@@ -6,9 +6,12 @@ The cache is invalidated immediately after an admin save.
 """
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from typing import Any
+
+from services import rss
 
 log = logging.getLogger("crrnt.app_settings")
 
@@ -16,7 +19,8 @@ _FEED_LIMITS_KEY = "feed_limits"
 _STORY_EXPIRY_KEY = "story_expiry"
 _ADMIN_EMAILS_KEY = "admin_emails"
 _SCHEDULE_KEY = "schedule_times"
-_DISABLED_FEEDS_KEY = "disabled_feeds"
+_DISABLED_FEEDS_KEY = "disabled_feeds"  # legacy, read once to seed _RSS_FEEDS_KEY
+_RSS_FEEDS_KEY = "rss_feeds"
 _TTL = 300.0  # seconds
 
 _DEFAULTS: dict[str, Any] = {
@@ -24,9 +28,10 @@ _DEFAULTS: dict[str, Any] = {
     _STORY_EXPIRY_KEY: {"days": 7, "extension_days": 30},
     _ADMIN_EMAILS_KEY: {"emails": []},
     _SCHEDULE_KEY: {"ingest_hour": 8, "ingest_minute": 0, "cleanup_hour": 3, "cleanup_minute": 0},
-    # Feed URLs (from services/rss.py FEEDS) switched off by an admin.
-    # Stored as an opt-out list so newly added feeds default to on.
     _DISABLED_FEEDS_KEY: {"urls": []},
+    # Empty until an admin first saves; get_rss_feeds() seeds it from
+    # rss.DEFAULT_FEEDS on read.
+    _RSS_FEEDS_KEY: {},
 }
 
 _cache: dict[str, Any] = {}
@@ -101,12 +106,30 @@ async def save_schedule_times(ingest_hour: int, ingest_minute: int, cleanup_hour
     log.info("Schedule saved: ingestion=%02d:%02d ET cleanup=%02d:%02d ET", ingest_hour, ingest_minute, cleanup_hour, cleanup_minute)
 
 
-async def get_disabled_feeds() -> list[str]:
-    """RSS feed URLs an admin has switched off. Empty = every feed is on."""
-    val = await _get(_DISABLED_FEEDS_KEY)
-    return val.get("urls", [])
+async def get_rss_feeds() -> dict[str, list[dict[str, Any]]]:
+    """Admin-managed RSS feeds per category: {cat: [{name, url, enabled}]}.
+
+    Until an admin saves a feed list, this falls back to rss.DEFAULT_FEEDS
+    with any feeds switched off under the older disabled_feeds setting.
+    Always returns a copy, so callers can edit it and pass it to
+    save_rss_feeds().
+    """
+    val = await _get(_RSS_FEEDS_KEY)
+    feeds = copy.deepcopy(val.get("categories") or {})
+    if not feeds:
+        disabled = set((await _get(_DISABLED_FEEDS_KEY)).get("urls", []))
+        feeds = {
+            cat: [{**f, "enabled": f["url"] not in disabled} for f in defaults]
+            for cat, defaults in rss.DEFAULT_FEEDS.items()
+        }
+    for cat in rss.CATEGORIES:
+        feeds.setdefault(cat, [])
+    return feeds
 
 
-async def save_disabled_feeds(urls: list[str]) -> None:
-    await _save(_DISABLED_FEEDS_KEY, {"urls": urls})
-    log.info("Disabled feeds saved: %s", urls)
+async def save_rss_feeds(feeds: dict[str, list[dict[str, Any]]]) -> None:
+    await _save(_RSS_FEEDS_KEY, {"categories": feeds})
+    log.info(
+        "RSS feeds saved: %s",
+        {cat: sum(1 for f in fs if f.get("enabled", True)) for cat, fs in feeds.items()},
+    )

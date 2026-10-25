@@ -20,7 +20,7 @@ from services import app_settings, audio_storage, db, enrichment, fish_audio, rs
 
 log = logging.getLogger("crrnt.ingestion")
 
-ALL_CATEGORIES = list(rss.FEEDS)
+ALL_CATEGORIES = rss.CATEGORIES
 _DEFAULT_PER_CATEGORY = 10
 _status_lock = asyncio.Lock()
 _ingestion_status: dict[str, Any] = {"state": "idle"}
@@ -140,7 +140,7 @@ async def run_ingestion(
     per_category: int = _DEFAULT_PER_CATEGORY,
     categories: Optional[list[str]] = None,
     per_category_map: Optional[dict[str, int]] = None,
-    disabled_feeds: Optional[list[str]] = None,
+    feeds: Optional[dict[str, list[dict[str, Any]]]] = None,
 ) -> dict[str, Any]:
     """Full ingestion pipeline. Returns a status dict."""
     async with _status_lock:
@@ -162,7 +162,7 @@ async def run_ingestion(
             cat: per_category for cat in (categories or ALL_CATEGORIES)
         }
         log.info("Ingestion starting (per_category_map=%s)", cat_map)
-        raw = await rss.fetch_categories_with_map(cat_map, disabled_feeds=disabled_feeds)
+        raw = await rss.fetch_categories_with_map(cat_map, feeds=feeds)
         raw = _filter_fresh_and_unique(raw)
         fetched_count = len(raw)
         log.info("Fetched %d raw articles", fetched_count)

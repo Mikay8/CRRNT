@@ -26,6 +26,7 @@ import secrets
 import logging
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -254,7 +255,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
     story_expiry = await app_settings.get_story_expiry()
     admin_emails = await app_settings.get_admin_emails()
     schedule_times = await app_settings.get_schedule_times()
-    disabled_feeds = set(await app_settings.get_disabled_feeds())
+    feeds = await app_settings.get_rss_feeds()
     env_status = {
         "DATABASE_URL": bool(os.environ.get("DATABASE_URL")),
         "JWT_SECRET": bool(os.environ.get("JWT_SECRET")),
@@ -275,7 +276,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
     system_info = [
         {"label": "Schedule", "value": "08:00 America/New_York (daily)"},
         {"label": "Cleanup", "value": "03:00 America/New_York (daily)"},
-        {"label": "News source", "value": f"RSS ({sum(len(f) for f in rss.FEEDS.values())} feeds)"},
+        {"label": "News source", "value": f"RSS ({sum(len(f) for f in feeds.values())} feeds)"},
     ]
     return templates.TemplateResponse(
         request,
@@ -287,8 +288,9 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
             "story_expiry": story_expiry,
             "admin_emails": admin_emails,
             "schedule_times": schedule_times,
-            "feeds": rss.FEEDS,
-            "disabled_feeds": disabled_feeds,
+            "feeds": feeds,
+            "sources_msg": request.query_params.get("sources_msg"),
+            "sources_ok": request.query_params.get("sources_ok") == "1",
             "env_status": env_status,
             "system_info": system_info,
         },
@@ -363,16 +365,57 @@ async def save_admin_emails(request: Request, _: None = Depends(_verify_admin)):
     return RedirectResponse(url="/admin/settings", status_code=302)
 
 
+def _sources_redirect(msg: Optional[str] = None, ok: bool = True) -> RedirectResponse:
+    query = f"?{urlencode({'sources_msg': msg, 'sources_ok': int(ok)})}" if msg else ""
+    return RedirectResponse(url=f"/admin/settings{query}#news-sources", status_code=302)
+
+
 @router.post("/news-sources/save")
 async def save_news_sources(request: Request, _: None = Depends(_verify_admin)):
-    # Checked boxes submit feed_on=<url>; anything unchecked is disabled.
+    """One form drives the whole News Sources card, so toggles are always
+    saved, plus at most one add or remove depending on which button was hit:
+      feed_on=<cat>|<url>  checked toggle (unchecked feeds are disabled)
+      remove=<cat>|<url>   a feed's Remove button
+      add=<cat>            a category's Add button, with add_name_<cat> /
+                           add_url_<cat> inputs
+    """
     form = await request.form()
+    feeds = await app_settings.get_rss_feeds()
+
     enabled = set(form.getlist("feed_on"))
-    disabled = [
-        f["url"] for feeds in rss.FEEDS.values() for f in feeds if f["url"] not in enabled
-    ]
-    await app_settings.save_disabled_feeds(disabled)
-    return RedirectResponse(url="/admin/settings", status_code=302)
+    for cat, cat_feeds in feeds.items():
+        for f in cat_feeds:
+            f["enabled"] = f"{cat}|{f['url']}" in enabled
+
+    msg: Optional[str] = None
+    ok = True
+
+    remove = form.get("remove")
+    if remove and "|" in remove:
+        cat, url = remove.split("|", 1)
+        before = len(feeds.get(cat, []))
+        feeds[cat] = [f for f in feeds.get(cat, []) if f["url"] != url]
+        if len(feeds[cat]) < before:
+            msg = f"Removed feed from {cat}."
+
+    add_cat = form.get("add")
+    if add_cat in feeds:
+        url = (form.get(f"add_url_{add_cat}") or "").strip()
+        name = (form.get(f"add_name_{add_cat}") or "").strip()
+        if urlparse(url).scheme not in ("http", "https") or not urlparse(url).netloc:
+            msg, ok = "Enter a full feed URL starting with http:// or https://", False
+        elif any(f["url"] == url for f in feeds[add_cat]):
+            msg, ok = f"That feed is already in {add_cat}.", False
+        else:
+            check = await rss.check_feed(url)
+            if not check["ok"]:
+                msg, ok = f"Couldn't add feed: {check['error']}", False
+            else:
+                feeds[add_cat].append({"name": name or check["title"], "url": url, "enabled": True})
+                msg = f"Added {name or check['title']} to {add_cat} ({check['entries']} stories in feed right now)."
+
+    await app_settings.save_rss_feeds(feeds)
+    return _sources_redirect(msg or "News sources saved.", ok)
 
 
 @router.post("/story-expiry/save")

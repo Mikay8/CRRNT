@@ -1,8 +1,9 @@
 """RSS feed client — CRRNT's only news source.
 
-Each CRRNT category pulls from a handful of publisher RSS feeds. Admins can
-switch individual feeds off on the Settings page (stored as a list of
-disabled feed URLs, so feeds added here later default to on). Feeds give us
+Each CRRNT category pulls from a handful of publisher RSS feeds. The live
+feed list is admin-managed (add / remove / toggle per category on the
+Settings page, stored via app_settings.get_rss_feeds); DEFAULT_FEEDS below is
+only the starting set used before an admin first saves. Feeds give us
 headline, short dek, link, publish date and (usually) an image — not the full
 article body. We deliberately only use the feed's short `summary`, never
 `content:encoded`, so we aren't storing or enriching full copyrighted text.
@@ -31,7 +32,7 @@ _USER_AGENT = "CRRNT-Bot/1.0 (+https://crrnt.app)"
 _MAX_CONCURRENCY = 6
 _MAX_DEK_CHARS = 500
 
-FEEDS: dict[str, list[dict[str, str]]] = {
+DEFAULT_FEEDS: dict[str, list[dict[str, str]]] = {
     "celebrity": [
         {"name": "E! Online", "url": "https://www.eonline.com/syndication/feeds/rssfeeds/topstories.xml"},
         {"name": "Variety", "url": "https://variety.com/feed/"},
@@ -76,6 +77,8 @@ FEEDS: dict[str, list[dict[str, str]]] = {
         {"name": "ScienceDaily Health", "url": "https://www.sciencedaily.com/rss/health_medicine.xml"},
     ],
 }
+
+CATEGORIES: list[str] = list(DEFAULT_FEEDS)
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
@@ -158,14 +161,18 @@ async def _fetch_feed(
 async def fetch_categories_with_map(
     per_category_map: dict[str, int],
     *,
-    disabled_feeds: Optional[list[str]] = None,
+    feeds: Optional[dict[str, list[dict[str, Any]]]] = None,
 ) -> list[dict[str, Any]]:
     """Fetch every enabled feed for the requested categories and keep the
     newest `count` stories per category, round-robined across that
-    category's feeds so one prolific publisher can't fill the whole slot."""
-    disabled = set(disabled_feeds or [])
+    category's feeds so one prolific publisher can't fill the whole slot.
+
+    feeds: {cat: [{name, url, enabled}]} from app_settings.get_rss_feeds();
+    defaults to DEFAULT_FEEDS.
+    """
+    feeds = feeds if feeds is not None else DEFAULT_FEEDS
     feeds_by_cat = {
-        cat: [f["url"] for f in FEEDS.get(cat, []) if f["url"] not in disabled]
+        cat: [f["url"] for f in feeds.get(cat, []) if f.get("enabled", True)]
         for cat in per_category_map
     }
     sem = asyncio.Semaphore(_MAX_CONCURRENCY)
@@ -209,4 +216,28 @@ async def fetch_categories_with_map(
     return flattened
 
 
-__all__ = ["FEEDS", "fetch_categories_with_map"]
+async def check_feed(url: str) -> dict[str, Any]:
+    """Fetch and parse a feed an admin wants to add, so a typo'd or non-RSS
+    URL is rejected up front instead of silently yielding nothing at 6 AM.
+
+    Returns {"ok": True, "title": str, "entries": int} or
+    {"ok": False, "error": str}.
+    """
+    try:
+        async with httpx.AsyncClient(
+            timeout=20.0, follow_redirects=True, headers={"User-Agent": _USER_AGENT}
+        ) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"Couldn't fetch the URL ({exc.__class__.__name__})"}
+    parsed = await asyncio.to_thread(feedparser.parse, resp.content)
+    entries = [e for e in parsed.entries if e.get("link")]
+    if not entries:
+        return {"ok": False, "error": "That URL doesn't look like an RSS/Atom feed (no stories found)"}
+    # Feed titles often carry a tagline ("Engadget - Technology News & ...").
+    title = re.split(r"\s+[-|–]\s+", _strip_html(parsed.feed.get("title") or ""))[0] or _domain(url)
+    return {"ok": True, "title": title, "entries": len(entries)}
+
+
+__all__ = ["CATEGORIES", "DEFAULT_FEEDS", "check_feed", "fetch_categories_with_map"]

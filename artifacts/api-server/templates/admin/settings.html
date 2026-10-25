@@ -258,28 +258,53 @@
   </form>
 
   <!-- ── News Sources (RSS feeds) ──────────────────────────────────────── -->
-  <form method="POST" action="/admin/news-sources/save">
+  <form method="POST" action="/admin/news-sources/save" id="news-sources">
     <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
       <div class="px-5 py-3 border-b border-gray-700">
         <h2 class="text-sm font-semibold text-white">News Sources</h2>
-        <p class="text-xs text-gray-500 mt-0.5">RSS feeds each category pulls from. Untick a feed to stop ingesting it.</p>
+        <p class="text-xs text-gray-500 mt-0.5">RSS feeds each category pulls from. Untick to pause a feed, Remove to delete it, or add a new feed URL — it's test-fetched before it's saved.</p>
       </div>
+      {% if sources_msg %}
+      <div class="px-5 py-2.5 text-sm border-b border-gray-700 {% if sources_ok %}bg-green-950/40 text-green-300{% else %}bg-red-950/40 text-red-300{% endif %}">
+        {{ sources_msg }}
+      </div>
+      {% endif %}
       <div class="divide-y divide-gray-700/50">
         {% for cat, cat_feeds in feeds.items() %}
         <div class="px-5 py-4">
-          <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{{ cat_icons.get(cat, '📰') }} {{ cat }}</div>
+          <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            {{ cat_icons.get(cat, '📰') }} {{ cat }}
+            <span class="text-gray-600 normal-case font-normal">· {{ cat_feeds | selectattr('enabled') | list | length }} of {{ cat_feeds | length }} on</span>
+          </div>
           <div class="grid gap-1 sm:grid-cols-2">
             {% for feed in cat_feeds %}
-            <label class="flex items-start gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-700/40 cursor-pointer">
-              <input type="checkbox" name="feed_on" value="{{ feed.url }}"
-                {% if feed.url not in disabled_feeds %}checked{% endif %}
-                class="mt-0.5 accent-cyan-400">
-              <span class="min-w-0">
+            <div class="flex items-start gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-700/40">
+              <input type="checkbox" name="feed_on" value="{{ cat }}|{{ feed.url }}" id="feed-{{ cat }}-{{ loop.index }}"
+                {% if feed.enabled %}checked{% endif %}
+                class="mt-0.5 accent-cyan-400 cursor-pointer">
+              <label for="feed-{{ cat }}-{{ loop.index }}" class="min-w-0 flex-1 cursor-pointer">
                 <span class="block text-sm text-white">{{ feed.name }}</span>
                 <span class="block text-xs text-gray-500 font-mono truncate">{{ feed.url }}</span>
-              </span>
-            </label>
+              </label>
+              <button type="submit" name="remove" value="{{ cat }}|{{ feed.url }}"
+                onclick='return confirm({{ ("Remove " ~ feed.name ~ " from " ~ cat ~ "?") | tojson }})'
+                class="text-xs text-gray-500 hover:text-red-400 transition-colors shrink-0 mt-0.5">Remove</button>
+            </div>
+            {% else %}
+            <div class="text-sm text-gray-600 italic px-2 py-1.5">No feeds — this category won't get any stories.</div>
             {% endfor %}
+          </div>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <input type="text" name="add_name_{{ cat }}" placeholder="Name (optional)"
+              class="w-40 bg-gray-900 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('add-btn-{{ cat }}').click();}">
+            <input type="url" name="add_url_{{ cat }}" placeholder="https://example.com/feed.xml"
+              class="flex-1 min-w-[12rem] bg-gray-900 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('add-btn-{{ cat }}').click();}">
+            <button type="submit" name="add" value="{{ cat }}" id="add-btn-{{ cat }}" formnovalidate
+              class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
+              Add feed
+            </button>
           </div>
         </div>
         {% endfor %}

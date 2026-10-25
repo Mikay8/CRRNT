@@ -97,7 +97,7 @@ async def get_run_params() -> dict[str, Any]:
     cfg = await get()
 
     from services import app_settings
-    disabled_feeds = await app_settings.get_disabled_feeds()
+    feeds = await app_settings.get_rss_feeds()
 
     per_category_map = {
         cat: v.get("count", 10)
@@ -106,5 +106,5 @@ async def get_run_params() -> dict[str, Any]:
     }
     return {
         "per_category_map": per_category_map,
-        "disabled_feeds": disabled_feeds,
+        "feeds": feeds,
     }

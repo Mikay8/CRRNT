@@ -33,7 +33,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from services import app_settings, db, ingestion, ingest_config, log_buffer, metrics, scheduler
+from services import app_settings, db, ingestion, ingest_config, log_buffer, metrics, rate_limit, scheduler
 
 log = logging.getLogger("crrnt.admin")
 
@@ -43,11 +43,16 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter(prefix="/admin", tags=["admin-portal"])
 _basic = HTTPBasic(auto_error=False)
 
+# Wrong-password lockout: 10 failures per IP in 15 minutes blocks that IP
+# until the oldest failure ages out. A successful login clears the count.
+_failed_logins = rate_limit.SlidingWindowLimiter(limit=10, window=15 * 60.0)
+
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 
 def _verify_admin(
+    request: Request,
     creds: Optional[HTTPBasicCredentials] = Depends(_basic),
 ) -> None:
     admin_user = os.environ.get("ADMIN_USERNAME", "admin")
@@ -66,9 +71,23 @@ def _verify_admin(
             detail="Authentication required",
         )
 
+    ip = rate_limit.client_ip(request)
+    retry_after = _failed_logins.retry_after(ip)
+    if retry_after:
+        log.warning("Admin login locked out for %s (%ss remaining)", ip, retry_after)
+        raise HTTPException(
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+            detail=f"Too many failed logins. Try again in {retry_after} seconds.",
+        )
+
     ok_user = secrets.compare_digest(creds.username.encode(), admin_user.encode())
     ok_pass = secrets.compare_digest(creds.password.encode(), admin_pass.encode())
-    if not (ok_user and ok_pass):
+    if ok_user and ok_pass:
+        _failed_logins.reset(ip)
+    else:
+        _failed_logins.record(ip)
+        log.warning("Failed admin login from %s", ip)
         raise HTTPException(
             status_code=401,
             headers={"WWW-Authenticate": 'Basic realm="CRRNT Admin"'},

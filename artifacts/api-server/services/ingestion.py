@@ -1,7 +1,7 @@
 """Ingestion orchestration — fetch, enrich, store in Postgres.
 
 Pipeline:
-  1. APITube fetch (per category)
+  1. APITube or RSS fetch (per category)
   2. Claude Pass 1 — summary, life_impact, wallet_impact, one_liner, stock_note
   3. Grok x_search Pass 2 — sentiment_label, sentiment_score, people_say, featured_posts
   4. Insert story row to Postgres (get UUID)
@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import apitube, app_settings, audio_storage, db, enrichment, fish_audio
+from services import apitube, app_settings, audio_storage, db, enrichment, fish_audio, rss
 
 log = logging.getLogger("crrnt.ingestion")
 
@@ -188,6 +188,12 @@ async def run_ingestion(
                 if key not in seen:
                     seen[key] = a
             raw = list(seen.values())
+        elif mode == "rss":
+            cat_map = per_category_map or {
+                cat: per_category for cat in (categories or ALL_CATEGORIES)
+            }
+            log.info("Ingestion starting (mode=rss, per_category_map=%s)", cat_map)
+            raw = await rss.fetch_categories_with_map(cat_map, source_domains=source_domains)
         elif per_category_map:
             # Per-category counts — fetch each separately
             log.info("Ingestion starting (mode=category, per_category_map=%s)", per_category_map)

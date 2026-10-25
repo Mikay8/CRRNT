@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -25,7 +24,8 @@ from routes import auth as auth_routes
 from routes import stories as stories_routes
 from routes import onboarding as onboarding_routes
 from routes import admin_portal
-from services import db, log_buffer, scheduler, metrics
+from services import db, log_buffer, scheduler, metrics, rate_limit
+from services.rate_limit import SlidingWindowLimiter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,38 +71,32 @@ app.add_middleware(
 )
 
 
-_rate_windows: dict[str, deque] = defaultdict(deque)
-_RATE_WINDOW = 60.0
-_GENERAL_LIMIT = 60
-_EXPENSIVE_LIMIT = 10
+_general_limiter = SlidingWindowLimiter(limit=60, window=60.0)
+_expensive_limiter = SlidingWindowLimiter(limit=10, window=60.0)
 _EXPENSIVE_SEGMENTS = ("/audio", "/personalized-audio")
 
 
 @app.middleware("http")
 async def _rate_limit_middleware(request: Request, call_next):
+    # /admin is limited separately (failed logins, see admin_portal._verify_admin)
+    # so its auto-refreshing logs page doesn't eat into a general budget.
     path = request.url.path
     if path.startswith("/admin") or "/health" in path:
         return await call_next(request)
 
-    client_ip = (request.client.host if request.client else "unknown")
-    now = time.monotonic()
     is_expensive = any(seg in path for seg in _EXPENSIVE_SEGMENTS)
-    limit = _EXPENSIVE_LIMIT if is_expensive else _GENERAL_LIMIT
-    key = f"{client_ip}:{'exp' if is_expensive else 'gen'}"
+    limiter = _expensive_limiter if is_expensive else _general_limiter
+    key = rate_limit.client_ip(request)
 
-    bucket = _rate_windows[key]
-    cutoff = now - _RATE_WINDOW
-    while bucket and bucket[0] < cutoff:
-        bucket.popleft()
-
-    if len(bucket) >= limit:
+    retry_after = limiter.retry_after(key)
+    if retry_after:
         return JSONResponse(
             status_code=429,
-            content={"detail": "Rate limit exceeded. Try again in 60 seconds."},
-            headers={"Retry-After": "60"},
+            content={"detail": f"Rate limit exceeded. Try again in {retry_after} seconds."},
+            headers={"Retry-After": str(retry_after)},
         )
 
-    bucket.append(now)
+    limiter.record(key)
     return await call_next(request)
 
 

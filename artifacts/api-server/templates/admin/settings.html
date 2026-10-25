@@ -49,6 +49,17 @@
             <div class="text-xs text-gray-400 mt-0.5">Fetch trending + category stories. Trending tagged for free feed; category tagged as non-trending.</div>
           </div>
         </label>
+        <label class="flex items-center gap-3 flex-1 cursor-pointer rounded-xl border p-4 transition-colors
+          {% if cfg.mode == 'rss' %}border-cyan-500 bg-cyan-950/30{% else %}border-gray-600 hover:border-gray-500{% endif %}">
+          <input type="radio" name="mode" value="rss"
+            {% if cfg.mode == 'rss' %}checked{% endif %}
+            class="accent-cyan-400"
+            onchange="document.getElementById('category-section').classList.remove('hidden'); document.getElementById('trending-section').classList.add('hidden');">
+          <div>
+            <div class="text-sm font-semibold text-white">RSS feeds</div>
+            <div class="text-xs text-gray-400 mt-0.5">Free. Pull per-category stories from publisher RSS feeds (headline + short dek, no APITube calls).</div>
+          </div>
+        </label>
       </div>
     </div>
 
@@ -115,7 +126,7 @@
     </div>
 
     <!-- Trending mode settings -->
-    <div id="trending-section" {% if cfg.mode == 'category' %}class="hidden"{% endif %}>
+    <div id="trending-section" {% if cfg.mode in ('category', 'rss') %}class="hidden"{% endif %}>
       <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
         <h2 class="text-sm font-semibold text-white mb-4">Trending Stories</h2>
         <div class="flex items-center gap-4">

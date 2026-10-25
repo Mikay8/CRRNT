@@ -2,7 +2,7 @@
 
 Config shape:
   {
-    "mode": "category" | "trending" | "both",
+    "mode": "category" | "trending" | "both" | "rss",
     "categories": {
       "celebrity":   {"enabled": true, "count": 10},
       "tech":        {"enabled": true, "count": 10},
@@ -116,6 +116,13 @@ async def get_run_params() -> dict[str, Any]:
         for cat, v in cfg["categories"].items()
         if v.get("enabled", True)
     }
+    if cfg["mode"] == "rss":
+        return {
+            "mode": "rss",
+            "categories": enabled,
+            "per_category_map": per_category_map,
+            "source_domains": source_domains,
+        }
     if cfg["mode"] == "both":
         return {
             "mode": "both",

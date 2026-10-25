@@ -1,5 +1,4 @@
 {
-  "mode": "trending",
   "categories": {
     "celebrity": {
       "enabled": true,
@@ -24,7 +23,14 @@
     "science": {
       "enabled": true,
       "count": 10
+    },
+    "world": {
+      "enabled": true,
+      "count": 10
+    },
+    "health": {
+      "enabled": true,
+      "count": 10
     }
-  },
-  "trending_count": 2
+  }
 }

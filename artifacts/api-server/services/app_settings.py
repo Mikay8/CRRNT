@@ -16,7 +16,7 @@ _FEED_LIMITS_KEY = "feed_limits"
 _STORY_EXPIRY_KEY = "story_expiry"
 _ADMIN_EMAILS_KEY = "admin_emails"
 _SCHEDULE_KEY = "schedule_times"
-_ALLOWED_SOURCES_KEY = "allowed_sources"
+_DISABLED_FEEDS_KEY = "disabled_feeds"
 _TTL = 300.0  # seconds
 
 _DEFAULTS: dict[str, Any] = {
@@ -24,8 +24,9 @@ _DEFAULTS: dict[str, Any] = {
     _STORY_EXPIRY_KEY: {"days": 7, "extension_days": 30},
     _ADMIN_EMAILS_KEY: {"emails": []},
     _SCHEDULE_KEY: {"ingest_hour": 8, "ingest_minute": 0, "cleanup_hour": 3, "cleanup_minute": 0},
-    # Empty list = no source restriction (fetch from any source APITube returns).
-    _ALLOWED_SOURCES_KEY: {"domains": []},
+    # Feed URLs (from services/rss.py FEEDS) switched off by an admin.
+    # Stored as an opt-out list so newly added feeds default to on.
+    _DISABLED_FEEDS_KEY: {"urls": []},
 }
 
 _cache: dict[str, Any] = {}
@@ -100,12 +101,12 @@ async def save_schedule_times(ingest_hour: int, ingest_minute: int, cleanup_hour
     log.info("Schedule saved: ingestion=%02d:%02d ET cleanup=%02d:%02d ET", ingest_hour, ingest_minute, cleanup_hour, cleanup_minute)
 
 
-async def get_allowed_sources() -> list[str]:
-    """Domains APITube is restricted to (e.g. 'nytimes.com'). Empty = unrestricted."""
-    val = await _get(_ALLOWED_SOURCES_KEY)
-    return val.get("domains", [])
+async def get_disabled_feeds() -> list[str]:
+    """RSS feed URLs an admin has switched off. Empty = every feed is on."""
+    val = await _get(_DISABLED_FEEDS_KEY)
+    return val.get("urls", [])
 
 
-async def save_allowed_sources(domains: list[str]) -> None:
-    await _save(_ALLOWED_SOURCES_KEY, {"domains": domains})
-    log.info("Allowed sources saved: %s", domains)
+async def save_disabled_feeds(urls: list[str]) -> None:
+    await _save(_DISABLED_FEEDS_KEY, {"urls": urls})
+    log.info("Disabled feeds saved: %s", urls)

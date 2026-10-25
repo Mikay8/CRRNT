@@ -140,28 +140,6 @@
     </div>
   </div>
 
-  <!-- APITube balance (live, not an estimate) -->
-  <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-    <div class="px-5 py-3 border-b border-gray-700">
-      <h2 class="text-sm font-semibold text-white">APITube Balance <span class="text-gray-500 font-normal">(live)</span></h2>
-      <p class="text-gray-500 text-xs mt-0.5">Pulled directly from APITube's /v1/balance — points remaining, not spend. APITube exposes no historical usage, so it can't be folded into the estimate above.</p>
-    </div>
-    {% if apitube_status.available %}
-    <div class="grid grid-cols-2 gap-4 p-5">
-      <div>
-        <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Points Remaining</div>
-        <div class="text-2xl font-bold text-white mt-1">{{ apitube_status.points }}</div>
-      </div>
-      <div>
-        <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Plan</div>
-        <div class="text-2xl font-bold text-white mt-1 capitalize">{{ apitube_status.plan or "unknown" }}</div>
-      </div>
-    </div>
-    {% else %}
-    <div class="p-5 text-gray-500 text-sm">Could not reach APITube — check APITUBE_API_KEY.</div>
-    {% endif %}
-  </div>
-
   <!-- External service dashboards -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
     <div class="px-5 py-3 border-b border-gray-700">

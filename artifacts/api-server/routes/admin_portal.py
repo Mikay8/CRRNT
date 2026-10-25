@@ -15,14 +15,13 @@ Actions (POST, redirect back):
   POST /admin/breaking/{id}/dismiss
   POST /admin/stories/{id}/delete
   POST /admin/settings/save
-  POST /admin/allowed-sources/save
+  POST /admin/news-sources/save
 
 """
 
 from __future__ import annotations
 
 import os
-import re
 import secrets
 import logging
 from pathlib import Path
@@ -33,7 +32,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from services import app_settings, db, ingestion, ingest_config, log_buffer, metrics, rate_limit, scheduler
+from services import app_settings, db, ingestion, ingest_config, log_buffer, metrics, rate_limit, rss, scheduler
 
 log = logging.getLogger("crrnt.admin")
 
@@ -255,12 +254,11 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
     story_expiry = await app_settings.get_story_expiry()
     admin_emails = await app_settings.get_admin_emails()
     schedule_times = await app_settings.get_schedule_times()
-    allowed_sources = await app_settings.get_allowed_sources()
+    disabled_feeds = set(await app_settings.get_disabled_feeds())
     env_status = {
         "DATABASE_URL": bool(os.environ.get("DATABASE_URL")),
         "JWT_SECRET": bool(os.environ.get("JWT_SECRET")),
         "ANTHROPIC_API_KEY": bool(os.environ.get("ANTHROPIC_API_KEY")),
-        "APITUBE_API_KEY": bool(os.environ.get("APITUBE_API_KEY")),
         "XAI_API_KEY": bool(os.environ.get("XAI_API_KEY")),
         "FISH_AUDIO_API_KEY": bool(os.environ.get("FISH_AUDIO_API_KEY")),
         "ADMIN_PASSWORD": bool(os.environ.get("ADMIN_PASSWORD")),
@@ -277,7 +275,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
     system_info = [
         {"label": "Schedule", "value": "08:00 America/New_York (daily)"},
         {"label": "Cleanup", "value": "03:00 America/New_York (daily)"},
-        {"label": "APITube rate limit", "value": "10 requests/minute"},
+        {"label": "News source", "value": f"RSS ({sum(len(f) for f in rss.FEEDS.values())} feeds)"},
     ]
     return templates.TemplateResponse(
         request,
@@ -289,7 +287,8 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
             "story_expiry": story_expiry,
             "admin_emails": admin_emails,
             "schedule_times": schedule_times,
-            "allowed_sources": allowed_sources,
+            "feeds": rss.FEEDS,
+            "disabled_feeds": disabled_feeds,
             "env_status": env_status,
             "system_info": system_info,
         },
@@ -298,7 +297,6 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
 
 def _parse_ingest_config(form: dict) -> dict:
     """Parse submitted form data into an ingest_config dict."""
-    mode = form.get("mode", "category")
     categories = {}
     for cat in ingest_config.ALL_CATEGORIES:
         enabled = form.get(f"cat_enabled_{cat}") == "1"
@@ -307,11 +305,7 @@ def _parse_ingest_config(form: dict) -> dict:
         except (TypeError, ValueError):
             count = 10
         categories[cat] = {"enabled": enabled, "count": count}
-    try:
-        trending_count = max(1, min(25, int(form.get("trending_count", 25))))
-    except (TypeError, ValueError):
-        trending_count = 25
-    return {"mode": mode, "categories": categories, "trending_count": trending_count}
+    return {"categories": categories}
 
 
 @router.post("/ingest-config/save")
@@ -369,30 +363,15 @@ async def save_admin_emails(request: Request, _: None = Depends(_verify_admin)):
     return RedirectResponse(url="/admin/settings", status_code=302)
 
 
-def _normalize_domain(raw: str) -> str:
-    """Strip scheme/www/path/whitespace so pasted URLs behave like bare domains."""
-    d = raw.strip().lower()
-    d = re.sub(r"^https?://", "", d)
-    d = re.sub(r"^www\.", "", d)
-    d = d.split("/")[0]
-    return d
-
-
-@router.post("/allowed-sources/save")
-async def save_allowed_sources(request: Request, _: None = Depends(_verify_admin)):
-    form = dict(await request.form())
-    raw = form.get("domains", "")
-    domains = [
-        _normalize_domain(d) for d in raw.replace(",", "\n").splitlines() if d.strip()
+@router.post("/news-sources/save")
+async def save_news_sources(request: Request, _: None = Depends(_verify_admin)):
+    # Checked boxes submit feed_on=<url>; anything unchecked is disabled.
+    form = await request.form()
+    enabled = set(form.getlist("feed_on"))
+    disabled = [
+        f["url"] for feeds in rss.FEEDS.values() for f in feeds if f["url"] not in enabled
     ]
-    # Dedupe, preserve order
-    seen: set[str] = set()
-    deduped = []
-    for d in domains:
-        if d and d not in seen:
-            seen.add(d)
-            deduped.append(d)
-    await app_settings.save_allowed_sources(deduped)
+    await app_settings.save_disabled_feeds(disabled)
     return RedirectResponse(url="/admin/settings", status_code=302)
 
 
@@ -442,13 +421,6 @@ def _dashboard_links() -> list[dict]:
             "url": os.environ.get(
                 "RAILWAY_DASHBOARD_URL",
                 "https://railway.app/dashboard",
-            ),
-        },
-        {
-            "name": "APITube",
-            "description": "Request quota and news API usage",
-            "url": os.environ.get(
-                "APITUBE_DASHBOARD_URL", "https://dashboard.apitube.io/"
             ),
         },
         {
@@ -529,23 +501,6 @@ def _estimate_cost(totals: dict[str, int]) -> dict[str, Any]:
     }
 
 
-# APITube doesn't fit the "estimated cost so far" pattern the other
-# providers use — its /v1/balance endpoint returns real points REMAINING,
-# not spend, and it exposes no historical usage. So it's shown as its own
-# live account-status tile (points + plan) rather than folded into a
-# fabricated cost figure.
-async def _get_apitube_status() -> dict[str, Any]:
-    """Live APITube balance for the usage page. Never raises — falls back
-    to a null/unknown state if the API is unreachable or the key is unset."""
-    try:
-        from services import apitube
-        bal = await apitube.get_balance()
-        return {"available": True, "points": bal.get("points"), "plan": bal.get("plan")}
-    except Exception as exc:
-        log.warning("Could not fetch APITube balance: %s", exc)
-        return {"available": False, "points": None, "plan": None}
-
-
 @router.get("/usage", response_class=HTMLResponse)
 async def admin_usage(request: Request, _: None = Depends(_verify_admin)):
     rows = metrics.get_all()
@@ -557,7 +512,6 @@ async def admin_usage(request: Request, _: None = Depends(_verify_admin)):
         {"fetched": 0, "enriched": 0, "tts_generated": 0, "runs": 0},
     )
     cost_estimate = _estimate_cost(ingestion_totals)
-    apitube_status = await _get_apitube_status()
     return templates.TemplateResponse(
         request,
         "admin/usage.html",
@@ -570,7 +524,6 @@ async def admin_usage(request: Request, _: None = Depends(_verify_admin)):
             "endpoints": len(rows),
             "dashboards": _dashboard_links(),
             "cost_estimate": cost_estimate,
-            "apitube_status": apitube_status,
         },
     )
 

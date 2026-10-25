@@ -12,63 +12,12 @@
   <!-- ── Ingestion config form ──────────────────────────────────────────── -->
   <form method="POST" action="/admin/ingest-config/save" class="space-y-5">
 
-    <!-- Mode toggle -->
-    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
-      <h2 class="text-sm font-semibold text-white mb-4">Fetch Mode</h2>
-      <div class="flex gap-3">
-        <label class="flex items-center gap-3 flex-1 cursor-pointer rounded-xl border p-4 transition-colors
-          {% if cfg.mode == 'category' %}border-cyan-500 bg-cyan-950/30{% else %}border-gray-600 hover:border-gray-500{% endif %}">
-          <input type="radio" name="mode" value="category"
-            {% if cfg.mode == 'category' %}checked{% endif %}
-            class="accent-cyan-400"
-            onchange="document.getElementById('category-section').classList.remove('hidden'); document.getElementById('trending-section').classList.add('hidden');">
-          <div>
-            <div class="text-sm font-semibold text-white">Category mode</div>
-            <div class="text-xs text-gray-400 mt-0.5">Fetch stories per category. Control which categories run and how many per category.</div>
-          </div>
-        </label>
-        <label class="flex items-center gap-3 flex-1 cursor-pointer rounded-xl border p-4 transition-colors
-          {% if cfg.mode == 'trending' %}border-cyan-500 bg-cyan-950/30{% else %}border-gray-600 hover:border-gray-500{% endif %}">
-          <input type="radio" name="mode" value="trending"
-            {% if cfg.mode == 'trending' %}checked{% endif %}
-            class="accent-cyan-400"
-            onchange="document.getElementById('trending-section').classList.remove('hidden'); document.getElementById('category-section').classList.add('hidden');">
-          <div>
-            <div class="text-sm font-semibold text-white">Trending mode</div>
-            <div class="text-xs text-gray-400 mt-0.5">Fetch top trending stories across all topics. NewsMesh picks the hottest content.</div>
-          </div>
-        </label>
-        <label class="flex items-center gap-3 flex-1 cursor-pointer rounded-xl border p-4 transition-colors
-          {% if cfg.mode == 'both' %}border-cyan-500 bg-cyan-950/30{% else %}border-gray-600 hover:border-gray-500{% endif %}">
-          <input type="radio" name="mode" value="both"
-            {% if cfg.mode == 'both' %}checked{% endif %}
-            class="accent-cyan-400"
-            onchange="document.getElementById('category-section').classList.remove('hidden'); document.getElementById('trending-section').classList.remove('hidden');">
-          <div>
-            <div class="text-sm font-semibold text-white">Both</div>
-            <div class="text-xs text-gray-400 mt-0.5">Fetch trending + category stories. Trending tagged for free feed; category tagged as non-trending.</div>
-          </div>
-        </label>
-        <label class="flex items-center gap-3 flex-1 cursor-pointer rounded-xl border p-4 transition-colors
-          {% if cfg.mode == 'rss' %}border-cyan-500 bg-cyan-950/30{% else %}border-gray-600 hover:border-gray-500{% endif %}">
-          <input type="radio" name="mode" value="rss"
-            {% if cfg.mode == 'rss' %}checked{% endif %}
-            class="accent-cyan-400"
-            onchange="document.getElementById('category-section').classList.remove('hidden'); document.getElementById('trending-section').classList.add('hidden');">
-          <div>
-            <div class="text-sm font-semibold text-white">RSS feeds</div>
-            <div class="text-xs text-gray-400 mt-0.5">Free. Pull per-category stories from publisher RSS feeds (headline + short dek, no APITube calls).</div>
-          </div>
-        </label>
-      </div>
-    </div>
-
-    <!-- Category mode settings -->
-    <div id="category-section" {% if cfg.mode == 'trending' %}class="hidden"{% endif %}>
+    <!-- Category settings -->
+    <div id="category-section">
       <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
         <div class="px-5 py-3 border-b border-gray-700 flex items-center justify-between">
           <h2 class="text-sm font-semibold text-white">Categories &amp; Story Counts</h2>
-          <span class="text-xs text-gray-500">Max 10 per category (NewsMesh free tier)</span>
+          <span class="text-xs text-gray-500">Max 10 per category</span>
         </div>
         <div class="divide-y divide-gray-700/50">
           {% set cat_icons = {
@@ -77,7 +26,9 @@
             'government': '🏛️',
             'sports': '🏆',
             'business': '💼',
-            'science': '🔬'
+            'science': '🔬',
+            'world': '🌍',
+            'health': '🩺'
           } %}
           {% for cat, catcfg in cfg.categories.items() %}
           <div class="px-5 py-4 flex items-center gap-4">
@@ -114,34 +65,13 @@
           {% endfor %}
         </div>
         <div class="px-5 py-3 bg-gray-800/50 border-t border-gray-700 flex items-center justify-between text-xs text-gray-500">
-          <span>Total estimated API calls:
+          <span>Total stories per run:
             <span id="total-calls" class="text-white font-semibold">
               {{ cfg.categories.values() | selectattr('enabled') | map(attribute='count') | sum }}
             </span>
-            / 25 daily quota
           </span>
           <button type="button" onclick="resetAll()" class="text-gray-500 hover:text-gray-300 transition-colors">Reset all to 10</button>
         </div>
-      </div>
-    </div>
-
-    <!-- Trending mode settings -->
-    <div id="trending-section" {% if cfg.mode in ('category', 'rss') %}class="hidden"{% endif %}>
-      <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
-        <h2 class="text-sm font-semibold text-white mb-4">Trending Stories</h2>
-        <div class="flex items-center gap-4">
-          <span class="text-gray-400 text-sm w-40">Total trending stories</span>
-          <input
-            type="range"
-            name="trending_count"
-            min="1" max="25"
-            value="{{ cfg.trending_count }}"
-            class="flex-1 accent-cyan-400 cursor-pointer"
-            oninput="document.getElementById('trending-count-display').textContent = this.value">
-          <span id="trending-count-display" class="text-cyan-400 font-bold text-sm w-6 text-right">{{ cfg.trending_count }}</span>
-          <span class="text-gray-500 text-xs">stories</span>
-        </div>
-        <p class="text-gray-600 text-xs mt-3">NewsMesh trending endpoint — returns the most-searched stories across all topics right now.</p>
       </div>
     </div>
 
@@ -327,50 +257,39 @@
     </div>
   </form>
 
-  <!-- ── Allowed News Sources ─────────────────────────────────────────── -->
-  <form method="POST" action="/admin/allowed-sources/save" id="sources-form">
-    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
-      <div>
-        <h2 class="text-sm font-semibold text-white">Allowed News Sources</h2>
-        <p class="text-xs text-gray-500 mt-0.5">Restrict APITube fetches to these domains only (e.g. nytimes.com, apnews.com, reuters.com). Leave empty to allow any source.</p>
+  <!-- ── News Sources (RSS feeds) ──────────────────────────────────────── -->
+  <form method="POST" action="/admin/news-sources/save">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+      <div class="px-5 py-3 border-b border-gray-700">
+        <h2 class="text-sm font-semibold text-white">News Sources</h2>
+        <p class="text-xs text-gray-500 mt-0.5">RSS feeds each category pulls from. Untick a feed to stop ingesting it.</p>
       </div>
-
-      <!-- Hidden input — JS keeps this in sync with the chip list -->
-      <input type="hidden" name="domains" id="domains-hidden" value="{{ allowed_sources | join(',') }}">
-
-      <!-- Chip list -->
-      <div id="source-chips" class="flex flex-wrap gap-2 min-h-[2rem]">
-        {% for domain in allowed_sources %}
-        <span class="source-chip inline-flex items-center gap-1.5 px-3 py-1 bg-gray-700 border border-gray-600 rounded-full text-sm text-white">
-          {{ domain }}
-          <button type="button" onclick="removeSource('{{ domain }}')"
-            class="text-gray-400 hover:text-red-400 transition-colors leading-none">
-            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-          </button>
-        </span>
-        {% else %}
-        <span id="empty-source-hint" class="text-sm text-gray-600 italic">No restriction — all sources allowed</span>
+      <div class="divide-y divide-gray-700/50">
+        {% for cat, cat_feeds in feeds.items() %}
+        <div class="px-5 py-4">
+          <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{{ cat_icons.get(cat, '📰') }} {{ cat }}</div>
+          <div class="grid gap-1 sm:grid-cols-2">
+            {% for feed in cat_feeds %}
+            <label class="flex items-start gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-700/40 cursor-pointer">
+              <input type="checkbox" name="feed_on" value="{{ feed.url }}"
+                {% if feed.url not in disabled_feeds %}checked{% endif %}
+                class="mt-0.5 accent-cyan-400">
+              <span class="min-w-0">
+                <span class="block text-sm text-white">{{ feed.name }}</span>
+                <span class="block text-xs text-gray-500 font-mono truncate">{{ feed.url }}</span>
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
         {% endfor %}
       </div>
-
-      <!-- Add input -->
-      <div class="flex gap-2">
-        <input
-          type="text"
-          id="new-source-input"
-          placeholder="nytimes.com"
-          class="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();addSource();}">
-        <button type="button" onclick="addSource()"
-          class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
-          Add
+      <div class="px-5 py-3 border-t border-gray-700">
+        <button type="submit"
+          class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-lg transition-colors">
+          Save Sources
         </button>
       </div>
-
-      <button type="submit"
-        class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-lg transition-colors">
-        Save Sources
-      </button>
     </div>
   </form>
 
@@ -445,10 +364,7 @@ function updateTotal() {
     if (!enabled || enabled.checked) total += parseInt(s.value || 0);
   });
   const el = document.getElementById('total-calls');
-  if (el) {
-    el.textContent = total;
-    el.className = total > 25 ? 'text-red-400 font-semibold' : total > 20 ? 'text-yellow-400 font-semibold' : 'text-white font-semibold';
-  }
+  if (el) el.textContent = total;
 }
 
 // Wire up all sliders and toggles to update the total
@@ -505,58 +421,6 @@ function removeEmail(email) {
 document.querySelectorAll('#email-chips .email-chip').forEach(chip => {
   const text = chip.childNodes[0].textContent.trim();
   chip.dataset.email = text;
-});
-
-// ── Allowed news sources ─────────────────────────────────────────────────────
-
-function _normalizeDomain(val) {
-  return val.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
-}
-
-function _syncSourcesHidden() {
-  const chips = [...document.querySelectorAll('#source-chips .source-chip')];
-  document.getElementById('domains-hidden').value = chips.map(c => c.dataset.domain).join(',');
-}
-
-function addSource() {
-  const input = document.getElementById('new-source-input');
-  const val = _normalizeDomain(input.value);
-  if (!val || !val.includes('.')) return;
-
-  const existing = [...document.querySelectorAll('#source-chips .source-chip')].map(c => c.dataset.domain);
-  if (existing.includes(val)) { input.value = ''; return; }
-
-  const hint = document.getElementById('empty-source-hint');
-  if (hint) hint.remove();
-
-  const chip = document.createElement('span');
-  chip.className = 'source-chip inline-flex items-center gap-1.5 px-3 py-1 bg-gray-700 border border-gray-600 rounded-full text-sm text-white';
-  chip.dataset.domain = val;
-  chip.innerHTML = `${val}<button type="button" onclick="removeSource('${val}')" class="text-gray-400 hover:text-red-400 transition-colors leading-none ml-0.5"><svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></button>`;
-  document.getElementById('source-chips').appendChild(chip);
-  _syncSourcesHidden();
-  input.value = '';
-  input.focus();
-}
-
-function removeSource(domain) {
-  document.querySelectorAll('#source-chips .source-chip').forEach(chip => {
-    if (chip.dataset.domain === domain) chip.remove();
-  });
-  if (!document.querySelector('#source-chips .source-chip')) {
-    const hint = document.createElement('span');
-    hint.id = 'empty-source-hint';
-    hint.className = 'text-sm text-gray-600 italic';
-    hint.textContent = 'No restriction — all sources allowed';
-    document.getElementById('source-chips').appendChild(hint);
-  }
-  _syncSourcesHidden();
-}
-
-// Set data-domain on server-rendered chips so JS can reference them
-document.querySelectorAll('#source-chips .source-chip').forEach(chip => {
-  const text = chip.childNodes[0].textContent.trim();
-  chip.dataset.domain = text;
 });
 </script>
 {% endblock %}

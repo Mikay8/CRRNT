@@ -1,7 +1,7 @@
 """Ingestion orchestration — fetch, enrich, store in Postgres.
 
 Pipeline:
-  1. APITube or RSS fetch (per category)
+  1. RSS fetch (per category)
   2. Claude Pass 1 — summary, life_impact, wallet_impact, one_liner, stock_note
   3. Grok x_search Pass 2 — sentiment_label, sentiment_score, people_say, featured_posts
   4. Insert story row to Postgres (get UUID)
@@ -16,11 +16,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import apitube, app_settings, audio_storage, db, enrichment, fish_audio, rss
+from services import app_settings, audio_storage, db, enrichment, fish_audio, rss
 
 log = logging.getLogger("crrnt.ingestion")
 
-ALL_CATEGORIES = apitube.ALL_CATEGORIES
+ALL_CATEGORIES = list(rss.FEEDS)
 _DEFAULT_PER_CATEGORY = 10
 _status_lock = asyncio.Lock()
 _ingestion_status: dict[str, Any] = {"state": "idle"}
@@ -51,12 +51,10 @@ def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
-# Some APITube category/source combinations fall back to stale wire-archive
-# filler (observed: articles over a year old, sometimes duplicated verbatim
-# with different articleIds) when a narrow source filter starves that
-# category's index of fresh content. Drop anything older than this window
-# and collapse same-title duplicates within a single fetch before spending
-# Claude/Grok calls enriching junk.
+# Some feeds keep old evergreen items around for weeks, and the same wire
+# story can appear in several feeds under different links. Drop anything
+# older than this window and collapse same-title duplicates within a single
+# fetch before spending Claude/Grok calls enriching junk.
 _MAX_ARTICLE_AGE_DAYS = 3
 
 
@@ -141,10 +139,8 @@ async def _to_story_row(raw: dict[str, Any]) -> dict[str, Any]:
 async def run_ingestion(
     per_category: int = _DEFAULT_PER_CATEGORY,
     categories: Optional[list[str]] = None,
-    mode: str = "category",
     per_category_map: Optional[dict[str, int]] = None,
-    trending_count: int = 25,
-    source_domains: Optional[list[str]] = None,
+    disabled_feeds: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Full ingestion pipeline. Returns a status dict."""
     async with _status_lock:
@@ -162,46 +158,11 @@ async def run_ingestion(
     error_count = 0
 
     try:
-        if mode == "trending":
-            log.info("Ingestion starting (mode=trending, count=%d)", trending_count)
-            raw = await apitube.fetch_trending(limit=trending_count, source_domains=source_domains)
-            for a in raw:
-                a["_is_trending"] = True
-        elif mode == "both":
-            log.info("Ingestion starting (mode=both, trending=%d)", trending_count)
-            trending_raw = await apitube.fetch_trending(limit=trending_count, source_domains=source_domains)
-            for a in trending_raw:
-                a["_is_trending"] = True
-            await asyncio.sleep(1.0)
-            if per_category_map:
-                cat_raw = await apitube.fetch_categories_with_map(per_category_map, source_domains=source_domains)
-            else:
-                selected = categories or ALL_CATEGORIES
-                cat_raw = await apitube.fetch_all_categories(selected, per_category=per_category, source_domains=source_domains)
-            for a in cat_raw:
-                a["_is_trending"] = False
-            # Dedup by articleId — trending wins if a story appears in both pulls
-            seen: dict[str, Any] = {}
-            for a in trending_raw + cat_raw:
-                aid = a.get("articleId")
-                key = aid if aid else id(a)
-                if key not in seen:
-                    seen[key] = a
-            raw = list(seen.values())
-        elif mode == "rss":
-            cat_map = per_category_map or {
-                cat: per_category for cat in (categories or ALL_CATEGORIES)
-            }
-            log.info("Ingestion starting (mode=rss, per_category_map=%s)", cat_map)
-            raw = await rss.fetch_categories_with_map(cat_map, source_domains=source_domains)
-        elif per_category_map:
-            # Per-category counts — fetch each separately
-            log.info("Ingestion starting (mode=category, per_category_map=%s)", per_category_map)
-            raw = await apitube.fetch_categories_with_map(per_category_map, source_domains=source_domains)
-        else:
-            selected = categories or ALL_CATEGORIES
-            log.info("Ingestion starting (per_category=%d, categories=%s)", per_category, selected)
-            raw = await apitube.fetch_all_categories(selected, per_category=per_category, source_domains=source_domains)
+        cat_map = per_category_map or {
+            cat: per_category for cat in (categories or ALL_CATEGORIES)
+        }
+        log.info("Ingestion starting (per_category_map=%s)", cat_map)
+        raw = await rss.fetch_categories_with_map(cat_map, disabled_feeds=disabled_feeds)
         raw = _filter_fresh_and_unique(raw)
         fetched_count = len(raw)
         log.info("Fetched %d raw articles", fetched_count)

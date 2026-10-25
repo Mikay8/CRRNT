@@ -1,13 +1,15 @@
-"""RSS feed client — a free alternative to APITube for story discovery.
+"""RSS feed client — CRRNT's only news source.
 
-Each CRRNT category pulls from a handful of publisher RSS feeds. Feeds give us
+Each CRRNT category pulls from a handful of publisher RSS feeds. Admins can
+switch individual feeds off on the Settings page (stored as a list of
+disabled feed URLs, so feeds added here later default to on). Feeds give us
 headline, short dek, link, publish date and (usually) an image — not the full
 article body. We deliberately only use the feed's short `summary`, never
 `content:encoded`, so we aren't storing or enriching full copyrighted text.
 Every story links back to the publisher via source_url.
 
-Unlike APITube there's no shared rate limit, but we still cap concurrency and
-send an identifying User-Agent to be a polite client.
+There's no shared rate limit, but we still cap concurrency and send an
+identifying User-Agent to be a polite client.
 """
 from __future__ import annotations
 
@@ -29,49 +31,49 @@ _USER_AGENT = "CRRNT-Bot/1.0 (+https://crrnt.app)"
 _MAX_CONCURRENCY = 6
 _MAX_DEK_CHARS = 500
 
-FEEDS: dict[str, list[str]] = {
+FEEDS: dict[str, list[dict[str, str]]] = {
     "celebrity": [
-        "https://www.eonline.com/syndication/feeds/rssfeeds/topstories.xml",
-        "https://variety.com/feed/",
-        "https://www.billboard.com/feed/",
-        "https://www.etonline.com/news/rss",
+        {"name": "E! Online", "url": "https://www.eonline.com/syndication/feeds/rssfeeds/topstories.xml"},
+        {"name": "Variety", "url": "https://variety.com/feed/"},
+        {"name": "Billboard", "url": "https://www.billboard.com/feed/"},
+        {"name": "Entertainment Tonight", "url": "https://www.etonline.com/news/rss"},
     ],
     "tech": [
-        "https://www.theverge.com/rss/index.xml",
-        "https://techcrunch.com/feed/",
-        "https://feeds.arstechnica.com/arstechnica/index",
-        "https://www.wired.com/feed/rss",
+        {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml"},
+        {"name": "TechCrunch", "url": "https://techcrunch.com/feed/"},
+        {"name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index"},
+        {"name": "Wired", "url": "https://www.wired.com/feed/rss"},
     ],
     "government": [
-        "https://feeds.npr.org/1014/rss.xml",
-        "https://rss.politico.com/politics-news.xml",
-        "https://thehill.com/homenews/feed/",
+        {"name": "NPR Politics", "url": "https://feeds.npr.org/1014/rss.xml"},
+        {"name": "Politico", "url": "https://rss.politico.com/politics-news.xml"},
+        {"name": "The Hill", "url": "https://thehill.com/homenews/feed/"},
     ],
     "sports": [
-        "https://www.espn.com/espn/rss/news",
-        "https://www.cbssports.com/rss/headlines/",
-        "https://feeds.bbci.co.uk/sport/rss.xml",
+        {"name": "ESPN", "url": "https://www.espn.com/espn/rss/news"},
+        {"name": "CBS Sports", "url": "https://www.cbssports.com/rss/headlines/"},
+        {"name": "BBC Sport", "url": "https://feeds.bbci.co.uk/sport/rss.xml"},
     ],
     "business": [
-        "https://feeds.npr.org/1006/rss.xml",
-        "https://www.cnbc.com/id/10001147/device/rss/rss.html",
-        "https://feeds.bbci.co.uk/news/business/rss.xml",
+        {"name": "NPR Business", "url": "https://feeds.npr.org/1006/rss.xml"},
+        {"name": "CNBC", "url": "https://www.cnbc.com/id/10001147/device/rss/rss.html"},
+        {"name": "BBC Business", "url": "https://feeds.bbci.co.uk/news/business/rss.xml"},
     ],
     "science": [
-        "https://www.sciencedaily.com/rss/top/science.xml",
-        "https://feeds.npr.org/1007/rss.xml",
-        "https://www.space.com/feeds/all",
+        {"name": "ScienceDaily", "url": "https://www.sciencedaily.com/rss/top/science.xml"},
+        {"name": "NPR Science", "url": "https://feeds.npr.org/1007/rss.xml"},
+        {"name": "Space.com", "url": "https://www.space.com/feeds/all"},
     ],
     "world": [
-        "https://feeds.bbci.co.uk/news/world/rss.xml",
-        "https://feeds.npr.org/1004/rss.xml",
-        "https://www.aljazeera.com/xml/rss/all.xml",
-        "https://www.theguardian.com/world/rss",
+        {"name": "BBC World", "url": "https://feeds.bbci.co.uk/news/world/rss.xml"},
+        {"name": "NPR World", "url": "https://feeds.npr.org/1004/rss.xml"},
+        {"name": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml"},
+        {"name": "The Guardian", "url": "https://www.theguardian.com/world/rss"},
     ],
     "health": [
-        "https://feeds.npr.org/1128/rss.xml",
-        "https://www.statnews.com/feed/",
-        "https://www.sciencedaily.com/rss/health_medicine.xml",
+        {"name": "NPR Health", "url": "https://feeds.npr.org/1128/rss.xml"},
+        {"name": "STAT News", "url": "https://www.statnews.com/feed/"},
+        {"name": "ScienceDaily Health", "url": "https://www.sciencedaily.com/rss/health_medicine.xml"},
     ],
 }
 
@@ -87,18 +89,6 @@ def _strip_html(text: str) -> str:
 def _domain(url: str) -> str:
     host = urlparse(url).netloc.lower()
     return host[4:] if host.startswith("www.") else host
-
-
-def _domain_allowed(domain: str, source_domains: Optional[list[str]]) -> bool:
-    """Match allowed-sources entries against the article's host, including
-    subdomains (e.g. 'npr.org' allows 'feeds.npr.org')."""
-    if not source_domains:
-        return True
-    for allowed in source_domains:
-        allowed = allowed.lower().removeprefix("www.")
-        if domain == allowed or domain.endswith("." + allowed):
-            return True
-    return False
 
 
 def _published_iso(entry: Any) -> str:
@@ -168,19 +158,24 @@ async def _fetch_feed(
 async def fetch_categories_with_map(
     per_category_map: dict[str, int],
     *,
-    source_domains: Optional[list[str]] = None,
+    disabled_feeds: Optional[list[str]] = None,
 ) -> list[dict[str, Any]]:
-    """Fetch every feed for the requested categories and keep the newest
-    `count` stories per category, round-robined across that category's
-    feeds so one prolific publisher can't fill the whole slot."""
+    """Fetch every enabled feed for the requested categories and keep the
+    newest `count` stories per category, round-robined across that
+    category's feeds so one prolific publisher can't fill the whole slot."""
+    disabled = set(disabled_feeds or [])
+    feeds_by_cat = {
+        cat: [f["url"] for f in FEEDS.get(cat, []) if f["url"] not in disabled]
+        for cat in per_category_map
+    }
     sem = asyncio.Semaphore(_MAX_CONCURRENCY)
     async with httpx.AsyncClient(
         timeout=20.0, follow_redirects=True, headers={"User-Agent": _USER_AGENT}
     ) as client:
         jobs = {
             (cat, url): _fetch_feed(client, sem, url, cat)
-            for cat in per_category_map
-            for url in FEEDS.get(cat, [])
+            for cat, urls in feeds_by_cat.items()
+            for url in urls
         }
         results = dict(zip(jobs.keys(), await asyncio.gather(*jobs.values())))
 
@@ -188,12 +183,12 @@ async def fetch_categories_with_map(
     flattened: list[dict[str, Any]] = []
     for cat, count in per_category_map.items():
         per_feed = []
-        for url in FEEDS.get(cat, []):
-            arts = [
-                a for a in results.get((cat, url), [])
-                if _domain_allowed(a["source"], source_domains)
-            ]
-            arts.sort(key=lambda a: a["publishedDate"], reverse=True)
+        for url in feeds_by_cat[cat]:
+            arts = sorted(
+                results.get((cat, url), []),
+                key=lambda a: a["publishedDate"],
+                reverse=True,
+            )
             per_feed.append(arts)
 
         picked: list[dict[str, Any]] = []

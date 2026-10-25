@@ -17,7 +17,7 @@ Free for everyone — no paid tier or subscription.
 | Database | Railway PostgreSQL |
 | Auth | Local JWT (HS256) + bcrypt — no third-party auth provider |
 | AI enrichment | Anthropic Claude (`claude-haiku-4-5`) |
-| News source | NewsMesh API |
+| News source | Publisher RSS feeds (`feedparser`) |
 | Social data | xAI Grok (`grok-4.6`, `x_search` tool) |
 | Stock data | yfinance |
 | Text-to-speech | Fish Audio |
@@ -71,9 +71,6 @@ SESSION_SECRET=<any long random string>
 
 # Required — Anthropic Claude (news enrichment)
 ANTHROPIC_API_KEY=sk-ant-...
-
-# Required — NewsMesh (news fetching)
-NEWSMESH_API_KEY=...
 
 # Optional — xAI Grok (X social sentiment via x_search). Skipped if unset.
 XAI_API_KEY=...
@@ -209,7 +206,7 @@ Internal tooling:
   - `services/auth_middleware.py` — JWT extraction + user lookup dependency
   - `services/ingestion.py` — orchestrates fetch → enrich → persist to Postgres
   - `services/enrichment.py` — Claude claude-haiku-4-5 (insight) + Grok grok-4.6 x_search (sentiment) two-pass enrichment
-  - `services/news_fetcher.py` — NewsMesh API, per category
+  - `services/rss.py` — publisher RSS feeds per category (feed list + admin on/off toggles)
   - `services/fish_audio.py` — Fish Audio TTS, cached per user in Postgres
   - `services/personalization.py` — story scoring based on onboarding preferences
   - `services/stock_service.py` — yfinance OHLC (1D/1W/1M/1Y)
@@ -290,7 +287,6 @@ Applied via `artifacts/api-server/schema.sql`.
 | `JWT_SECRET` | backend | Signs/verifies access & refresh tokens |
 | `SESSION_SECRET` | backend | General session signing |
 | `ANTHROPIC_API_KEY` | backend | Claude enrichment |
-| `NEWSMESH_API_KEY` | backend | News source API |
 | `XAI_API_KEY` | backend | xAI Grok x_search (optional — sentiment step skipped if unset) |
 | `FISH_AUDIO_API_KEY` / `FISH_AUDIO_VOICE_ID` | backend | Text-to-speech |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | backend | Admin portal HTTP Basic auth |
@@ -301,7 +297,7 @@ Applied via `artifacts/api-server/schema.sql`.
 
 ### Daily quotas
 
-- **NewsMesh** free tier: 25 req/day
+- **RSS feeds**: free, no quota (fetched politely with capped concurrency)
 - **Claude**: one pass per story (insight)
 - **Grok**: one x_search pass per story with a resolvable ticker, person, or topic
 

@@ -2,7 +2,6 @@
 
 Config shape:
   {
-    "mode": "category" | "trending" | "both" | "rss",
     "categories": {
       "celebrity":   {"enabled": true, "count": 10},
       "tech":        {"enabled": true, "count": 10},
@@ -12,8 +11,7 @@ Config shape:
       "science":     {"enabled": true, "count": 10},
       "world":       {"enabled": true, "count": 10},
       "health":      {"enabled": true, "count": 10},
-    },
-    "trending_count": 25
+    }
   }
 
 Postgres is the primary store so settings survive redeployments. The local file
@@ -36,15 +34,14 @@ _lock = asyncio.Lock()
 ALL_CATEGORIES = ["celebrity", "tech", "government", "sports", "business", "science", "world", "health"]
 
 _DEFAULTS: dict[str, Any] = {
-    "mode": "both",
     "categories": {cat: {"enabled": True, "count": 10} for cat in ALL_CATEGORIES},
-    "trending_count": 25,
 }
 
 
 def _backfill(data: dict[str, Any]) -> dict[str, Any]:
-    data.setdefault("mode", "both")
-    data.setdefault("trending_count", 25)
+    # Drop keys left over from the APITube fetch modes.
+    data.pop("mode", None)
+    data.pop("trending_count", None)
     data.setdefault("categories", {})
     for cat in ALL_CATEGORIES:
         data["categories"].setdefault(cat, {"enabled": True, "count": 10})
@@ -92,7 +89,7 @@ async def save(cfg: dict[str, Any]) -> None:
         except Exception as exc:
             log.warning("Could not save ingest config to file: %s", exc)
 
-        log.info("Ingestion config saved: mode=%s", cfg.get("mode"))
+        log.info("Ingestion config saved")
 
 
 async def get_run_params() -> dict[str, Any]:
@@ -100,40 +97,14 @@ async def get_run_params() -> dict[str, Any]:
     cfg = await get()
 
     from services import app_settings
-    source_domains = await app_settings.get_allowed_sources()
+    disabled_feeds = await app_settings.get_disabled_feeds()
 
-    if cfg["mode"] == "trending":
-        return {
-            "mode": "trending",
-            "trending_count": cfg.get("trending_count", 25),
-            "source_domains": source_domains,
-        }
-    enabled = [
-        cat for cat, v in cfg["categories"].items() if v.get("enabled", True)
-    ]
     per_category_map = {
         cat: v.get("count", 10)
         for cat, v in cfg["categories"].items()
         if v.get("enabled", True)
     }
-    if cfg["mode"] == "rss":
-        return {
-            "mode": "rss",
-            "categories": enabled,
-            "per_category_map": per_category_map,
-            "source_domains": source_domains,
-        }
-    if cfg["mode"] == "both":
-        return {
-            "mode": "both",
-            "trending_count": cfg.get("trending_count", 25),
-            "categories": enabled,
-            "per_category_map": per_category_map,
-            "source_domains": source_domains,
-        }
     return {
-        "mode": "category",
-        "categories": enabled,
         "per_category_map": per_category_map,
-        "source_domains": source_domains,
+        "disabled_feeds": disabled_feeds,
     }

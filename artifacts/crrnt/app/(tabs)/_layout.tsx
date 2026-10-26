@@ -5,9 +5,13 @@ import { useThemeContext } from "@/contexts/ThemeContext";
 
 export default function TabsLayout() {
   const { theme } = useThemeContext();
+  const isWeb = Platform.OS === "web";
 
   return (
     <Tabs
+      // Bottom menu bar: native (iOS/Android) only. On web there is
+      // no menu at all — no bottom bar, and no top-bar replacement.
+      tabBar={isWeb ? () => null : undefined}
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: true,
@@ -22,10 +26,7 @@ export default function TabsLayout() {
           backgroundColor: theme.bgElevated,
           borderTopColor: theme.border,
           borderTopWidth: 1,
-          ...(Platform.OS === "web" && {
-            height: 84,
-            paddingBottom: 34,
-          }),
+          ...(isWeb && { display: "none" }),
         },
       }}
     >

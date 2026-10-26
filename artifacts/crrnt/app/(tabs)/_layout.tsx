@@ -2,11 +2,9 @@ import { Tabs } from "expo-router";
 import { Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useThemeContext } from "@/contexts/ThemeContext";
-import { useAuth } from "@/contexts/AuthContext";
 
 export default function TabsLayout() {
   const { theme } = useThemeContext();
-  const { user } = useAuth();
 
   return (
     <Tabs
@@ -20,17 +18,15 @@ export default function TabsLayout() {
           fontSize: 11,
           letterSpacing: 0.2,
         },
-        tabBarStyle: user
-          ? {
-              backgroundColor: theme.bgElevated,
-              borderTopColor: theme.border,
-              borderTopWidth: 1,
-              ...(Platform.OS === "web" && {
-                height: 84,
-                paddingBottom: 34,
-              }),
-            }
-          : { display: "none" },
+        tabBarStyle: {
+          backgroundColor: theme.bgElevated,
+          borderTopColor: theme.border,
+          borderTopWidth: 1,
+          ...(Platform.OS === "web" && {
+            height: 84,
+            paddingBottom: 34,
+          }),
+        },
       }}
     >
       <Tabs.Screen

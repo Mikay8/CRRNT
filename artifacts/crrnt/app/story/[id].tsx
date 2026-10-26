@@ -26,6 +26,7 @@ import StoryImage from "@/components/StoryImage";
 import { useAudio } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { canSaveStories } from "@/constants/features";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import CategoryBadge from "@/components/CategoryBadge";
@@ -343,7 +344,7 @@ export default function StoryDetailScreen() {
               })()}
             </View>
             <View style={styles.actionButtons}>
-              {user ? <SaveButton story={story} size={26} /> : null}
+              {canSaveStories(!!user) ? <SaveButton story={story} size={26} /> : null}
             </View>
           </View>
 

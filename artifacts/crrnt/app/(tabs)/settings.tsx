@@ -142,8 +142,52 @@ export default function SettingsScreen() {
     setVerificationSent(true);
   };
 
+  if ((isGuest || !user) && AUTH_ENABLED) {
+    return <Redirect href={"/login" as any} />;
+  }
+
+  // Accounts are off: guests get the device-only settings. Interests need an
+  // account (the preferences API is per-user), so they return with login.
   if (isGuest || !user) {
-    return <Redirect href={(AUTH_ENABLED ? "/login" : "/(tabs)") as any} />;
+    return (
+      <View style={[styles.container, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
+        <Text style={[styles.screenTitle, { color: theme.text }]}>Settings</Text>
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[styles.accountCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={[styles.avatar, { backgroundColor: theme.surfaceHigh }]}>
+              <Ionicons name="person-outline" size={22} color={theme.accent} />
+            </View>
+            <View style={styles.accountInfo}>
+              <Text style={[styles.accountEmail, { color: theme.text }]}>Browsing as a guest</Text>
+              <Text style={[styles.guestNote, { color: theme.textDim }]}>
+                Saved stories are kept on this device.
+              </Text>
+            </View>
+          </View>
+
+          <SectionHeader label="Appearance" theme={theme} />
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Row
+              icon="moon-outline"
+              label="Dark mode"
+              theme={theme}
+              last
+              right={
+                <Switch
+                  value={isDark}
+                  onValueChange={toggleTheme}
+                  trackColor={{ false: theme.border, true: theme.accentDim }}
+                  thumbColor={isDark ? theme.accent : theme.textDim}
+                />
+              }
+            />
+          </View>
+        </ScrollView>
+      </View>
+    );
   }
 
   const closeDialog = () => setDialog(null);
@@ -408,6 +452,10 @@ const styles = StyleSheet.create({
   accountEmail: {
     fontFamily: "Inter_500Medium",
     fontSize: 15,
+  },
+  guestNote: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
   },
   card: {
     borderRadius: 16,

@@ -82,7 +82,16 @@ CATEGORIES: list[str] = list(DEFAULT_FEEDS)
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
-_IMG_RE = re.compile(r"<img[^>]+src=[\"']([^\"']+)[\"']", re.IGNORECASE)
+_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+_IMG_SRC_RE = re.compile(r"\bsrc=[\"']([^\"']+)[\"']", re.IGNORECASE)
+_ONE_PX_RE = re.compile(r"\b(?:width|height)=[\"']?1[\"'\s/>]", re.IGNORECASE)
+_TRACKER_URL_RE = re.compile(r"pixel|tracking|beacon|/1x1\.|spacer\.gif", re.IGNORECASE)
+
+
+def _is_tracker(url: str, tag: str = "") -> bool:
+    """Analytics pixels (e.g. NPR's npr-rss-pixel.png) load fine but render as
+    nothing, which would also stop the app falling back to placeholder art."""
+    return bool(_TRACKER_URL_RE.search(url) or (tag and _ONE_PX_RE.search(tag)))
 
 
 def _strip_html(text: str) -> str:
@@ -104,17 +113,23 @@ def _published_iso(entry: Any) -> str:
 def _image(entry: Any) -> Optional[str]:
     for key in ("media_content", "media_thumbnail"):
         for m in entry.get(key) or []:
-            if m.get("url"):
+            if m.get("url") and not _is_tracker(m["url"]):
                 return m["url"]
     for link in entry.get("links") or []:
-        if link.get("rel") == "enclosure" and (link.get("type") or "").startswith("image/"):
-            return link.get("href")
+        if (
+            link.get("rel") == "enclosure"
+            and (link.get("type") or "").startswith("image/")
+            and link.get("href")
+            and not _is_tracker(link["href"])
+        ):
+            return link["href"]
     # Many feeds (NPR, The Verge) only embed the lead image in the HTML body.
     # Reading it for the image URL is fine — the body text itself is discarded.
     for blob in [entry.get("summary") or ""] + [c.get("value") or "" for c in entry.get("content") or []]:
-        m = _IMG_RE.search(blob)
-        if m:
-            return html.unescape(m.group(1))
+        for tag in _IMG_TAG_RE.findall(blob):
+            m = _IMG_SRC_RE.search(tag)
+            if m and not _is_tracker(m.group(1), tag):
+                return html.unescape(m.group(1))
     return None
 
 

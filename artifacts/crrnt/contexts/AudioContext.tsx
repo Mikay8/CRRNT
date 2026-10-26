@@ -15,7 +15,6 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { updateNowPlayingInfo, registerRemoteControls } from "@/utils/nowPlaying";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface AudioContextType {
@@ -149,28 +148,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }, 200);
     return () => clearInterval(timer);
   }, [player]);
-
-  useEffect(() => {
-    const cleanup = registerRemoteControls({
-      onPlay: () => player.play(),
-      onPause: () => player.pause(),
-      onSeek: (ms) => player.seekTo(ms / 1000),
-    });
-    return cleanup;
-  }, [player]);
-
-  useEffect(() => {
-    if (!isAudioMode || !storyRef.current) return;
-    const s = storyRef.current;
-    updateNowPlayingInfo({
-      title: s.title,
-      artist: "CRRNT",
-      artworkUri: (s as any).media_url ?? undefined,
-      positionMs: audioPositionMs,
-      durationMs: audioDurationMs,
-      isPlaying: audioIsPlaying,
-    });
-  }, [audioPositionMs, audioDurationMs, audioIsPlaying, isAudioMode]);
 
   const _setStory = (s: Story | null) => {
     storyRef.current = s;
@@ -322,10 +299,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setAudioPositionMs(0);
 
       // tts_url is a fully-qualified presigned S3 URL when audio was generated
-      // at ingestion; the /api/stories/{id}/audio fallback path is relative to
-      // our own API and still needs baseUrl prepended.
-      const audioPath = newStory.tts_url ?? `/api/stories/${newStory.id}/audio`;
-      const isAbsoluteAudioUrl = /^https?:\/\//i.test(audioPath);
+      // at ingestion. With no tts_url there's nothing to play — the
+      // /api/stories/{id}/audio endpoint reads the same column and 404s — so
+      // skip straight to speech synthesis. (Native can't detect that 404: the
+      // player just loads silence, which left iPhone audio dead.)
+      const audioPath = newStory.tts_url ?? null;
+      const isAbsoluteAudioUrl = !!audioPath && /^https?:\/\//i.test(audioPath);
       const baseUrl = getBaseUrl() ?? "";
       let audioStarted = false;
 
@@ -410,14 +389,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             artworkUrl: (newStory as any).media_url ?? undefined,
           });
         } catch {}
-        updateNowPlayingInfo({
-          title: newStory.title,
-          artist: "CRRNT",
-          artworkUri: (newStory as any).media_url ?? undefined,
-          positionMs: 0,
-          durationMs: 0,
-          isPlaying: true,
-        });
       } else {
         // No audio URL or audio fetch failed — fall back to speech synthesis
         setIsAudioLoading(false);

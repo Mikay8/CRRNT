@@ -172,7 +172,7 @@ export default function FeedScreen() {
                 style={{ marginRight: 8 }}
               />
             ) : null}
-            {!searchVisible && (
+            {!searchVisible && Platform.OS === "web" && (
               <Pressable
                 onPress={toggleTheme}
                 hitSlop={10}

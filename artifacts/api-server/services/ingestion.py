@@ -2,11 +2,13 @@
 
 Pipeline:
   1. RSS fetch (per category)
-  2. Claude Pass 1 — summary, life_impact, wallet_impact, one_liner, stock_note
-  3. Grok x_search Pass 2 — sentiment_label, sentiment_score, people_say, featured_posts
-  4. Insert story row to Postgres (get UUID)
-  5. Fish Audio TTS — upload, set tts_url
-  6. Write ingestion_log row
+  2. Drop stale, in-batch duplicate, and already-stored articles
+  3. Claude Pass 1 — summary, life_impact, wallet_impact, one_liner, stock_note
+  4. Grok x_search Pass 2 — sentiment_label, sentiment_score, people_say, featured_posts
+  5. Insert story row to Postgres (get UUID; the post-enrichment
+     duplicate check stays as a safety net)
+  6. Fish Audio TTS — upload, set tts_url
+  7. Write ingestion_log row
 """
 from __future__ import annotations
 
@@ -75,6 +77,28 @@ def _filter_fresh_and_unique(articles: list[dict[str, Any]]) -> list[dict[str, A
     dropped = len(articles) - len(kept)
     if dropped:
         log.info("Filtered out %d stale/duplicate article(s) before enrichment", dropped)
+    return kept
+
+
+async def _filter_already_stored(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop items already in the DB, before paying for enrichment.
+
+    Uses the same key as the post-enrichment duplicate check in
+    run_ingestion (articleId, falling back to external_id). Items with
+    no id are kept, matching that check's behavior. The
+    post-enrichment check stays in place as a safety net for stories
+    inserted between this filter and the insert.
+    """
+    kept: list[dict[str, Any]] = []
+    for a in articles:
+        external_id = a.get("articleId") or a.get("external_id")
+        if external_id and await db.get_story_by_external_id(external_id):
+            log.info("Skipping already-stored duplicate before enrichment: %s", external_id)
+            continue
+        kept.append(a)
+    dropped = len(articles) - len(kept)
+    if dropped:
+        log.info("Filtered out %d already-stored duplicate(s) before enrichment", dropped)
     return kept
 
 
@@ -170,6 +194,12 @@ async def run_ingestion(
         if not raw:
             _set_status({"state": "empty", "storyCount": 0, "startedAt": started_at.isoformat()})
             await _write_log(fetched_count, 0, 0, "partial", "No articles fetched")
+            return _ingestion_status
+
+        raw = await _filter_already_stored(raw)
+        if not raw:
+            _set_status({"state": "empty", "storyCount": 0, "startedAt": started_at.isoformat()})
+            await _write_log(fetched_count, 0, 0, "partial", "All fetched articles already stored")
             return _ingestion_status
 
         enriched = await enrichment.enrich_all(raw)

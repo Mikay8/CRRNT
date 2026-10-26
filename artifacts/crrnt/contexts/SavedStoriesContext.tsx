@@ -1,8 +1,9 @@
 /**
  * SavedStoriesContext — saves/unsaves stories via the backend API.
  *
- * Falls back to local state when the user is not authenticated or
- * when API calls fail, so the UI never freezes.
+ * Guests (no access token) save to device storage instead, so bookmarks
+ * work while accounts are switched off. API failures keep local state, so
+ * the UI never freezes.
  */
 import {
   createContext,
@@ -12,8 +13,15 @@ import {
   useMemo,
   useState,
 } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Story } from "@workspace/api-client-react";
 import { useAuth } from "./AuthContext";
+
+const GUEST_SAVED_KEY = "@crrnt/saved/guest/v1";
+
+function persistGuestSaved(stories: Story[]) {
+  AsyncStorage.setItem(GUEST_SAVED_KEY, JSON.stringify(stories)).catch(() => {});
+}
 
 interface SavedContextValue {
   saved: Story[];
@@ -58,7 +66,14 @@ export function SavedStoriesProvider({
 
   const refresh = useCallback(async () => {
     if (!authHeaders) {
-      setHydrated(true);
+      try {
+        const raw = await AsyncStorage.getItem(GUEST_SAVED_KEY);
+        setSaved(raw ? (JSON.parse(raw) as Story[]) : []);
+      } catch {
+        // Corrupt or unreadable — start empty
+      } finally {
+        setHydrated(true);
+      }
       return;
     }
     try {
@@ -86,8 +101,17 @@ export function SavedStoriesProvider({
 
   const toggleSaved = useCallback(
     async (story: Story) => {
-      if (!authHeaders) return;
       const alreadySaved = savedIds.has(story.id);
+      if (!authHeaders) {
+        setSaved((prev) => {
+          const next = alreadySaved
+            ? prev.filter((s) => s.id !== story.id)
+            : [story, ...prev];
+          persistGuestSaved(next);
+          return next;
+        });
+        return;
+      }
       if (alreadySaved) {
         setSaved((prev) => prev.filter((s) => s.id !== story.id));
         await fetch(`${getApiBase()}/api/stories/${story.id}/save`, {
@@ -107,7 +131,14 @@ export function SavedStoriesProvider({
 
   const remove = useCallback(
     async (id: string) => {
-      if (!authHeaders) return;
+      if (!authHeaders) {
+        setSaved((prev) => {
+          const next = prev.filter((s) => s.id !== id);
+          persistGuestSaved(next);
+          return next;
+        });
+        return;
+      }
       setSaved((prev) => prev.filter((s) => s.id !== id));
       await fetch(`${getApiBase()}/api/stories/${id}/save`, {
         method: "DELETE",

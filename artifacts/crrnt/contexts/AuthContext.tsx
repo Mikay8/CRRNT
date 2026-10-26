@@ -17,19 +17,24 @@ import {
 } from "react";
 import { AppState, Platform } from "react-native";
 
+// SecureStore only accepts [A-Za-z0-9._-] keys and rejects "@crrnt/auth/...",
+// so native keys are sanitized; web keeps the original AsyncStorage keys so
+// existing web sessions survive.
+const _secureKey = (key: string) => key.replace(/[^A-Za-z0-9._-]/g, "_");
+
 const _storage = {
   getItem: (key: string) =>
     Platform.OS === "web"
       ? AsyncStorage.getItem(key)
-      : SecureStore.getItemAsync(key),
+      : SecureStore.getItemAsync(_secureKey(key)),
   setItem: (key: string, value: string) =>
     Platform.OS === "web"
       ? AsyncStorage.setItem(key, value)
-      : SecureStore.setItemAsync(key, value),
+      : SecureStore.setItemAsync(_secureKey(key), value),
   removeItem: (key: string) =>
     Platform.OS === "web"
       ? AsyncStorage.removeItem(key)
-      : SecureStore.deleteItemAsync(key),
+      : SecureStore.deleteItemAsync(_secureKey(key)),
 };
 
 const TOKEN_KEY = "@crrnt/auth/access_token";

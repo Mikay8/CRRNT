@@ -11,6 +11,7 @@ import SaveButton from "@/components/SaveButton";
 import StoryImage from "@/components/StoryImage";
 import { useAudio } from "@/contexts/AudioContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { canSaveStories } from "@/constants/features";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { formatRelativeTime, isToday } from "@/utils/time";
@@ -82,6 +83,7 @@ export function StoryCard({ story }: StoryCardProps) {
   const swipeableRef = useRef<SwipeableMethods | null>(null);
   const { toggleSaved } = useSavedStories();
   const { user } = useAuth();
+  const canSave = canSaveStories(!!user);
   const { playStory, isBarVisible, addToQueue } = useAudio();
   const { theme: palette } = useThemeContext();
   const styles = useMemo(() => createStyles(palette), [palette]);
@@ -91,7 +93,7 @@ export function StoryCard({ story }: StoryCardProps) {
   const timestamp = story.published_at ?? null;
 
   const handleSave = () => {
-    if (!user) return;
+    if (!canSave) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
     toggleSaved(story).catch(() => undefined);
   };
@@ -122,7 +124,7 @@ export function StoryCard({ story }: StoryCardProps) {
       containerStyle={styles.swipeContainer}
       childrenContainerStyle={styles.card}
       renderLeftActions={() => <PlayAction isQueue={isBarVisible} />}
-      renderRightActions={user ? () => <SaveAction accent={palette.accent} /> : undefined}
+      renderRightActions={canSave ? () => <SaveAction accent={palette.accent} /> : undefined}
       onSwipeableWillOpen={(_direction) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
       }}
@@ -159,7 +161,7 @@ export function StoryCard({ story }: StoryCardProps) {
                   <Text style={styles.tickerText}>${ticker}</Text>
                 </View>
               ) : null}
-              {user ? <SaveButton story={story} /> : null}
+              {canSave ? <SaveButton story={story} /> : null}
             </View>
           </View>
 

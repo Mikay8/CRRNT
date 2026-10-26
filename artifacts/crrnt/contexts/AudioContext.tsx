@@ -299,10 +299,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setAudioPositionMs(0);
 
       // tts_url is a fully-qualified presigned S3 URL when audio was generated
-      // at ingestion; the /api/stories/{id}/audio fallback path is relative to
-      // our own API and still needs baseUrl prepended.
-      const audioPath = newStory.tts_url ?? `/api/stories/${newStory.id}/audio`;
-      const isAbsoluteAudioUrl = /^https?:\/\//i.test(audioPath);
+      // at ingestion. With no tts_url there's nothing to play — the
+      // /api/stories/{id}/audio endpoint reads the same column and 404s — so
+      // skip straight to speech synthesis. (Native can't detect that 404: the
+      // player just loads silence, which left iPhone audio dead.)
+      const audioPath = newStory.tts_url ?? null;
+      const isAbsoluteAudioUrl = !!audioPath && /^https?:\/\//i.test(audioPath);
       const baseUrl = getBaseUrl() ?? "";
       let audioStarted = false;
 

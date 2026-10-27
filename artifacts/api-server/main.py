@@ -131,6 +131,42 @@ async def register_push_token(body: PushTokenBody) -> dict:
     except Exception:
         return {"status": "ok"}
 
+
+# ── Beta feedback (Settings → suggestion box) ────────────────────────────────
+# Deliberately unauthenticated: beta testers are guests (accounts are off),
+# so there is no token to check. Messages are length-capped and stored in the
+# beta_feedback table — nothing is emailed on submit. The morning digest
+# batches every not-yet-emailed item into one email (see
+# services/email_service.py::send_digest), and the admin portal Feedback page
+# lists items individually for review. If the table does not exist yet (the
+# one-time CREATE TABLE in schema.sql has not been run on this database),
+# the endpoint returns 503 so the app shows an error instead of a fake
+# success — it never silently drops a submission.
+class FeedbackBody(BaseModel):
+    message: str
+    platform: str | None = None
+    app_version: str | None = None
+
+
+@app.post("/api/feedback", tags=["feedback"])
+async def submit_feedback(body: FeedbackBody) -> dict:
+    from fastapi import HTTPException
+
+    message = (body.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Feedback message is empty")
+    if len(message) > 2000:
+        raise HTTPException(status_code=400, detail="Feedback is too long (max 2000 characters)")
+
+    try:
+        from services import db
+
+        await db.insert_feedback(message, body.platform, body.app_version)
+    except Exception as exc:
+        log.warning("Beta feedback store failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Could not save feedback — please try again later")
+    return {"status": "stored"}
+
 # ── Admin portal (Jinja2, HTTP Basic Auth) ────────────────────────────────────
 app.include_router(admin_portal.router)         # already prefixed /admin
 

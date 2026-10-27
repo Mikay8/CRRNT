@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -11,6 +11,10 @@ import {
   View,
 } from "react-native";
 import Constants from "expo-constants";
+import {
+  isNotificationsEnabled,
+  setNotificationsEnabled,
+} from "../../lib/notifications";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useChromeBottomPadding } from "@/contexts/NavChromeContext";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
@@ -121,6 +125,73 @@ const rowStyles = StyleSheet.create({
     marginTop: 2,
   },
 });
+
+// ── Notifications toggle ──────────────────────────────────────────────────────
+// Master on/off for all CRRNT pushes. Native only — the parent renders this
+// section only when Platform.OS !== "web", since Expo push does not exist
+// on web. Logic lives in lib/notifications.ts; this is just the switch.
+function NotificationsSection({ theme }: { theme: ThemeColors }) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    isNotificationsEnabled().then((v) => {
+      if (live) setEnabled(v);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const onToggle = async (value: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    setNote(null);
+    const res = await setNotificationsEnabled(value);
+    setBusy(false);
+    if (res.ok) {
+      setEnabled(value);
+    } else if (res.reason === "permission_denied") {
+      setEnabled(false);
+      setNote(
+        "Notifications are blocked in your device settings — turn them on there, then try again.",
+      );
+    } else if (res.reason === "not_device") {
+      setEnabled(false);
+      setNote("Push notifications need a physical device.");
+    } else {
+      setNote("Couldn't change that — check your connection and try again.");
+    }
+  };
+
+  return (
+    <>
+      <SectionHeader label="Notifications" theme={theme} />
+      <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <Row
+          icon="notifications-outline"
+          label={busy ? "Updating…" : "Notifications"}
+          theme={theme}
+          last
+          right={
+            <Switch
+              value={enabled ?? false}
+              disabled={enabled === null || busy}
+              onValueChange={onToggle}
+              trackColor={{ false: theme.border, true: theme.accentDim }}
+              thumbColor={enabled ? theme.accent : theme.textDim}
+            />
+          }
+        />
+      </View>
+      {note ? (
+        <Text style={[feedbackStyles.status, { color: theme.textDim }]}>{note}</Text>
+      ) : null}
+    </>
+  );
+}
 
 // ── Beta feedback ─────────────────────────────────────────────────────────────
 // Suggestion box for beta testers. Posts to POST /api/feedback, which stores
@@ -341,6 +412,8 @@ export default function SettingsScreen() {
             />
           </View>
 
+          {Platform.OS !== "web" && <NotificationsSection theme={theme} />}
+
           <BetaFeedback theme={theme} />
         </ScrollView>
       </View>
@@ -535,6 +608,8 @@ export default function SettingsScreen() {
             }
           />
         </View>
+
+        {Platform.OS !== "web" && <NotificationsSection theme={theme} />}
 
         <BetaFeedback theme={theme} />
 

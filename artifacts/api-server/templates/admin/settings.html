@@ -152,6 +152,34 @@
     </div>
   </form>
 
+  <!-- ── Breaking News Alerts ─────────────────────────────────────────── -->
+  <form method="POST" action="/admin/breaking-style/save">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-5">
+      <div>
+        <h2 class="text-sm font-semibold text-white">Breaking News Alerts</h2>
+        <p class="text-xs text-gray-500 mt-0.5">The push-notification hook used when a breaking alert is published. "Alternate" flips between the two hooks on every send.</p>
+      </div>
+
+      <div class="bg-gray-900/50 rounded-lg p-4 space-y-2 max-w-sm">
+        <label class="block text-xs text-gray-400">Alert style</label>
+        <select
+          name="breaking_style_mode"
+          class="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+          <option value="alternate" {% if breaking_style.mode == 'alternate' %}selected{% endif %}>Alternate — flip each send</option>
+          <option value="stop" {% if breaking_style.mode == 'stop' %}selected{% endif %}>Always "Stop the presses!"</option>
+          <option value="extra" {% if breaking_style.mode == 'extra' %}selected{% endif %}>Always "Extra! Extra!"</option>
+        </select>
+        {% if breaking_style.last_hook %}
+        <p class="text-xs text-gray-500">Last breaking hook sent: "{{ 'Stop the presses!' if breaking_style.last_hook == 'stop' else 'Extra! Extra!' }}" — the next "Alternate" send will use the other one.</p>
+        {% endif %}
+      </div>
+
+      <button type="submit" class="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-lg transition-colors">
+        Save Alert Style
+      </button>
+    </div>
+  </form>
+
   <!-- ── Feed Limits ──────────────────────────────────────────────────── -->
   <form method="POST" action="/admin/feed-limits/save">
     <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-5">

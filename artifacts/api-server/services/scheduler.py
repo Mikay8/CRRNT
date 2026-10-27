@@ -1,6 +1,9 @@
 """APScheduler wrapper — runs ingestion daily at 6 AM Eastern,
 cleanup daily at 3 AM Eastern. Both times are admin-configurable
 (app_settings.schedule_times) and take effect immediately via reschedule().
+Also runs the Morning Edition push daily at 7:30 AM Eastern (fixed, not
+admin-configurable yet): if the admin moves ingestion later than 7:30, the
+push simply covers whatever was inserted in the last 12 hours that day.
 """
 from __future__ import annotations
 
@@ -24,6 +27,15 @@ async def _daily_ingest() -> None:
 
 async def _daily_cleanup() -> None:
     await ingestion.run_cleanup()
+
+
+async def _daily_digest_push() -> None:
+    from services import notifications
+
+    try:
+        await notifications.send_morning_digest_push()
+    except Exception as exc:
+        log.warning("Morning digest push failed: %s", exc)
 
 
 async def start() -> None:
@@ -53,8 +65,16 @@ async def start() -> None:
         coalesce=True,
         max_instances=1,
     )
+    _scheduler.add_job(
+        _daily_digest_push,
+        CronTrigger(hour=7, minute=30),
+        id="daily_digest_push",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
     _scheduler.start()
-    log.info("Scheduler started — ingestion %02d:%02d ET, cleanup %02d:%02d ET", ih, im, ch, cm)
+    log.info("Scheduler started — ingestion %02d:%02d ET, cleanup %02d:%02d ET, digest push 07:30 ET", ih, im, ch, cm)
 
 
 def reschedule(ingest_hour: int, ingest_minute: int, cleanup_hour: int, cleanup_minute: int) -> None:

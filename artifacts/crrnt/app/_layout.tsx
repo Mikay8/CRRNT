@@ -64,6 +64,10 @@ async function registerPushToken(): Promise<void> {
   try {
     if (Platform.OS === "web") return;
     if (!Device.isDevice) return;
+    // Respect an explicit in-app opt-out: without this check, startup
+    // would re-register on every launch and silently undo the toggle.
+    const { isNotificationsOptedOut } = await import("../lib/notifications");
+    if (await isNotificationsOptedOut()) return;
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -156,6 +160,25 @@ function AuthGate() {
   return null;
 }
 
+/**
+ * Routes notification taps. Both CRRNT push types land on the feed for now:
+ * the Morning Edition IS the feed, and breaking cards render at the top of
+ * it. (Breaking items link external articles today, not CRRNT stories, so
+ * there is no story route to deep-link to yet.)
+ */
+function NotificationTapRouter() {
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as { type?: string } | undefined;
+      if (data?.type === "digest" || data?.type === "breaking") {
+        router.push("/(tabs)" as any);
+      }
+    });
+    return () => sub.remove();
+  }, []);
+  return null;
+}
+
 function ThemedApp() {
   const { isDark, theme } = useThemeContext();
 
@@ -185,6 +208,7 @@ function ThemedApp() {
               <QueryClientProvider client={queryClient}>
                 <AuthTokenWirer />
                 <AuthGate />
+                <NotificationTapRouter />
                 <SavedStoriesProvider>
                   <AudioProvider>
                     <StatusBar style={isDark ? "light" : "dark"} />

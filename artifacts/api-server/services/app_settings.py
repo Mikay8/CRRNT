@@ -21,6 +21,7 @@ _ADMIN_EMAILS_KEY = "admin_emails"
 _SCHEDULE_KEY = "schedule_times"
 _DISABLED_FEEDS_KEY = "disabled_feeds"  # legacy, read once to seed _RSS_FEEDS_KEY
 _RSS_FEEDS_KEY = "rss_feeds"
+_BREAKING_STYLE_KEY = "breaking_style"
 _TTL = 300.0  # seconds
 
 _DEFAULTS: dict[str, Any] = {
@@ -28,6 +29,10 @@ _DEFAULTS: dict[str, Any] = {
     _STORY_EXPIRY_KEY: {"days": 7, "extension_days": 30},
     _ADMIN_EMAILS_KEY: {"emails": []},
     _SCHEDULE_KEY: {"ingest_hour": 8, "ingest_minute": 0, "cleanup_hour": 3, "cleanup_minute": 0},
+    # mode: "alternate" (flip Stop/Extra on every breaking send),
+    # "stop" (always "Stop the presses!"), "extra" (always "Extra! Extra!").
+    # last_hook tracks the alternate flip ("stop" | "extra" | None).
+    _BREAKING_STYLE_KEY: {"mode": "alternate", "last_hook": None},
     _DISABLED_FEEDS_KEY: {"urls": []},
     # Empty until an admin first saves; get_rss_feeds() seeds it from
     # rss.DEFAULT_FEEDS on read.
@@ -104,6 +109,27 @@ async def save_schedule_times(ingest_hour: int, ingest_minute: int, cleanup_hour
         "cleanup_minute": cleanup_minute,
     })
     log.info("Schedule saved: ingestion=%02d:%02d ET cleanup=%02d:%02d ET", ingest_hour, ingest_minute, cleanup_hour, cleanup_minute)
+
+
+async def get_breaking_style() -> dict[str, Any]:
+    val = await _get(_BREAKING_STYLE_KEY)
+    mode = val.get("mode", "alternate")
+    if mode not in ("alternate", "stop", "extra"):
+        mode = "alternate"
+    return {"mode": mode, "last_hook": val.get("last_hook")}
+
+
+async def save_breaking_style(mode: str, last_hook: str | None = None) -> None:
+    if mode not in ("alternate", "stop", "extra"):
+        mode = "alternate"
+    current = await _get(_BREAKING_STYLE_KEY)
+    await _save(_BREAKING_STYLE_KEY, {
+        "mode": mode,
+        # A mode change keeps the last flip position unless the caller
+        # supplies one (the alternate flip itself does).
+        "last_hook": last_hook if last_hook is not None else current.get("last_hook"),
+    })
+    log.info("Breaking alert style saved: mode=%s", mode)
 
 
 async def get_rss_feeds() -> dict[str, list[dict[str, Any]]]:

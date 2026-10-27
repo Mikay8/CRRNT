@@ -155,6 +155,23 @@ function AuthGate() {
 function ThemedApp() {
   const { isDark, theme } = useThemeContext();
 
+  // Web only: keep the browser chrome tinted to match the app's own theme.
+  // Safari/Chrome read <meta name="theme-color"> for their toolbar color;
+  // expo-status-bar does nothing on web, and the generated index.html
+  // ships no theme-color at all (hence white chrome in dark mode).
+  // This follows the app's toggle, not the device's color scheme, and
+  // updates live when the theme changes.
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "theme-color");
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute("content", theme.bg);
+  }, [theme.bg]);
+
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.bg }}>
       <KeyboardProvider>

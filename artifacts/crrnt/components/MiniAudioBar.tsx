@@ -1,6 +1,7 @@
 import {
   Animated,
   FlatList,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -305,7 +306,11 @@ export default function MiniAudioBar() {
         ? heldProgress * durationMs
         : positionMs;
 
-  const bottomOffset = insets.bottom + (isInTabs ? TAB_BAR_HEIGHT : 0);
+  // On native the bar sits above the bottom tab bar; on web there is no
+  // tab bar (tabBar is null + display:none), so adding TAB_BAR_HEIGHT
+  // there just floats the player ~49px above the bottom of the page.
+  const bottomOffset =
+    insets.bottom + (isInTabs && Platform.OS !== "web" ? TAB_BAR_HEIGHT : 0);
   const barBottom = bottomOffset + 8;
 
   const categoryMeta = getCategoryMeta(story?.category ?? null);

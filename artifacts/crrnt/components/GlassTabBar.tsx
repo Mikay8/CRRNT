@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import type { Tabs } from "expo-router";
+import { useNavigation } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -93,7 +94,12 @@ function TabButton({
   );
 }
 
-export default function GlassTabBar({ state, descriptors, navigation }: TabBarProps) {
+export default function GlassTabBar({ state, descriptors }: TabBarProps) {
+  // SDK 58's tab-bar props no longer include `navigation`, and expo-router's
+  // useNavigation() type doesn't expose the tab navigator's emit()/navigate()
+  // even though the runtime object has them. The cast keeps the exact
+  // tab-press behavior (emit tabPress, honor preventDefault, navigate).
+  const navigation = useNavigation() as any;
   const { theme, isDark } = useThemeContext();
   const { collapse, expand, isCollapsed, setCollapsed } = useNavChrome();
   const { width: screenW } = useWindowDimensions();

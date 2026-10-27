@@ -355,7 +355,7 @@ export default function FeedScreen() {
             />
           ) : undefined
         }
-        ListEmptyComponent={listEmpty}
+        ListEmptyComponent={listEmpty ?? undefined}
       />
 
       {/* Blur the feed behind the search bar until there's a query; tap to dismiss */}
@@ -463,7 +463,7 @@ function createStyles(palette: ThemeColors) {
       paddingBottom: 16,
     },
     searchBackdrop: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       zIndex: 5,
     },
     searchMeta: {

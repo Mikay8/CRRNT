@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import os
 import smtplib
+from html import escape as html_escape
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -128,29 +129,66 @@ def send_password_reset(to: str, reset_url: str) -> bool:
 
 
 async def send_digest(stories: list[dict[str, Any]], cleanup: dict[str, int]) -> None:
-    """Send the morning ingestion digest to all admin_emails recipients."""
+    """Send the morning ingestion digest to all admin_emails recipients.
+
+    Beta feedback is batched here, not emailed on submit: every feedback item
+    not yet emailed is included in this one digest, and only marked emailed
+    after a provider actually accepts the message — so a failed send retries
+    the same items in the next digest instead of losing them. A missing
+    beta_feedback table (migration not run yet) just means no feedback
+    section; the digest itself still goes out.
+    """
     recipients = await app_settings.get_admin_emails()
     if not recipients:
         log.warning("Email digest skipped — no admin_emails configured in app_settings")
         return
 
+    feedback: list[dict[str, Any]] = []
+    try:
+        from services import db
+
+        feedback = await db.get_unemailed_feedback()
+    except Exception as exc:
+        log.warning("Digest feedback fetch failed (table may not exist yet): %s", exc)
+
     now = datetime.now(timezone.utc)
     subject = f"CRRNT Daily Digest — {now.strftime('%B')} {now.day}, {now.year}"
-    text = _build_text(stories, cleanup, now)
-    html = _build_html(stories, cleanup, now)
+    text = _build_text(stories, cleanup, now, feedback)
+    html = _build_html(stories, cleanup, now, feedback)
 
-    log.info("Sending digest: subject=%r to=%s stories=%d", subject, recipients, len(stories))
+    log.info(
+        "Sending digest: subject=%r to=%s stories=%d feedback=%d",
+        subject, recipients, len(stories), len(feedback),
+    )
 
+    sent = False
     if _send_via_resend(recipients, subject, text, html):
         log.info("Digest email sent via Resend to %s (%d stories)", recipients, len(stories))
-        return
-    if _send_via_smtp(recipients, subject, text, html):
+        sent = True
+    elif _send_via_smtp(recipients, subject, text, html):
         log.info("Digest email sent via SMTP to %s (%d stories)", recipients, len(stories))
-        return
-    log.warning("Digest email skipped — no email provider configured")
+        sent = True
+    else:
+        log.warning("Digest email skipped — no email provider configured")
+
+    if sent and feedback:
+        try:
+            from services import db
+
+            await db.mark_feedback_emailed([f["id"] for f in feedback if f.get("id")])
+        except Exception as exc:
+            log.warning("Marking feedback emailed failed: %s", exc)
 
 
-def _build_text(stories: list[dict], cleanup: dict, now: datetime) -> str:
+def _feedback_meta(f: dict) -> str:
+    parts = [p for p in [f.get("platform"), f.get("app_version")] if p]
+    created = (f.get("created_at") or "")[:10]
+    if created:
+        parts.append(created)
+    return " / ".join(parts)
+
+
+def _build_text(stories: list[dict], cleanup: dict, now: datetime, feedback: list[dict] | None = None) -> str:
     lines = [
         f"CRRNT Daily Digest — {now.strftime('%B')} {now.day}, {now.year} {now.strftime('%H:%M')} UTC",
         "",
@@ -165,10 +203,15 @@ def _build_text(stories: list[dict], cleanup: dict, now: datetime) -> str:
         f"  Deleted:  {cleanup.get('deleted', 0)} expired stories",
         f"  Extended: {cleanup.get('extended', 0)} saved stories",
     ]
+    if feedback:
+        lines += ["", f"Beta feedback — {len(feedback)} new:"]
+        for f in feedback:
+            meta = _feedback_meta(f)
+            lines.append(f"  - {f.get('message', '')}" + (f" ({meta})" if meta else ""))
     return "\n".join(lines)
 
 
-def _build_html(stories: list[dict], cleanup: dict, now: datetime) -> str:
+def _build_html(stories: list[dict], cleanup: dict, now: datetime, feedback: list[dict] | None = None) -> str:
     rows = ""
     for s in stories:
         cat = (s.get("category") or "?").capitalize()
@@ -179,6 +222,26 @@ def _build_html(stories: list[dict], cleanup: dict, now: datetime) -> str:
             f"<td style='padding:6px 10px'>{title}</td>"
             f"</tr>"
         )
+
+    feedback_rows = ""
+    for f in feedback or []:
+        msg = html_escape(f.get("message") or "").replace("\n", "<br>")
+        meta = html_escape(_feedback_meta(f))
+        feedback_rows += (
+            f"<tr style='border-bottom:1px solid #334155'>"
+            f"<td style='padding:10px;vertical-align:top'>{msg}</td>"
+            f"<td style='padding:10px;color:#9ca3af;white-space:nowrap;vertical-align:top'>{meta}</td>"
+            f"</tr>"
+        )
+    feedback_section = ""
+    if feedback_rows:
+        feedback_section = f"""
+  <h3 style="font-size:14px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin:28px 0 10px">
+    Beta Feedback — {len(feedback or [])} new
+  </h3>
+  <table style="width:100%;border-collapse:collapse;background:#1e293b;border-radius:10px;overflow:hidden">
+    <tbody>{feedback_rows}</tbody>
+  </table>"""
 
     deleted = cleanup.get("deleted", 0)
     extended = cleanup.get("extended", 0)
@@ -217,5 +280,5 @@ def _build_html(stories: list[dict], cleanup: dict, now: datetime) -> str:
       <td style="padding:10px;font-weight:600;color:#34d399">{extended}</td>
     </tr>
   </table>
-</body>
+{feedback_section}</body>
 </html>"""

@@ -6,6 +6,7 @@ Routes:
   GET  /admin/stories
   GET  /admin/users
   GET  /admin/breaking
+  GET  /admin/feedback
   GET  /admin/settings
 
 Actions (POST, redirect back):
@@ -13,6 +14,8 @@ Actions (POST, redirect back):
   POST /admin/cleanup
   POST /admin/breaking/create
   POST /admin/breaking/{id}/dismiss
+  POST /admin/feedback/{id}/reviewed
+  POST /admin/feedback/{id}/delete
   POST /admin/stories/{id}/delete
   POST /admin/settings/save
   POST /admin/news-sources/save
@@ -243,6 +246,34 @@ async def create_breaking(
 async def dismiss_breaking(record_id: str, _: None = Depends(_verify_admin)):
     await _safe_db(db.dismiss_breaking_news(record_id), None)
     return RedirectResponse(url="/admin/breaking", status_code=302)
+
+
+# ── Beta feedback ─────────────────────────────────────────────────────────────
+
+
+@router.get("/feedback", response_class=HTMLResponse)
+async def admin_feedback(request: Request, _: None = Depends(_verify_admin)):
+    items = await _safe_db(db.list_feedback(), [])
+    return templates.TemplateResponse(
+        request,
+        "admin/feedback.html",
+        {
+            "page": "feedback",
+            "items": items,
+        },
+    )
+
+
+@router.post("/feedback/{feedback_id}/reviewed")
+async def review_feedback(feedback_id: str, _: None = Depends(_verify_admin)):
+    await _safe_db(db.mark_feedback_reviewed(feedback_id), None)
+    return RedirectResponse(url="/admin/feedback", status_code=302)
+
+
+@router.post("/feedback/{feedback_id}/delete")
+async def delete_feedback(feedback_id: str, _: None = Depends(_verify_admin)):
+    await _safe_db(db.delete_feedback(feedback_id), None)
+    return RedirectResponse(url="/admin/feedback", status_code=302)
 
 
 # ── Settings ──────────────────────────────────────────────────────────────────

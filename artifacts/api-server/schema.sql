@@ -128,6 +128,21 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Beta feedback from the in-app Settings suggestion box. Submitted items are
+-- stored here (not emailed immediately); the morning digest batches every
+-- not-yet-emailed item into one email, and the admin portal Feedback page
+-- lists them individually for review. emailed_at and reviewed_at are
+-- independent: an item can be emailed but still awaiting review.
+CREATE TABLE IF NOT EXISTS beta_feedback (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message TEXT NOT NULL,
+  platform TEXT,
+  app_version TEXT,
+  emailed_at TIMESTAMPTZ,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Password reset tokens (replaces Supabase Auth's built-in reset-password flow).
 -- One-time use, short-lived; old rows for a user are cleared on each new request.
 CREATE TABLE IF NOT EXISTS password_reset_tokens (

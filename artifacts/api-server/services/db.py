@@ -505,3 +505,48 @@ async def consume_password_reset_token(token: str) -> Optional[str]:
     )
     async with get_pool().acquire() as conn:
         return await conn.fetchval(sql, token)
+
+
+# ── Beta feedback ─────────────────────────────────────────────────────────────
+async def insert_feedback(message: str, platform: str | None, app_version: str | None) -> dict[str, Any]:
+    sql = (
+        "INSERT INTO beta_feedback (message, platform, app_version) "
+        "VALUES ($1, $2, $3) RETURNING *"
+    )
+    async with get_pool().acquire() as conn:
+        row = await conn.fetchrow(sql, message, platform, app_version)
+    return _row(row) or {}
+
+
+async def list_feedback(limit: int = 100) -> list[dict[str, Any]]:
+    sql = "SELECT * FROM beta_feedback ORDER BY created_at DESC LIMIT $1"
+    async with get_pool().acquire() as conn:
+        rs = await conn.fetch(sql, limit)
+    return _rows(rs)
+
+
+async def get_unemailed_feedback() -> list[dict[str, Any]]:
+    sql = "SELECT * FROM beta_feedback WHERE emailed_at IS NULL ORDER BY created_at ASC"
+    async with get_pool().acquire() as conn:
+        rs = await conn.fetch(sql)
+    return _rows(rs)
+
+
+async def mark_feedback_emailed(ids: list[str]) -> None:
+    if not ids:
+        return
+    sql = "UPDATE beta_feedback SET emailed_at = NOW() WHERE id = ANY($1::uuid[])"
+    async with get_pool().acquire() as conn:
+        await conn.execute(sql, ids)
+
+
+async def mark_feedback_reviewed(feedback_id: str) -> None:
+    sql = "UPDATE beta_feedback SET reviewed_at = NOW() WHERE id = $1::uuid"
+    async with get_pool().acquire() as conn:
+        await conn.execute(sql, feedback_id)
+
+
+async def delete_feedback(feedback_id: str) -> None:
+    sql = "DELETE FROM beta_feedback WHERE id = $1::uuid"
+    async with get_pool().acquire() as conn:
+        await conn.execute(sql, feedback_id)

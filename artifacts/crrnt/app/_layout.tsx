@@ -29,9 +29,13 @@ import {
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AUTH_ENABLED } from "@/constants/features";
-import MiniAudioBar from "@/components/MiniAudioBar";
+import NowPlaying from "@/components/player/NowPlaying";
+import RecedingScreens from "@/components/player/RecedingScreens";
+import ToastHost from "@/components/ToastHost";
 import { ThemeProvider, useThemeContext } from "@/contexts/ThemeContext";
 import { AudioProvider } from "@/contexts/AudioContext";
+import { NavChromeProvider } from "@/contexts/NavChromeContext";
+import { ToastProvider } from "@/contexts/ToastContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { SavedStoriesProvider } from "@/contexts/SavedStoriesContext";
 
@@ -184,56 +188,63 @@ function ThemedApp() {
                 <SavedStoriesProvider>
                   <AudioProvider>
                     <StatusBar style={isDark ? "light" : "dark"} />
-                    <Stack
-                      screenOptions={{
-                        headerStyle: { backgroundColor: theme.bg },
-                        headerTintColor: theme.text,
-                        headerTitleStyle: {
-                          fontFamily: "Inter_700Bold",
-                          color: theme.text,
-                        },
-                        contentStyle: { backgroundColor: theme.bg },
-                      }}
-                    >
-                      <Stack.Screen
-                        name="(tabs)"
-                        options={{ headerShown: false }}
-                      />
-                      <Stack.Screen
-                        name="story/[id]"
-                        options={{
-                          title: "",
-                          headerBackTitle: "Back",
-                          headerTransparent: true,
-                          presentation: "card",
-                        }}
-                      />
-                      <Stack.Screen
-                        name="login"
-                        options={{ headerShown: false }}
-                      />
-                      <Stack.Screen
-                        name="register"
-                        options={{ headerShown: false }}
-                      />
-                      <Stack.Screen
-                        name="auth/forgot-password"
-                        options={{ headerShown: false }}
-                      />
-                      <Stack.Screen
-                        name="onboarding"
-                        options={{ headerShown: false, gestureEnabled: false }}
-                      />
-                      <Stack.Screen
-                        name="settings/preferences"
-                        options={{ headerShown: false, presentation: "card" }}
-                      />
-                      <Stack.Screen
-                        name="+not-found"
-                        options={{ title: "Not found" }}
-                      />
-                    </Stack>
-                    <MiniAudioBar />
+                    <NavChromeProvider>
+                      <ToastProvider>
+                        <RecedingScreens>
+                          <Stack
+                            screenOptions={{
+                              headerStyle: { backgroundColor: theme.bg },
+                              headerTintColor: theme.text,
+                              headerTitleStyle: {
+                                fontFamily: "Inter_700Bold",
+                                color: theme.text,
+                              },
+                              contentStyle: { backgroundColor: theme.bg },
+                            }}
+                          >
+                            <Stack.Screen
+                              name="(tabs)"
+                              options={{ headerShown: false }}
+                            />
+                            <Stack.Screen
+                              name="story/[id]"
+                              options={{
+                                title: "",
+                                headerBackTitle: "Back",
+                                headerTransparent: true,
+                                presentation: "card",
+                              }}
+                            />
+                            <Stack.Screen
+                              name="login"
+                              options={{ headerShown: false }}
+                            />
+                            <Stack.Screen
+                              name="register"
+                              options={{ headerShown: false }}
+                            />
+                            <Stack.Screen
+                              name="auth/forgot-password"
+                              options={{ headerShown: false }}
+                            />
+                            <Stack.Screen
+                              name="onboarding"
+                              options={{ headerShown: false, gestureEnabled: false }}
+                            />
+                            <Stack.Screen
+                              name="settings/preferences"
+                              options={{ headerShown: false, presentation: "card" }}
+                            />
+                            <Stack.Screen
+                              name="+not-found"
+                              options={{ title: "Not found" }}
+                            />
+                          </Stack>
+                        </RecedingScreens>
+                        <NowPlaying />
+                        <ToastHost />
+                      </ToastProvider>
+                    </NavChromeProvider>
                   </AudioProvider>
                 </SavedStoriesProvider>
               </QueryClientProvider>

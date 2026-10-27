@@ -12,6 +12,8 @@ import {
 } from "react-native";
 import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useChromeBottomPadding } from "@/contexts/NavChromeContext";
+import { useIsDesktop } from "@/hooks/useLayoutMode";
 import { Ionicons } from "@expo/vector-icons";
 import { Redirect, router } from "expo-router";
 import { useThemeContext } from "@/contexts/ThemeContext";
@@ -269,6 +271,11 @@ const feedbackStyles = StyleSheet.create({
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
+  const bottomPad = useChromeBottomPadding();
+  // Desktop: a left-aligned column rather than a full-width list.
+  const isDesktop = useIsDesktop();
+  const desktopFrame = isDesktop ? styles.desktopFrame : null;
+  const desktopColumn = isDesktop ? styles.desktopColumn : null;
   const { isDark, theme, toggleTheme } = useThemeContext();
   const { user, logout, forgotPassword, accessToken, isGuest, sendVerificationEmail, deleteAccount } = useAuth();
   const [sendingVerification, setSendingVerification] = useState(false);
@@ -298,10 +305,10 @@ export default function SettingsScreen() {
   // account (the preferences API is per-user), so they return with login.
   if (isGuest || !user) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
-        <Text style={[styles.screenTitle, { color: theme.text }]}>Settings</Text>
+      <View style={[styles.container, { backgroundColor: theme.bg, paddingTop: insets.top }, desktopFrame]}>
+        <Text style={[styles.screenTitle, { color: theme.text }, desktopColumn]}>Settings</Text>
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+          contentContainerStyle={[styles.content, { paddingBottom: bottomPad }, desktopColumn]}
           showsVerticalScrollIndicator={false}
         >
           <View style={[styles.accountCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -436,17 +443,17 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg, paddingTop: insets.top }]}>
+    <View style={[styles.container, { backgroundColor: theme.bg, paddingTop: insets.top }, desktopFrame]}>
       <AlertDialog
         visible={dialog !== null}
         title={dialog?.title ?? ""}
         message={dialog?.message}
         buttons={dialog?.buttons ?? []}
       />
-      <Text style={[styles.screenTitle, { color: theme.text }]}>Settings</Text>
+      <Text style={[styles.screenTitle, { color: theme.text }, desktopColumn]}>Settings</Text>
 
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad }, desktopColumn]}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Email verification banner ──────────────────────────────── */}
@@ -572,6 +579,9 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  // Desktop: the screen fills the window; only the content column is capped.
+  desktopFrame: { paddingHorizontal: 20, paddingTop: 24 },
+  desktopColumn: { width: "100%", maxWidth: 720 },
   screenTitle: {
     fontFamily: "Outfit_700Bold",
     fontSize: 28,

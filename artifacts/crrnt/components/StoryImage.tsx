@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Image, type ImageStyle } from "expo-image";
 import type { StyleProp } from "react-native";
 import type { Category } from "@/constants/categories";
+import { useIsFastScrolling } from "@/hooks/useFastScroll";
 
 // Raster renders of the category art (source SVGs live alongside). expo-image
 // draws SVGs at their intrinsic "fit inside" size and ignores contentFit, which
@@ -40,10 +41,18 @@ export default function StoryImage({
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [uri]);
 
+  // Cards that mount mid-fling keep the category art until scrolling
+  // settles; once a card has started its real image it keeps it.
+  const fastScrolling = useIsFastScrolling();
+  const [started, setStarted] = useState(!fastScrolling);
+  useEffect(() => {
+    if (!fastScrolling) setStarted(true);
+  }, [fastScrolling]);
+
   const fallback = categoryPlaceholder(category);
   return (
     <Image
-      source={uri && !failed ? { uri } : fallback}
+      source={uri && !failed && started ? { uri } : fallback}
       placeholder={fallback}
       placeholderContentFit="cover"
       contentFit="cover"

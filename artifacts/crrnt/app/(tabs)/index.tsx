@@ -29,6 +29,11 @@ import { AUTH_ENABLED } from "@/constants/features";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import type { ThemeColors } from "@/constants/theme";
+import { useChromeBottomPadding, useNavChrome } from "@/contexts/NavChromeContext";
+import DesktopHeader from "@/components/DesktopHeader";
+import StoryGrid from "@/components/StoryGrid";
+import { useIsDesktop } from "@/hooks/useLayoutMode";
+import { reportScroll } from "@/hooks/useFastScroll";
 
 const LOGO_DARK = require("@/assets/images/full-logo-dark.png") as number;
 const LOGO_LIGHT = require("@/assets/images/full-logo-light.png") as number;
@@ -45,6 +50,12 @@ export default function FeedScreen() {
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const styles = useMemo(() => createStyles(palette), [palette]);
+  const { onFeedScroll } = useNavChrome();
+  const bottomPad = useChromeBottomPadding();
+  const isDesktop = useIsDesktop();
+  const [headerMini, setHeaderMini] = useState(false);
+  const [desktopHeadH, setDesktopHeadH] = useState(200);
+  const lastY = useRef(0);
 
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);
@@ -55,7 +66,8 @@ export default function FeedScreen() {
     );
   };
 
-  const isSearchActive = searchVisible && debouncedQuery.length >= 1;
+  // Desktop keeps the search box open, so any query is a live search.
+  const isSearchActive = (searchVisible || isDesktop) && debouncedQuery.length >= 1;
 
   const { data, isLoading, isFetching, refetch, error } = useListStories(
     category ? { category } : undefined,
@@ -80,6 +92,8 @@ export default function FeedScreen() {
     });
   }, [rawStories, isSearchActive]);
 
+  // Measured, since the header's height differs by platform (web has no inset).
+  const [mobileHeadH, setMobileHeadH] = useState(0);
   const headerHeight = 96;
 
   const openSearch = () => {
@@ -114,17 +128,129 @@ export default function FeedScreen() {
 
   const listPadding = useMemo(
     () => ({
-      paddingTop: insets.top + headerHeight,
-      paddingBottom: insets.bottom + (isGuest ? 24 : 100),
+      paddingTop: mobileHeadH > 0 ? mobileHeadH + 8 : insets.top + headerHeight,
+      paddingBottom: bottomPad,
       paddingLeft: insets.left,
       paddingRight: insets.right,
     }),
-    [insets.top, insets.bottom, insets.left, insets.right, isGuest]
+    [insets.top, insets.left, insets.right, bottomPad, mobileHeadH]
   );
+
+  const listEmpty =
+    showLoading ? (
+      <View style={styles.loading}>
+        <ActivityIndicator color={palette.accent} />
+        <Text style={styles.loadingText}>
+          {isSearchActive ? "Searching…" : "Loading today's stories…"}
+        </Text>
+      </View>
+    ) : showEmpty ? (
+      isSearchActive ? (
+        <EmptyState
+          icon="search-outline"
+          title="No results"
+          message={`No stories matched "${debouncedQuery}". Try a ticker symbol, company name, or topic.`}
+        />
+      ) : (
+        <EmptyState
+          icon="newspaper-outline"
+          title={
+            error ? "Couldn't load the feed" : "Today's feed is being prepared"
+          }
+          message={
+            error
+              ? "Pull to refresh and try again."
+              : "Today's stories haven't been loaded yet. Pull down to refresh."
+          }
+          actionLabel="Refresh now"
+          onAction={handleRefresh}
+        />
+      )
+    ) : null;
+
+  // Desktop: tuck the header's title and pills away on a deliberate
+  // downward scroll; bring them back on any upward scroll or near the top.
+  const onDesktopScroll = (y: number) => {
+    const ly = lastY.current;
+    if (y < 20) setHeaderMini(false);
+    else if (y > ly + 6 && y > 60) setHeaderMini(true);
+    else if (y < ly - 6) setHeaderMini(false);
+    if (Math.abs(y - ly) > 6 || y < 20) lastY.current = y;
+  };
+
+  if (isDesktop) {
+    return (
+      <View style={styles.container}>
+        <DesktopHeader
+          mini={headerMini}
+          onFullHeight={setDesktopHeadH}
+          aside={
+            isSearchActive ? (
+              <Text style={styles.searchMetaText}>
+                {searchFetching
+                  ? "Searching…"
+                  : `${searchData?.totalCount ?? 0} ${searchData?.totalCount === 1 ? "result" : "results"} for "${debouncedQuery}"`}
+              </Text>
+            ) : null
+          }
+          tools={
+            <>
+              {isFetching && stories.length > 0 ? (
+                <ActivityIndicator size="small" color={palette.textDim} />
+              ) : null}
+              <View style={styles.desktopSearch}>
+                <Ionicons name="search-outline" size={18} color={palette.textDim} />
+                <TextInput
+                  style={styles.desktopSearchInput}
+                  placeholder="Search stories, tickers, topics"
+                  placeholderTextColor={palette.textDim}
+                  value={searchQuery}
+                  onChangeText={handleSearchChange}
+                  returnKeyType="search"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {searchQuery ? (
+                  <Pressable onPress={closeSearch} hitSlop={8} accessibilityLabel="Clear search">
+                    <Ionicons name="close" size={16} color={palette.textDim} />
+                  </Pressable>
+                ) : null}
+              </View>
+              <Pressable
+                onPress={toggleTheme}
+                style={({ hovered }) => [styles.roundBtn, hovered && { borderColor: palette.borderStrong }]}
+                accessibilityLabel={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={19} color={palette.textMuted} />
+              </Pressable>
+              {AUTH_ENABLED && isGuest ? (
+                <Pressable onPress={() => router.push("/login" as any)} style={styles.getAccountBtn}>
+                  <Text style={styles.getAccountText}>Log in or sign up</Text>
+                </Pressable>
+              ) : null}
+            </>
+          }
+          below={
+            <View style={styles.desktopPills}>
+              <CategoryFilter active={category} onChange={setCategory} inset={0} />
+            </View>
+          }
+        />
+        <StoryGrid
+          stories={stories}
+          feature={!category && !isSearchActive}
+          onScroll={(e) => onDesktopScroll(e.nativeEvent.contentOffset.y)}
+          contentContainerStyle={{ paddingTop: desktopHeadH + 24, paddingHorizontal: 36, paddingBottom: 160 }}
+          ListEmptyComponent={listEmpty}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <View
+        onLayout={(e) => setMobileHeadH(e.nativeEvent.layout.height)}
         style={[
           styles.header,
           {
@@ -230,6 +356,11 @@ export default function FeedScreen() {
         contentContainerStyle={listPadding}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        onScroll={(e) => {
+          reportScroll(e.nativeEvent.contentOffset.y);
+          onFeedScroll(e.nativeEvent.contentOffset.y);
+        }}
+        scrollEventThrottle={16}
         refreshControl={
           !isSearchActive ? (
             <RefreshControl
@@ -239,38 +370,7 @@ export default function FeedScreen() {
             />
           ) : undefined
         }
-        ListEmptyComponent={
-          showLoading ? (
-            <View style={styles.loading}>
-              <ActivityIndicator color={palette.accent} />
-              <Text style={styles.loadingText}>
-                {isSearchActive ? "Searching…" : "Loading today's stories…"}
-              </Text>
-            </View>
-          ) : showEmpty ? (
-            isSearchActive ? (
-              <EmptyState
-                icon="search-outline"
-                title="No results"
-                message={`No stories matched "${debouncedQuery}". Try a ticker symbol, company name, or topic.`}
-              />
-            ) : (
-              <EmptyState
-                icon="newspaper-outline"
-                title={
-                  error ? "Couldn't load the feed" : "Today's feed is being prepared"
-                }
-                message={
-                  error
-                    ? "Pull to refresh and try again."
-                    : "Today's stories haven't been loaded yet. Pull down to refresh."
-                }
-                actionLabel="Refresh now"
-                onAction={handleRefresh}
-              />
-            )
-          ) : null
-        }
+        ListEmptyComponent={listEmpty}
       />
 
       {/* Blur the feed behind the search bar until there's a query; tap to dismiss */}
@@ -341,6 +441,41 @@ function createStyles(palette: ThemeColors) {
       fontFamily: "Inter_400Regular",
       fontSize: 15,
       marginRight: 10,
+    },
+    desktopSearch: {
+      height: 40,
+      width: 300,
+      borderRadius: 20,
+      backgroundColor: palette.surface,
+      borderWidth: 1,
+      borderColor: palette.border,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      paddingHorizontal: 16,
+    },
+    desktopSearchInput: {
+      flex: 1,
+      minWidth: 0,
+      height: "100%",
+      color: palette.text,
+      fontFamily: "Inter_400Regular",
+      fontSize: 14,
+      outlineStyle: "none",
+    } as object,
+    roundBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: palette.surface,
+      borderWidth: 1,
+      borderColor: palette.border,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    desktopPills: {
+      paddingTop: 18,
+      paddingBottom: 16,
     },
     searchBackdrop: {
       ...StyleSheet.absoluteFillObject,

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import { FlatList } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,14 +7,64 @@ import StoryCard from "@/components/StoryCard";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+import { useChromeBottomPadding } from "@/contexts/NavChromeContext";
+import DesktopHeader from "@/components/DesktopHeader";
+import StoryGrid from "@/components/StoryGrid";
+import { useIsDesktop } from "@/hooks/useLayoutMode";
+import { reportScroll } from "@/hooks/useFastScroll";
 
 export default function SavedScreen() {
   const insets = useSafeAreaInsets();
   const { saved } = useSavedStories();
   const { theme: palette } = useThemeContext();
   const styles = useMemo(() => createStyles(palette), [palette]);
+  const bottomPad = useChromeBottomPadding();
 
   const hPad = Math.max(16, insets.left + 4);
+  const isDesktop = useIsDesktop();
+  const [headerMini, setHeaderMini] = useState(false);
+  const [headH, setHeadH] = useState(160);
+  const lastY = useRef(0);
+
+  const empty = (
+    <EmptyState
+      icon="bookmark-outline"
+      title="Nothing saved yet"
+      message={
+        isDesktop
+          ? "Swipe left on a story, or hit its bookmark, to keep it here for later."
+          : "Tap the bookmark on any story to keep it here for later."
+      }
+    />
+  );
+
+  if (isDesktop) {
+    const countLabel = `${saved.length} ${saved.length === 1 ? "story" : "stories"}`;
+    return (
+      <View style={styles.container}>
+        <DesktopHeader
+          title="Saved"
+          mini={headerMini}
+          onFullHeight={setHeadH}
+          aside={<Text style={styles.subtitle}>{countLabel} · swipe left on a card to save</Text>}
+        />
+        <StoryGrid
+          stories={saved}
+          feature={false}
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            const ly = lastY.current;
+            if (y < 20) setHeaderMini(false);
+            else if (y > ly + 6 && y > 60) setHeaderMini(true);
+            else if (y < ly - 6) setHeaderMini(false);
+            if (Math.abs(y - ly) > 6 || y < 20) lastY.current = y;
+          }}
+          contentContainerStyle={{ paddingTop: headH + 24, paddingHorizontal: 36, paddingBottom: 160 }}
+          ListEmptyComponent={empty}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -40,18 +90,14 @@ export default function SavedScreen() {
         renderItem={({ item }) => <StoryCard story={item} />}
         contentContainerStyle={{
           paddingTop: insets.top + 96,
-          paddingBottom: insets.bottom + 100,
+          paddingBottom: bottomPad,
           paddingLeft: insets.left,
           paddingRight: insets.right,
         }}
         showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <EmptyState
-            icon="bookmark-outline"
-            title="Nothing saved yet"
-            message="Tap the bookmark on any story to keep it here for later."
-          />
-        }
+        ListEmptyComponent={empty}
+        onScroll={(e) => reportScroll(e.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
       />
     </View>
   );

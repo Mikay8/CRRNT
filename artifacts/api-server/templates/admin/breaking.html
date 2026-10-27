@@ -11,8 +11,8 @@
 
   <!-- Active breaking card -->
   {% if active %}
-  <div class="bg-red-900/20 border border-red-700/60 rounded-xl p-5 flex items-start justify-between">
-    <div>
+  <div class="bg-red-900/20 border border-red-700/60 rounded-xl p-4 sm:p-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div class="min-w-0">
       <div class="flex items-center gap-2 mb-2">
         <span class="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
         <span class="text-red-400 text-xs font-bold uppercase tracking-wider">Live Now</span>
@@ -24,7 +24,7 @@
       <div class="text-gray-500 text-xs mt-2">Expires: {{ active.expires_at[:19] if active.expires_at else '?' }}</div>
     </div>
     <form method="POST" action="/admin/breaking/{{ active.id }}/dismiss">
-      <button type="submit" class="px-3 py-1.5 bg-red-800 hover:bg-red-700 text-red-200 text-xs font-medium rounded-lg transition-colors ml-4 whitespace-nowrap">
+      <button type="submit" class="px-3 py-1.5 bg-red-800 hover:bg-red-700 text-red-200 text-xs font-medium rounded-lg transition-colors sm:ml-4 whitespace-nowrap">
         Dismiss
       </button>
     </form>

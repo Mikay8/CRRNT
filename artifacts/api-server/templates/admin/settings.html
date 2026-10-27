@@ -31,7 +31,7 @@
             'health': '🩺'
           } %}
           {% for cat, catcfg in cfg.categories.items() %}
-          <div class="px-5 py-4 flex items-center gap-4">
+          <div class="px-4 sm:px-5 py-4 flex flex-wrap items-center gap-3 sm:gap-4">
             <!-- Enable toggle -->
             <label class="relative inline-flex items-center cursor-pointer shrink-0">
               <input type="checkbox" name="cat_enabled_{{ cat }}" value="1"
@@ -44,7 +44,7 @@
             </label>
 
             <!-- Category label -->
-            <div class="w-28 shrink-0">
+            <div class="w-24 sm:w-28 shrink-0">
               <span class="text-sm font-medium text-white capitalize">{{ cat_icons.get(cat, '📰') }} {{ cat }}</span>
             </div>
 
@@ -75,6 +75,26 @@
       </div>
     </div>
 
+    <!-- Candidate pool multiplier -->
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
+      <div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
+        <div class="min-w-0 flex-1">
+          <label for="candidate_multiplier" class="text-sm font-semibold text-white">Candidate pool multiplier</label>
+          <p class="text-xs text-gray-500 mt-0.5 sm:max-w-md">Candidate stories fetched per published story, in every category. Pool = published count &times; multiplier. Default 3 (10 published &rarr; 30 candidates ranked). Higher gives ranking more choice at slightly higher ranking cost; ranking is skipped when candidates &le; published count.</p>
+        </div>
+        <div class="flex items-center gap-2 sm:ml-auto">
+          <input
+            type="number"
+            name="candidate_multiplier"
+            id="candidate_multiplier"
+            min="1" max="6"
+            value="{{ cfg.candidate_multiplier | default(3) }}"
+            class="w-20 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm text-center">
+          <span class="text-gray-500 text-xs">&times; published count (1&ndash;6)</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Save + Run -->
     <div class="flex flex-wrap items-center gap-3">
       <button type="submit"
@@ -97,7 +117,7 @@
         <p class="text-xs text-gray-500 mt-0.5">All times are Eastern Time (America/New_York). Changes take effect immediately — no restart needed.</p>
       </div>
 
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <!-- Ingestion -->
         <div class="bg-gray-900/50 rounded-lg p-4 space-y-2">
           <div class="flex items-center gap-2 mb-3">
@@ -167,7 +187,7 @@
         <p class="text-xs text-gray-500 mt-0.5">Stories expire after N days. Saved stories get extended instead of deleted.</p>
       </div>
 
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <!-- Expiry days -->
         <div class="bg-gray-900/50 rounded-lg p-4 space-y-3">
           <span class="text-sm text-gray-300">Expire after</span>
@@ -205,13 +225,13 @@
   <!-- ── Digest Email Recipients ──────────────────────────────────────── -->
   <form method="POST" action="/admin/admin-emails/save" id="email-recipients-form">
     <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
-      <div class="flex items-start justify-between">
-        <div>
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div class="min-w-0">
           <h2 class="text-sm font-semibold text-white">Digest Email Recipients</h2>
           <p class="text-xs text-gray-500 mt-0.5">These addresses receive the morning ingestion digest. Sent via Resend, falling back to SMTP — both configured via environment variables.</p>
         </div>
         {% if not env_status.get('RESEND_API_KEY') and (not env_status.get('SMTP_HOST') or not env_status.get('SMTP_USER') or not env_status.get('SMTP_PASS')) %}
-        <span class="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-yellow-900/30 border border-yellow-700/40 text-yellow-400 text-xs font-medium">
+        <span class="shrink-0 self-start sm:self-auto inline-flex items-center gap-1 px-2 py-1 rounded-md bg-yellow-900/30 border border-yellow-700/40 text-yellow-400 text-xs font-medium">
           <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
           No email provider configured
         </span>

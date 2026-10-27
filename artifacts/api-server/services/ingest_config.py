@@ -2,6 +2,7 @@
 
 Config shape:
   {
+    "candidate_multiplier": 3,
     "categories": {
       "celebrity":   {"enabled": true, "count": 10},
       "tech":        {"enabled": true, "count": 10},
@@ -13,6 +14,12 @@ Config shape:
       "health":      {"enabled": true, "count": 10},
     }
   }
+
+candidate_multiplier is the single global knob for the ranking
+candidate pool: pool per category = published count x multiplier.
+It is clamped to 1-6 (pool max 60 at the 10-story count cap), so it
+bounds ranking tokens per run while still giving ranking a choice.
+
 
 Postgres is the primary store so settings survive redeployments. The local file
 is kept as a write-through cache for fast reads and offline fallback.
@@ -33,7 +40,11 @@ _lock = asyncio.Lock()
 
 ALL_CATEGORIES = ["celebrity", "tech", "government", "sports", "business", "science", "world", "health"]
 
+_DEFAULT_CANDIDATE_MULTIPLIER = 3
+_MAX_CANDIDATE_MULTIPLIER = 6
+
 _DEFAULTS: dict[str, Any] = {
+    "candidate_multiplier": _DEFAULT_CANDIDATE_MULTIPLIER,
     "categories": {cat: {"enabled": True, "count": 10} for cat in ALL_CATEGORIES},
 }
 
@@ -42,6 +53,13 @@ def _backfill(data: dict[str, Any]) -> dict[str, Any]:
     # Drop keys left over from the APITube fetch modes.
     data.pop("mode", None)
     data.pop("trending_count", None)
+    # Old configs have no multiplier: default to 3x, preserving the
+    # behaviour before the multiplier was configurable.
+    try:
+        multiplier = int(data.get("candidate_multiplier", _DEFAULT_CANDIDATE_MULTIPLIER))
+    except (TypeError, ValueError):
+        multiplier = _DEFAULT_CANDIDATE_MULTIPLIER
+    data["candidate_multiplier"] = max(1, min(_MAX_CANDIDATE_MULTIPLIER, multiplier))
     data.setdefault("categories", {})
     for cat in ALL_CATEGORIES:
         data["categories"].setdefault(cat, {"enabled": True, "count": 10})
@@ -104,7 +122,12 @@ async def get_run_params() -> dict[str, Any]:
         for cat, v in cfg["categories"].items()
         if v.get("enabled", True)
     }
+    multiplier = cfg.get("candidate_multiplier", _DEFAULT_CANDIDATE_MULTIPLIER)
+    candidate_map = {
+        cat: count * multiplier for cat, count in per_category_map.items()
+    }
     return {
         "per_category_map": per_category_map,
+        "candidate_map": candidate_map,
         "feeds": feeds,
     }

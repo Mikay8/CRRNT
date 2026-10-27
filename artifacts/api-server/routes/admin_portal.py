@@ -6,6 +6,7 @@ Routes:
   GET  /admin/stories
   GET  /admin/users
   GET  /admin/breaking
+  GET  /admin/feedback
   GET  /admin/settings
 
 Actions (POST, redirect back):
@@ -13,6 +14,8 @@ Actions (POST, redirect back):
   POST /admin/cleanup
   POST /admin/breaking/create
   POST /admin/breaking/{id}/dismiss
+  POST /admin/feedback/{id}/reviewed
+  POST /admin/feedback/{id}/delete
   POST /admin/stories/{id}/delete
   POST /admin/settings/save
   POST /admin/news-sources/save
@@ -245,6 +248,34 @@ async def dismiss_breaking(record_id: str, _: None = Depends(_verify_admin)):
     return RedirectResponse(url="/admin/breaking", status_code=302)
 
 
+# ── Beta feedback ─────────────────────────────────────────────────────────────
+
+
+@router.get("/feedback", response_class=HTMLResponse)
+async def admin_feedback(request: Request, _: None = Depends(_verify_admin)):
+    items = await _safe_db(db.list_feedback(), [])
+    return templates.TemplateResponse(
+        request,
+        "admin/feedback.html",
+        {
+            "page": "feedback",
+            "items": items,
+        },
+    )
+
+
+@router.post("/feedback/{feedback_id}/reviewed")
+async def review_feedback(feedback_id: str, _: None = Depends(_verify_admin)):
+    await _safe_db(db.mark_feedback_reviewed(feedback_id), None)
+    return RedirectResponse(url="/admin/feedback", status_code=302)
+
+
+@router.post("/feedback/{feedback_id}/delete")
+async def delete_feedback(feedback_id: str, _: None = Depends(_verify_admin)):
+    await _safe_db(db.delete_feedback(feedback_id), None)
+    return RedirectResponse(url="/admin/feedback", status_code=302)
+
+
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 
@@ -299,6 +330,10 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
 
 def _parse_ingest_config(form: dict) -> dict:
     """Parse submitted form data into an ingest_config dict."""
+    try:
+        multiplier = max(1, min(6, int(form.get("candidate_multiplier", 3))))
+    except (TypeError, ValueError):
+        multiplier = 3
     categories = {}
     for cat in ingest_config.ALL_CATEGORIES:
         enabled = form.get(f"cat_enabled_{cat}") == "1"
@@ -307,7 +342,7 @@ def _parse_ingest_config(form: dict) -> dict:
         except (TypeError, ValueError):
             count = 10
         categories[cat] = {"enabled": enabled, "count": count}
-    return {"categories": categories}
+    return {"candidate_multiplier": multiplier, "categories": categories}
 
 
 @router.post("/ingest-config/save")

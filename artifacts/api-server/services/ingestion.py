@@ -1,12 +1,17 @@
 """Ingestion orchestration — fetch, enrich, store in Postgres.
 
 Pipeline:
-  1. RSS fetch (per category)
-  2. Claude Pass 1 — summary, life_impact, wallet_impact, one_liner, stock_note
-  3. Grok x_search Pass 2 — sentiment_label, sentiment_score, people_say, featured_posts
-  4. Insert story row to Postgres (get UUID)
-  5. Fish Audio TTS — upload, set tts_url
-  6. Write ingestion_log row
+  1. RSS fetch (per category, candidate pool = configured count x
+     the global candidate_multiplier from ingest_config, default 3)
+  2. Drop stale, in-batch duplicate, and already-stored articles
+  3. Claude ranking — one batched call per category, keep only the
+     configured top N per category (falls back to newest-first)
+  4. Claude Pass 1 — summary, life_impact, wallet_impact, one_liner, stock_note
+  5. Grok x_search Pass 2 — sentiment_label, sentiment_score, people_say, featured_posts
+  6. Insert story row to Postgres (get UUID; the post-enrichment
+     duplicate check stays as a safety net)
+  7. Fish Audio TTS — upload, set tts_url
+  8. Write ingestion_log row
 """
 from __future__ import annotations
 
@@ -16,12 +21,17 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import app_settings, audio_storage, db, enrichment, fish_audio, rss
+from services import app_settings, audio_storage, db, enrichment, fish_audio, ranking, rss
 
 log = logging.getLogger("crrnt.ingestion")
 
 ALL_CATEGORIES = rss.CATEGORIES
 _DEFAULT_PER_CATEGORY = 10
+# Fallback candidate-pool multiplier, used only by direct callers
+# that do not pass candidate_map. Normal runs get candidate_map from
+# ingest_config.get_run_params(), where the multiplier is a single
+# global, admin-configurable setting (default 3, clamped 1-6).
+_CANDIDATE_POOL_MULTIPLIER = 3
 _status_lock = asyncio.Lock()
 _ingestion_status: dict[str, Any] = {"state": "idle"}
 
@@ -60,6 +70,14 @@ _MAX_ARTICLE_AGE_DAYS = 3
 
 def _filter_fresh_and_unique(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
     cutoff = datetime.now(timezone.utc) - timedelta(days=_MAX_ARTICLE_AGE_DAYS)
+    # Count exact-title occurrences first: the kept copy carries the
+    # count as a corroboration signal for ranking, even though the
+    # duplicate copies themselves are dropped here.
+    title_counts: dict[str, int] = {}
+    for a in articles:
+        title_key = (a.get("title") or "").strip().lower()
+        if title_key:
+            title_counts[title_key] = title_counts.get(title_key, 0) + 1
     seen_titles: set[str] = set()
     kept: list[dict[str, Any]] = []
     for a in articles:
@@ -71,10 +89,33 @@ def _filter_fresh_and_unique(articles: list[dict[str, Any]]) -> list[dict[str, A
             continue
         if title_key:
             seen_titles.add(title_key)
+            a["corroboration"] = title_counts[title_key]
         kept.append(a)
     dropped = len(articles) - len(kept)
     if dropped:
         log.info("Filtered out %d stale/duplicate article(s) before enrichment", dropped)
+    return kept
+
+
+async def _filter_already_stored(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop items already in the DB, before paying for enrichment.
+
+    Uses the same key as the post-enrichment duplicate check in
+    run_ingestion (articleId, falling back to external_id). Items with
+    no id are kept, matching that check's behavior. The
+    post-enrichment check stays in place as a safety net for stories
+    inserted between this filter and the insert.
+    """
+    kept: list[dict[str, Any]] = []
+    for a in articles:
+        external_id = a.get("articleId") or a.get("external_id")
+        if external_id and await db.get_story_by_external_id(external_id):
+            log.info("Skipping already-stored duplicate before enrichment: %s", external_id)
+            continue
+        kept.append(a)
+    dropped = len(articles) - len(kept)
+    if dropped:
+        log.info("Filtered out %d already-stored duplicate(s) before enrichment", dropped)
     return kept
 
 
@@ -141,6 +182,8 @@ async def run_ingestion(
     categories: Optional[list[str]] = None,
     per_category_map: Optional[dict[str, int]] = None,
     feeds: Optional[dict[str, list[dict[str, Any]]]] = None,
+    ranking_enabled: bool = True,
+    candidate_map: Optional[dict[str, int]] = None,
 ) -> dict[str, Any]:
     """Full ingestion pipeline. Returns a status dict."""
     async with _status_lock:
@@ -162,7 +205,20 @@ async def run_ingestion(
             cat: per_category for cat in (categories or ALL_CATEGORIES)
         }
         log.info("Ingestion starting (per_category_map=%s)", cat_map)
-        raw = await rss.fetch_categories_with_map(cat_map, feeds=feeds)
+        # Fetch a wider candidate pool than the final count, then rank
+        # down to it: ranking is only useful if there is a choice to
+        # make, and only the winners are ever enriched.
+        if candidate_map:
+            pool_map = {
+                cat: candidate_map.get(cat, count * _CANDIDATE_POOL_MULTIPLIER)
+                for cat, count in cat_map.items()
+            }
+        else:
+            pool_map = {
+                cat: count * _CANDIDATE_POOL_MULTIPLIER for cat, count in cat_map.items()
+            }
+        log.info("Candidate pool map: %s", pool_map)
+        raw = await rss.fetch_categories_with_map(pool_map, feeds=feeds)
         raw = _filter_fresh_and_unique(raw)
         fetched_count = len(raw)
         log.info("Fetched %d raw articles", fetched_count)
@@ -171,6 +227,32 @@ async def run_ingestion(
             _set_status({"state": "empty", "storyCount": 0, "startedAt": started_at.isoformat()})
             await _write_log(fetched_count, 0, 0, "partial", "No articles fetched")
             return _ingestion_status
+
+        raw = await _filter_already_stored(raw)
+        if not raw:
+            _set_status({"state": "empty", "storyCount": 0, "startedAt": started_at.isoformat()})
+            await _write_log(fetched_count, 0, 0, "partial", "All fetched articles already stored")
+            return _ingestion_status
+
+        ranking_summary: dict[str, dict[str, int]] = {}
+        if ranking_enabled:
+            # Group by category in configured order; categories not in
+            # cat_map (should not happen) pass through unranked.
+            by_category: dict[str, list[dict[str, Any]]] = {cat: [] for cat in cat_map}
+            unranked: list[dict[str, Any]] = []
+            for a in raw:
+                cat = a.get("category")
+                if cat in by_category:
+                    by_category[cat].append(a)
+                else:
+                    unranked.append(a)
+            ranked = await ranking.rank_categories(by_category, cat_map)
+            raw = [a for cat in cat_map for a in ranked.get(cat, [])] + unranked
+            ranking_summary = {
+                cat: {"candidates": len(by_category[cat]), "kept": len(ranked.get(cat, []))}
+                for cat in cat_map
+            }
+            log.info("Ranking summary: %s", ranking_summary)
 
         enriched = await enrichment.enrich_all(raw)
         log.info("Enriched %d stories", len(enriched))
@@ -227,6 +309,7 @@ async def run_ingestion(
         _set_status({
             "state": status_str,
             "storyCount": enriched_count,
+            "ranking": ranking_summary,
             "insertedStories": inserted_stories,
             "cleanup": cleanup_result,
             "startedAt": started_at.isoformat(),

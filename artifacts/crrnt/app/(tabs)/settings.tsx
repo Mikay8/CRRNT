@@ -1,13 +1,16 @@
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from "react-native";
+import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useChromeBottomPadding } from "@/contexts/NavChromeContext";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
@@ -119,6 +122,151 @@ const rowStyles = StyleSheet.create({
   },
 });
 
+// ── Beta feedback ─────────────────────────────────────────────────────────────
+// Suggestion box for beta testers. Posts to POST /api/feedback, which stores
+// the message for the morning digest batch and the admin portal Feedback
+// page — nothing is emailed on submit. There is no account to attach, so
+// the box is shown to guests and signed-in users alike. The API base mirrors
+// app/_layout.tsx: EXPO_PUBLIC_DOMAIN, else EXPO_PUBLIC_API_BASE, else the
+// web origin.
+function getApiBase(): string {
+  const domain = process.env.EXPO_PUBLIC_DOMAIN;
+  if (domain) return `https://${domain}`;
+  const base = process.env.EXPO_PUBLIC_API_BASE;
+  if (base) return base;
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return window.location.origin;
+  }
+  return "";
+}
+
+function BetaFeedback({ theme }: { theme: ThemeColors }) {
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSend = async () => {
+    const message = text.trim();
+    if (!message || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      const res = await fetch(`${getApiBase()}/api/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          platform: Platform.OS,
+          app_version: Constants.expoConfig?.version ?? undefined,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setText("");
+      setSent(true);
+    } catch {
+      setError("Couldn't send that — check your connection and try again.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <>
+      <SectionHeader label="Beta feedback" theme={theme} />
+      <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, padding: 16 }]}>
+        <Text style={[feedbackStyles.intro, { color: theme.textDim }]}>
+          Testing CRRNT? Tell us what works, what's broken, or what you'd like
+          to see — it goes straight to the team.
+        </Text>
+        <TextInput
+          value={text}
+          onChangeText={(v) => {
+            setText(v);
+            setSent(false);
+          }}
+          placeholder="Share a suggestion or report a bug…"
+          placeholderTextColor={theme.textDim}
+          multiline
+          numberOfLines={4}
+          maxLength={2000}
+          style={[
+            feedbackStyles.input,
+            {
+              backgroundColor: theme.surfaceHigh,
+              borderColor: theme.border,
+              color: theme.text,
+            },
+          ]}
+        />
+        <Pressable
+          onPress={handleSend}
+          disabled={!text.trim() || sending}
+          style={[
+            feedbackStyles.sendBtn,
+            {
+              backgroundColor: theme.accent,
+              opacity: !text.trim() || sending ? 0.5 : 1,
+            },
+          ]}
+        >
+          {sending ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={feedbackStyles.sendBtnText}>
+              {sent ? "Sent — thanks!" : "Send feedback"}
+            </Text>
+          )}
+        </Pressable>
+        {sent ? (
+          <Text style={[feedbackStyles.status, { color: theme.accent }]}>
+            Thanks — your feedback was sent.
+          </Text>
+        ) : null}
+        {error ? (
+          <Text style={[feedbackStyles.status, { color: "#F87171" }]}>{error}</Text>
+        ) : null}
+      </View>
+    </>
+  );
+}
+
+const feedbackStyles = StyleSheet.create({
+  intro: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  input: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 15,
+    lineHeight: 21,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 96,
+    textAlignVertical: "top",
+  },
+  sendBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  sendBtnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 15,
+    color: "#fff",
+  },
+  status: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    marginTop: 10,
+  },
+});
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
@@ -190,6 +338,8 @@ export default function SettingsScreen() {
               }
             />
           </View>
+
+          <BetaFeedback theme={theme} />
         </ScrollView>
       </View>
     );
@@ -383,6 +533,8 @@ export default function SettingsScreen() {
             }
           />
         </View>
+
+        <BetaFeedback theme={theme} />
 
         {/* ── Security ──────────────────────────────────────────────── */}
         <SectionHeader label="Security" theme={theme} />

@@ -361,6 +361,14 @@ export default function FeedScreen() {
           onFeedScroll(e.nativeEvent.contentOffset.y);
         }}
         scrollEventThrottle={16}
+        // Keep the render window ahead of a fast fling: more items per
+        // batch, batches more often, and a wider window, so fast scrolls
+        // meet rendered cards instead of blank space. (Cards vary in
+        // height, so getItemLayout can't apply here.)
+        windowSize={31}
+        maxToRenderPerBatch={30}
+        updateCellsBatchingPeriod={30}
+        initialNumToRender={15}
         refreshControl={
           !isSearchActive ? (
             <RefreshControl

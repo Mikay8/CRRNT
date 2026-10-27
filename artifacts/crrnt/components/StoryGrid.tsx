@@ -70,6 +70,11 @@ export default function StoryGrid({
         onScroll?.(e);
       }}
       scrollEventThrottle={16}
+      // Same fling headroom as the phone feed list (see index.tsx).
+      windowSize={31}
+      maxToRenderPerBatch={30}
+      updateCellsBatchingPeriod={30}
+      initialNumToRender={15}
       contentContainerStyle={contentContainerStyle}
       showsVerticalScrollIndicator
       ListHeaderComponent={

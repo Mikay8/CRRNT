@@ -13,7 +13,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
 
 export const NAV = {
-  inset: 14,
+  // Matches StoryCard's marginHorizontal so the tab bar, the collapsed
+  // feed button and the player dock all line up with the cards' left edge.
+  inset: 16,
   tabH: 64,
   gap: 8,
   miniH: 60,

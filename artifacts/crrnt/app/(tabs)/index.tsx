@@ -40,7 +40,7 @@ const LOGO_LIGHT = require("@/assets/images/full-logo-light.png") as number;
 
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
-  const { isDark, theme: palette, toggleTheme } = useThemeContext();
+  const { isDark, theme: palette } = useThemeContext();
   const { user, accessToken } = useAuth();
   const isGuest = !user;
   const [category, setCategory] = useState<Category | null>(null);
@@ -216,13 +216,6 @@ export default function FeedScreen() {
                   </Pressable>
                 ) : null}
               </View>
-              <Pressable
-                onPress={toggleTheme}
-                style={({ hovered }) => [styles.roundBtn, hovered && { borderColor: palette.borderStrong }]}
-                accessibilityLabel={isDark ? "Switch to light mode" : "Switch to dark mode"}
-              >
-                <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={19} color={palette.textMuted} />
-              </Pressable>
               {AUTH_ENABLED && isGuest ? (
                 <Pressable onPress={() => router.push("/login" as any)} style={styles.getAccountBtn}>
                   <Text style={styles.getAccountText}>Log in or sign up</Text>
@@ -298,22 +291,6 @@ export default function FeedScreen() {
                 style={{ marginRight: 8 }}
               />
             ) : null}
-            {!searchVisible && Platform.OS === "web" && (
-              <Pressable
-                onPress={toggleTheme}
-                hitSlop={10}
-                style={styles.iconBtn}
-                accessibilityLabel={
-                  isDark ? "Switch to light mode" : "Switch to dark mode"
-                }
-              >
-                <Ionicons
-                  name={isDark ? "sunny-outline" : "moon-outline"}
-                  size={22}
-                  color={palette.textMuted}
-                />
-              </Pressable>
-            )}
             <Pressable
               onPress={searchVisible ? closeSearch : openSearch}
               hitSlop={10}

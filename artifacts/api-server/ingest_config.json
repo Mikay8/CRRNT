@@ -1,4 +1,5 @@
 {
+  "candidate_multiplier": 3,
   "categories": {
     "celebrity": {
       "enabled": true,

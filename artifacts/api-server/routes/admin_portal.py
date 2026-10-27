@@ -299,6 +299,10 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
 
 def _parse_ingest_config(form: dict) -> dict:
     """Parse submitted form data into an ingest_config dict."""
+    try:
+        multiplier = max(1, min(6, int(form.get("candidate_multiplier", 3))))
+    except (TypeError, ValueError):
+        multiplier = 3
     categories = {}
     for cat in ingest_config.ALL_CATEGORIES:
         enabled = form.get(f"cat_enabled_{cat}") == "1"
@@ -307,7 +311,7 @@ def _parse_ingest_config(form: dict) -> dict:
         except (TypeError, ValueError):
             count = 10
         categories[cat] = {"enabled": enabled, "count": count}
-    return {"categories": categories}
+    return {"candidate_multiplier": multiplier, "categories": categories}
 
 
 @router.post("/ingest-config/save")

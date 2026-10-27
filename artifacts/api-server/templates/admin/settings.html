@@ -75,6 +75,26 @@
       </div>
     </div>
 
+    <!-- Candidate pool multiplier -->
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
+      <div class="flex flex-wrap items-center gap-4">
+        <div class="shrink-0">
+          <label for="candidate_multiplier" class="text-sm font-semibold text-white">Candidate pool multiplier</label>
+          <p class="text-xs text-gray-500 mt-0.5 max-w-md">Candidate stories fetched per published story, in every category. Pool = published count &times; multiplier. Default 3 (10 published &rarr; 30 candidates ranked). Higher gives ranking more choice at slightly higher ranking cost; ranking is skipped when candidates &le; published count.</p>
+        </div>
+        <div class="flex items-center gap-2 ml-auto">
+          <input
+            type="number"
+            name="candidate_multiplier"
+            id="candidate_multiplier"
+            min="1" max="6"
+            value="{{ cfg.candidate_multiplier | default(3) }}"
+            class="w-20 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm text-center">
+          <span class="text-gray-500 text-xs">&times; published count (1&ndash;6)</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Save + Run -->
     <div class="flex flex-wrap items-center gap-3">
       <button type="submit"

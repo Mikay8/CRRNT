@@ -1,7 +1,8 @@
 """Ingestion orchestration — fetch, enrich, store in Postgres.
 
 Pipeline:
-  1. RSS fetch (per category, candidate pool = configured count x 3)
+  1. RSS fetch (per category, candidate pool = configured count x
+     the global candidate_multiplier from ingest_config, default 3)
   2. Drop stale, in-batch duplicate, and already-stored articles
   3. Claude ranking — one batched call per category, keep only the
      configured top N per category (falls back to newest-first)
@@ -26,10 +27,10 @@ log = logging.getLogger("crrnt.ingestion")
 
 ALL_CATEGORIES = rss.CATEGORIES
 _DEFAULT_PER_CATEGORY = 10
-# Candidate pool fetched per category, as a multiple of the configured
-# final count: ranking needs something to choose between, but only the
-# top N are ever enriched, so the pool size does not raise AI cost
-# beyond one small ranking call per category.
+# Fallback candidate-pool multiplier, used only by direct callers
+# that do not pass candidate_map. Normal runs get candidate_map from
+# ingest_config.get_run_params(), where the multiplier is a single
+# global, admin-configurable setting (default 3, clamped 1-6).
 _CANDIDATE_POOL_MULTIPLIER = 3
 _status_lock = asyncio.Lock()
 _ingestion_status: dict[str, Any] = {"state": "idle"}
@@ -182,6 +183,7 @@ async def run_ingestion(
     per_category_map: Optional[dict[str, int]] = None,
     feeds: Optional[dict[str, list[dict[str, Any]]]] = None,
     ranking_enabled: bool = True,
+    candidate_map: Optional[dict[str, int]] = None,
 ) -> dict[str, Any]:
     """Full ingestion pipeline. Returns a status dict."""
     async with _status_lock:
@@ -206,9 +208,16 @@ async def run_ingestion(
         # Fetch a wider candidate pool than the final count, then rank
         # down to it: ranking is only useful if there is a choice to
         # make, and only the winners are ever enriched.
-        pool_map = {
-            cat: count * _CANDIDATE_POOL_MULTIPLIER for cat, count in cat_map.items()
-        }
+        if candidate_map:
+            pool_map = {
+                cat: candidate_map.get(cat, count * _CANDIDATE_POOL_MULTIPLIER)
+                for cat, count in cat_map.items()
+            }
+        else:
+            pool_map = {
+                cat: count * _CANDIDATE_POOL_MULTIPLIER for cat, count in cat_map.items()
+            }
+        log.info("Candidate pool map: %s", pool_map)
         raw = await rss.fetch_categories_with_map(pool_map, feeds=feeds)
         raw = _filter_fresh_and_unique(raw)
         fetched_count = len(raw)

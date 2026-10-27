@@ -60,6 +60,25 @@ function buildSpeechText(story: Story): string {
   return parts.join(" ");
 }
 
+/**
+ * Lock-screen metadata for a story. The artwork URL is only included when
+ * it is a non-empty absolute http(s) URL: expo-audio's native layer converts
+ * it to a URL, and an empty string (which 7 of the live feed's 26 stories
+ * carry for media_url) fails that conversion and throws — which used to
+ * abort the whole setActiveForLockScreen call, leaving audio playing with
+ * Control Center showing "Not Playing". Null/undefined is fine; "" is not.
+ */
+function buildLockScreenMetadata(story: Story) {
+  const rawArtwork = (story as any).media_url as string | null | undefined;
+  const artworkUrl =
+    rawArtwork && /^https?:\/\//i.test(rawArtwork) ? rawArtwork : undefined;
+  return {
+    title: story.title,
+    artist: "CRRNT",
+    artworkUrl,
+  };
+}
+
 async function configureAudioSession() {
   try {
     await setAudioModeAsync({
@@ -124,6 +143,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       audioDurationMsRef.current = ms;
       setAudioDurationMs(ms);
       setIsAudioLoading(false);
+      // Re-publish once the item is actually loaded: if the first publish
+      // raced the load (duration still 0), iOS can drop it, and this is
+      // also what refreshes Control Center with the real duration.
+      if (isAudioModeRef.current && storyRef.current) {
+        try {
+          player.updateLockScreenMetadata(buildLockScreenMetadata(storyRef.current));
+        } catch (e) {
+          console.warn("[Audio] updateLockScreenMetadata failed", e);
+        }
+      }
     }
   }, [audioStatus.duration]);
 
@@ -392,12 +421,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         _setAudioMode(true);
         player.play();
         try {
-          player.setActiveForLockScreen(true, {
-            title: newStory.title,
-            artist: "CRRNT",
-            artworkUrl: (newStory as any).media_url ?? undefined,
-          });
-        } catch {}
+          player.setActiveForLockScreen(true, buildLockScreenMetadata(newStory));
+        } catch (e) {
+          // Never swallow this silently again: a failed activation is
+          // exactly "audio plays but Control Center shows Not Playing".
+          console.warn("[Audio] setActiveForLockScreen failed", e);
+        }
       } else {
         // No audio URL or audio fetch failed — fall back to speech synthesis
         setIsAudioLoading(false);
@@ -515,7 +544,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsAudioLoading(false);
     _stopSpeech();
     player.pause();
-    try { player.clearLockScreenControls(); } catch {}
+    try { player.clearLockScreenControls(); } catch (e) {
+      console.warn("[Audio] clearLockScreenControls failed", e);
+    }
     _setAudioMode(false);
     setIsBarVisible(false);
     _setStory(null);

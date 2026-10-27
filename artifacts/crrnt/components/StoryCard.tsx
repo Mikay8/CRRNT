@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
@@ -581,4 +581,8 @@ function createStyles(palette: ThemeColors) {
   });
 }
 
-export default StoryCard;
+// Memoized: the feed parent re-renders on refresh/search state, and
+// re-rendering every visible card per scroll-adjacent state change is
+// what drops frames mid-fling. Context updates (saved/audio state) still
+// flow through; only identical story/variant props skip a re-render.
+export default memo(StoryCard);

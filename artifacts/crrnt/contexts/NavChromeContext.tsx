@@ -8,7 +8,7 @@
  * `queue` (0 → 1) tracks the queue sheet / desktop side panel.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { withSpring, useSharedValue, type SharedValue } from "react-native-reanimated";
+import { Easing, withSpring, withTiming, useSharedValue, type SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
 
@@ -21,7 +21,8 @@ export const NAV = {
 
 const COLLAPSE_SPRING = { stiffness: 320, damping: 32, mass: 1 };
 export const EXPAND_SPRING = { stiffness: 240, damping: 31, mass: 1 };
-export const QUEUE_SPRING = { stiffness: 260, damping: 32 };
+/** Queue sheet / panel: a plain ease-out slide, no spring. */
+export const QUEUE_EASE = { duration: 320, easing: Easing.out(Easing.cubic) };
 
 interface NavChromeValue {
   collapse: SharedValue<number>;
@@ -72,7 +73,7 @@ export function NavChromeProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    queue.value = withSpring(isQueueOpen ? 1 : 0, QUEUE_SPRING);
+    queue.value = withTiming(isQueueOpen ? 1 : 0, QUEUE_EASE);
   }, [isQueueOpen, queue]);
 
   // The desktop layout never tucks the nav away, and the player morphs

@@ -12,7 +12,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useAudio, useAudioProgress } from "@/contexts/AudioContext";
-import { useNavChrome } from "@/contexts/NavChromeContext";
+import { QUEUE_EASE, useNavChrome } from "@/contexts/NavChromeContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { getCategoryMeta } from "@/constants/categories";
 import type { ThemeColors } from "@/constants/theme";
@@ -24,7 +24,6 @@ import type { Story } from "@workspace/api-client-react";
 
 const ROW_H = 76;
 const REMOVE_AT = 80;
-const SHEET_SPRING = { stiffness: 260, damping: 32 };
 
 interface Reorder {
   key: string;
@@ -344,7 +343,7 @@ export default function QueueSheet() {
   const sheetY = useSharedValue(sheetH + 40);
 
   useEffect(() => {
-    sheetY.value = withSpring(isQueueOpen ? 0 : sheetH + 40, SHEET_SPRING);
+    sheetY.value = withTiming(isQueueOpen ? 0 : sheetH + 40, QUEUE_EASE);
   }, [isQueueOpen, sheetH, sheetY]);
 
   useEffect(() => {
@@ -365,10 +364,10 @@ export default function QueueSheet() {
     })
     .onEnd((e) => {
       if (e.translationY > 110 || e.velocityY > 800) {
-        sheetY.value = withSpring(sheetH + 40, SHEET_SPRING);
+        sheetY.value = withTiming(sheetH + 40, QUEUE_EASE);
         runOnJS(setQueueOpen)(false);
       } else {
-        sheetY.value = withSpring(0, SHEET_SPRING);
+        sheetY.value = withTiming(0, QUEUE_EASE);
       }
     });
 

@@ -273,7 +273,9 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const bottomPad = useChromeBottomPadding();
   // Desktop: a left-aligned column rather than a full-width list.
-  const desktopFrame = useIsDesktop() ? styles.desktopFrame : null;
+  const isDesktop = useIsDesktop();
+  const desktopFrame = isDesktop ? styles.desktopFrame : null;
+  const desktopColumn = isDesktop ? styles.desktopColumn : null;
   const { isDark, theme, toggleTheme } = useThemeContext();
   const { user, logout, forgotPassword, accessToken, isGuest, sendVerificationEmail, deleteAccount } = useAuth();
   const [sendingVerification, setSendingVerification] = useState(false);
@@ -304,9 +306,9 @@ export default function SettingsScreen() {
   if (isGuest || !user) {
     return (
       <View style={[styles.container, { backgroundColor: theme.bg, paddingTop: insets.top }, desktopFrame]}>
-        <Text style={[styles.screenTitle, { color: theme.text }]}>Settings</Text>
+        <Text style={[styles.screenTitle, { color: theme.text }, desktopColumn]}>Settings</Text>
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
+          contentContainerStyle={[styles.content, { paddingBottom: bottomPad }, desktopColumn]}
           showsVerticalScrollIndicator={false}
         >
           <View style={[styles.accountCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -448,10 +450,10 @@ export default function SettingsScreen() {
         message={dialog?.message}
         buttons={dialog?.buttons ?? []}
       />
-      <Text style={[styles.screenTitle, { color: theme.text }]}>Settings</Text>
+      <Text style={[styles.screenTitle, { color: theme.text }, desktopColumn]}>Settings</Text>
 
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: bottomPad }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad }, desktopColumn]}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Email verification banner ──────────────────────────────── */}
@@ -577,7 +579,9 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  desktopFrame: { paddingHorizontal: 20, paddingTop: 24, maxWidth: 720 },
+  // Desktop: the screen fills the window; only the content column is capped.
+  desktopFrame: { paddingHorizontal: 20, paddingTop: 24 },
+  desktopColumn: { width: "100%", maxWidth: 720 },
   screenTitle: {
     fontFamily: "Outfit_700Bold",
     fontSize: 28,

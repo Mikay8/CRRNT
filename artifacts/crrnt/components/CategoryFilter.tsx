@@ -7,9 +7,11 @@ import { CATEGORIES, CATEGORY_ICONS, type Category } from "@/constants/categorie
 interface CategoryFilterProps {
   active: Category | null;
   onChange: (next: Category | null) => void;
+  /** Horizontal inset of the scrolling row (desktop header aligns it flush). */
+  inset?: number;
 }
 
-export function CategoryFilter({ active, onChange }: CategoryFilterProps) {
+export function CategoryFilter({ active, onChange, inset = 16 }: CategoryFilterProps) {
   const { theme: palette } = useThemeContext();
 
   const handle = (next: Category | null) => {
@@ -21,7 +23,7 @@ export function CategoryFilter({ active, onChange }: CategoryFilterProps) {
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.row}
+      contentContainerStyle={[styles.row, { paddingHorizontal: inset }]}
     >
       <Chip
         label="All"
@@ -82,7 +84,6 @@ function Chip({ label, color, active, icon, onPress, palette }: ChipProps) {
 
 const styles = StyleSheet.create({
   row: {
-    paddingHorizontal: 16,
     gap: 8,
     paddingVertical: 4,
   },

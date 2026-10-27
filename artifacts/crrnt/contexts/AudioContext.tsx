@@ -34,6 +34,8 @@ interface AudioContextType {
   addToQueue: (story: Story) => void;
   addToQueueTop: (story: Story) => void;
   removeFromQueue: (index: number) => void;
+  moveInQueue: (from: number, to: number) => void;
+  clearQueue: () => void;
   shuffleQueue: () => void;
 }
 
@@ -423,6 +425,18 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     _setQueue(q);
   }, []);
 
+  const moveInQueue = useCallback((from: number, to: number) => {
+    const q = [...queueRef.current];
+    if (from < 0 || from >= q.length || from === to) return;
+    const [moved] = q.splice(from, 1);
+    q.splice(Math.max(0, Math.min(to, q.length)), 0, moved);
+    _setQueue(q);
+  }, []);
+
+  const clearQueue = useCallback(() => {
+    _setQueue([]);
+  }, []);
+
   const playNext = useCallback(async () => {
     if (queueRef.current.length === 0) return;
     const [next, ...rest] = queueRef.current;
@@ -525,6 +539,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         addToQueue,
         addToQueueTop,
         removeFromQueue,
+        moveInQueue,
+        clearQueue,
         shuffleQueue,
       }}
     >

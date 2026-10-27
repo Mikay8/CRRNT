@@ -12,6 +12,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -21,8 +22,6 @@ interface AudioContextType {
   story: Story | null;
   isPlaying: boolean;
   isAudioLoading: boolean;
-  positionMs: number;
-  durationMs: number;
   isBarVisible: boolean;
   queue: Story[];
   playStory: (story: Story) => Promise<void>;
@@ -39,7 +38,15 @@ interface AudioContextType {
   shuffleQueue: () => void;
 }
 
+interface AudioProgress {
+  positionMs: number;
+  durationMs: number;
+}
+
 const AudioContext = createContext<AudioContextType | null>(null);
+// Playback position ticks every 200ms, so it lives in its own context: only
+// the player UI re-renders with it, not every story card using useAudio().
+const AudioProgressContext = createContext<AudioProgress>({ positionMs: 0, durationMs: 0 });
 
 function buildSpeechText(story: Story): string {
   const parts: string[] = [];
@@ -520,31 +527,51 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     _setQueue([]);
   }, [player, _stopSpeech]);
 
+  const value = useMemo(
+    () => ({
+      story,
+      isPlaying,
+      isAudioLoading,
+      isBarVisible,
+      queue,
+      playStory,
+      playNext,
+      playFromQueue,
+      togglePlayPause,
+      seekTo,
+      dismiss,
+      addToQueue,
+      addToQueueTop,
+      removeFromQueue,
+      moveInQueue,
+      clearQueue,
+      shuffleQueue,
+    }),
+    [
+      story,
+      isPlaying,
+      isAudioLoading,
+      isBarVisible,
+      queue,
+      playStory,
+      playNext,
+      playFromQueue,
+      togglePlayPause,
+      seekTo,
+      dismiss,
+      addToQueue,
+      addToQueueTop,
+      removeFromQueue,
+      moveInQueue,
+      clearQueue,
+      shuffleQueue,
+    ],
+  );
+  const progress = useMemo(() => ({ positionMs, durationMs }), [positionMs, durationMs]);
+
   return (
-    <AudioContext.Provider
-      value={{
-        story,
-        isPlaying,
-        isAudioLoading,
-        positionMs,
-        durationMs,
-        isBarVisible,
-        queue,
-        playStory,
-        playNext,
-        playFromQueue,
-        togglePlayPause,
-        seekTo,
-        dismiss,
-        addToQueue,
-        addToQueueTop,
-        removeFromQueue,
-        moveInQueue,
-        clearQueue,
-        shuffleQueue,
-      }}
-    >
-      {children}
+    <AudioContext.Provider value={value}>
+      <AudioProgressContext.Provider value={progress}>{children}</AudioProgressContext.Provider>
     </AudioContext.Provider>
   );
 }
@@ -553,4 +580,9 @@ export function useAudio(): AudioContextType {
   const ctx = useContext(AudioContext);
   if (!ctx) throw new Error("useAudio must be used inside AudioProvider");
   return ctx;
+}
+
+/** Playback position and duration — subscribe only where the time is shown. */
+export function useAudioProgress(): AudioProgress {
+  return useContext(AudioProgressContext);
 }

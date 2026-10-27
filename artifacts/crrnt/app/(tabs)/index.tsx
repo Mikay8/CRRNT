@@ -33,6 +33,7 @@ import { useChromeBottomPadding, useNavChrome } from "@/contexts/NavChromeContex
 import DesktopHeader from "@/components/DesktopHeader";
 import StoryGrid from "@/components/StoryGrid";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
+import { reportScroll } from "@/hooks/useFastScroll";
 
 const LOGO_DARK = require("@/assets/images/full-logo-dark.png") as number;
 const LOGO_LIGHT = require("@/assets/images/full-logo-light.png") as number;
@@ -181,7 +182,6 @@ export default function FeedScreen() {
     return (
       <View style={styles.container}>
         <DesktopHeader
-          title={isSearchActive ? "Search" : "Top stories"}
           mini={headerMini}
           onFullHeight={setDesktopHeadH}
           aside={
@@ -356,7 +356,10 @@ export default function FeedScreen() {
         contentContainerStyle={listPadding}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        onScroll={(e) => onFeedScroll(e.nativeEvent.contentOffset.y)}
+        onScroll={(e) => {
+          reportScroll(e.nativeEvent.contentOffset.y);
+          onFeedScroll(e.nativeEvent.contentOffset.y);
+        }}
         scrollEventThrottle={16}
         refreshControl={
           !isSearchActive ? (

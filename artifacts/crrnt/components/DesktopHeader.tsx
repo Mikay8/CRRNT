@@ -12,7 +12,7 @@ const EASE = { duration: 350, easing: Easing.bezier(0.2, 0.8, 0.2, 1) };
 
 /**
  * Sticky, blurred desktop page header: logo + date and tools on top, then the
- * page title and an optional row (category pills). Scrolling down tucks the
+ * optional page title and an optional row (category pills). Scrolling down tucks the
  * title and pills away, leaving just the top row.
  */
 export default function DesktopHeader({
@@ -23,7 +23,7 @@ export default function DesktopHeader({
   mini,
   onFullHeight,
 }: {
-  title: string;
+  title?: string;
   aside?: React.ReactNode;
   tools?: React.ReactNode;
   below?: React.ReactNode;
@@ -85,12 +85,14 @@ export default function DesktopHeader({
         {tools ? <View style={styles.tools}>{tools}</View> : null}
       </View>
 
-      <Animated.View style={[styles.clip, titleStyle]}>
-        <View style={styles.titleRow} onLayout={(e) => setTitleH(e.nativeEvent.layout.height)}>
-          <Text style={styles.h1}>{title}</Text>
-          {aside ? <View style={styles.aside}>{aside}</View> : null}
-        </View>
-      </Animated.View>
+      {title || aside ? (
+        <Animated.View style={[styles.clip, titleStyle]}>
+          <View style={styles.titleRow} onLayout={(e) => setTitleH(e.nativeEvent.layout.height)}>
+            {title ? <Text style={styles.h1}>{title}</Text> : null}
+            {aside ? <View style={styles.aside}>{aside}</View> : null}
+          </View>
+        </Animated.View>
+      ) : null}
 
       <Animated.View style={[styles.clip, belowStyle]}>
         <View onLayout={(e) => setBelowH(e.nativeEvent.layout.height)}>

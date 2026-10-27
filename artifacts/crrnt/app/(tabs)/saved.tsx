@@ -11,6 +11,7 @@ import { useChromeBottomPadding } from "@/contexts/NavChromeContext";
 import DesktopHeader from "@/components/DesktopHeader";
 import StoryGrid from "@/components/StoryGrid";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
+import { reportScroll } from "@/hooks/useFastScroll";
 
 export default function SavedScreen() {
   const insets = useSafeAreaInsets();
@@ -95,6 +96,8 @@ export default function SavedScreen() {
         }}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={empty}
+        onScroll={(e) => reportScroll(e.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
       />
     </View>
   );

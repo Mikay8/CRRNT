@@ -18,6 +18,8 @@ interface ToastValue {
 }
 
 const ToastContext = createContext<ToastValue | null>(null);
+// Just the stable showToast, so cards don't re-render as toasts come and go.
+const ShowToastContext = createContext<ToastValue["showToast"] | null>(null);
 
 const TOAST_MS = 1800;
 
@@ -37,11 +39,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(() => ({ toast, showToast, hideToast }), [toast, showToast, hideToast]);
-  return <ToastContext.Provider value={value}>{children}</ToastContext.Provider>;
+  return (
+    <ToastContext.Provider value={value}>
+      <ShowToastContext.Provider value={showToast}>{children}</ShowToastContext.Provider>
+    </ToastContext.Provider>
+  );
 }
 
 export function useToast(): ToastValue {
   const ctx = useContext(ToastContext);
   if (!ctx) throw new Error("useToast must be used inside ToastProvider");
+  return ctx;
+}
+
+export function useShowToast(): ToastValue["showToast"] {
+  const ctx = useContext(ShowToastContext);
+  if (!ctx) throw new Error("useShowToast must be used inside ToastProvider");
   return ctx;
 }

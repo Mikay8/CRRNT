@@ -11,7 +11,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
-import { useAudio } from "@/contexts/AudioContext";
+import { useAudio, useAudioProgress } from "@/contexts/AudioContext";
 import { useNavChrome } from "@/contexts/NavChromeContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { getCategoryMeta } from "@/constants/categories";
@@ -191,8 +191,8 @@ function QueueBody({
   desktop: boolean;
   onPlayed: () => void;
 }) {
-  const { story, isPlaying, positionMs, durationMs, queue, togglePlayPause, removeFromQueue, moveInQueue, playFromQueue } =
-    useAudio();
+  const { story, isPlaying, queue, togglePlayPause, removeFromQueue, moveInQueue, playFromQueue } = useAudio();
+  const { positionMs, durationMs } = useAudioProgress();
   const { theme } = useThemeContext();
   const [reorder, setReorder] = useState<Reorder | null>(null);
   const [settle, setSettle] = useState<{ key: string; offset: number } | null>(null);
@@ -320,7 +320,8 @@ function QueueBody({
 }
 
 function QueueSummary({ styles }: { styles: ReturnType<typeof createStyles> }) {
-  const { positionMs, durationMs, queue } = useAudio();
+  const { queue } = useAudio();
+  const { positionMs, durationMs } = useAudioProgress();
   const remainingMs = Math.max(0, durationMs - positionMs);
   return (
     <Text style={styles.subtitle}>

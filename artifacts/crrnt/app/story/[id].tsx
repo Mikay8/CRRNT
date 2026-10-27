@@ -23,7 +23,7 @@ import {
 } from "@workspace/api-client-react";
 import { getCategoryMeta } from "@/constants/categories";
 import StoryImage from "@/components/StoryImage";
-import { useAudio } from "@/contexts/AudioContext";
+import { useAudio, useAudioProgress } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { canSaveStories } from "@/constants/features";
@@ -129,12 +129,11 @@ export default function StoryDetailScreen() {
     isPlaying,
     isAudioLoading,
     isBarVisible,
-    positionMs,
-    durationMs,
     playStory,
     togglePlayPause,
     seekTo,
   } = useAudio();
+  const { positionMs, durationMs } = useAudioProgress();
 
   const localFallback = saved.find((s) => s.id === id) ?? null;
 

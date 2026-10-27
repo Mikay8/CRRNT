@@ -10,7 +10,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
-import { useAudio } from "@/contexts/AudioContext";
+import { useAudio, useAudioProgress } from "@/contexts/AudioContext";
 import { useNavChrome } from "@/contexts/NavChromeContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { getCategoryMeta } from "@/constants/categories";
@@ -45,8 +45,9 @@ function fullFrame(w: number, h: number, queueInset: number) {
  * Esc collapses the panel or closes the queue.
  */
 export default function DesktopPlayer() {
-  const { story, isPlaying, positionMs, durationMs, isBarVisible, queue, togglePlayPause, seekTo } =
+  const { story, isPlaying, isBarVisible, queue, togglePlayPause, seekTo } =
     useAudio();
+  const { positionMs, durationMs } = useAudioProgress();
   const { expand, queue: queueAnim, isPlayerOpen, openPlayer, closePlayer, isQueueOpen, setQueueOpen } =
     useNavChrome();
   const { theme, isDark } = useThemeContext();

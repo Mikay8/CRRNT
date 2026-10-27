@@ -23,7 +23,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
-import { useAudio } from "@/contexts/AudioContext";
+import { useAudio, useAudioProgress } from "@/contexts/AudioContext";
 import { EXPAND_SPRING, NAV, useNavChrome, useTabBarBottom } from "@/contexts/NavChromeContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { getCategoryMeta } from "@/constants/categories";
@@ -58,14 +58,13 @@ function MobilePlayer() {
   const {
     story,
     isPlaying,
-    positionMs,
-    durationMs,
     isBarVisible,
     queue,
     togglePlayPause,
     seekTo,
     dismiss,
   } = useAudio();
+  const { positionMs, durationMs } = useAudioProgress();
   const { collapse, expand, isPlayerOpen, openPlayer, closePlayer, syncPlayerOpen, setQueueOpen } =
     useNavChrome();
   const { theme, isDark } = useThemeContext();

@@ -41,6 +41,15 @@ interface NavChromeValue {
 
 const NavChromeContext = createContext<NavChromeValue | null>(null);
 
+interface NavChromeActions {
+  setQueueOpen: (v: boolean) => void;
+  openPlayer: () => void;
+}
+
+// Stable actions only, for components (like every story card) that must not
+// re-render each time the nav tucks away mid-scroll.
+const NavChromeActionsContext = createContext<NavChromeActions | null>(null);
+
 export function NavChromeProvider({ children }: { children: React.ReactNode }) {
   const collapse = useSharedValue(0);
   const expand = useSharedValue(0);
@@ -113,12 +122,24 @@ export function NavChromeProvider({ children }: { children: React.ReactNode }) {
     [collapse, expand, queue, isCollapsed, setCollapsed, onFeedScroll, isPlayerOpen, openPlayer, closePlayer, isQueueOpen],
   );
 
-  return <NavChromeContext.Provider value={value}>{children}</NavChromeContext.Provider>;
+  const actions = useMemo(() => ({ setQueueOpen, openPlayer }), [openPlayer]);
+
+  return (
+    <NavChromeContext.Provider value={value}>
+      <NavChromeActionsContext.Provider value={actions}>{children}</NavChromeActionsContext.Provider>
+    </NavChromeContext.Provider>
+  );
 }
 
 export function useNavChrome(): NavChromeValue {
   const ctx = useContext(NavChromeContext);
   if (!ctx) throw new Error("useNavChrome must be used inside NavChromeProvider");
+  return ctx;
+}
+
+export function useNavChromeActions(): NavChromeActions {
+  const ctx = useContext(NavChromeActionsContext);
+  if (!ctx) throw new Error("useNavChromeActions must be used inside NavChromeProvider");
   return ctx;
 }
 

@@ -20,10 +20,10 @@ import StoryImage from "@/components/StoryImage";
 import { useAudio } from "@/contexts/AudioContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { canSaveStories } from "@/constants/features";
-import { useNavChrome } from "@/contexts/NavChromeContext";
+import { useNavChromeActions } from "@/contexts/NavChromeContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useThemeContext } from "@/contexts/ThemeContext";
-import { useToast } from "@/contexts/ToastContext";
+import { useShowToast } from "@/contexts/ToastContext";
 import { formatRelativeTime, isToday } from "@/utils/time";
 import { sourceDomain } from "@/utils/url";
 import type { Story } from "@workspace/api-client-react";
@@ -68,8 +68,8 @@ export function StoryCard({ story, variant = "list" }: StoryCardProps) {
   const canSave = canSaveStories(!!user);
   const { story: current, isPlaying, playStory, togglePlayPause, isBarVisible, addToQueue, removeFromQueue, queue } =
     useAudio();
-  const { setQueueOpen } = useNavChrome();
-  const { showToast } = useToast();
+  const { setQueueOpen } = useNavChromeActions();
+  const showToast = useShowToast();
   const { theme: palette } = useThemeContext();
   const styles = useMemo(() => createStyles(palette), [palette]);
 

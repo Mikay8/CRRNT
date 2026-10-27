@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import StoryCard from "@/components/StoryCard";
 import type { Story } from "@workspace/api-client-react";
+import { reportScroll } from "@/hooks/useFastScroll";
 
 const MIN_COL = 300;
 const GAP = 20;
@@ -64,7 +65,10 @@ export default function StoryGrid({
     <FlatList
       data={width > 0 ? rows : []}
       keyExtractor={(row) => row[0].story.id}
-      onScroll={onScroll}
+      onScroll={(e) => {
+        reportScroll(e.nativeEvent.contentOffset.y);
+        onScroll?.(e);
+      }}
       scrollEventThrottle={16}
       contentContainerStyle={contentContainerStyle}
       showsVerticalScrollIndicator

@@ -359,7 +359,7 @@ function MobilePlayer() {
 
 function createStyles(theme: ThemeColors) {
   return StyleSheet.create({
-    dim: { ...StyleSheet.absoluteFillObject, backgroundColor: "#000", zIndex: 25 },
+    dim: { ...StyleSheet.absoluteFill, backgroundColor: "#000", zIndex: 25 },
     shell: {
       position: "absolute",
       zIndex: 30,
@@ -381,7 +381,7 @@ function createStyles(theme: ThemeColors) {
       shadowRadius: 40,
     },
     artScrim: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: "rgba(0,0,0,0.35)",
       alignItems: "center",
       justifyContent: "center",

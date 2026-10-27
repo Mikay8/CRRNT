@@ -456,7 +456,7 @@ export function QueuePanel() {
 
 function createStyles(theme: ThemeColors) {
   return StyleSheet.create({
-    dim: { ...StyleSheet.absoluteFillObject, backgroundColor: "#000", zIndex: 44 },
+    dim: { ...StyleSheet.absoluteFill, backgroundColor: "#000", zIndex: 44 },
     sheet: {
       position: "absolute",
       left: 0,
@@ -521,7 +521,7 @@ function createStyles(theme: ThemeColors) {
     },
     nowThumb: { width: 48, height: 48, borderRadius: 11, overflow: "hidden" },
     nowScrim: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: "rgba(0,0,0,0.35)",
       alignItems: "center",
       justifyContent: "center",

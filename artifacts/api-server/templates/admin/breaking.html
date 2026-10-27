@@ -38,6 +38,7 @@
   <!-- Create form -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
     <h2 class="text-sm font-semibold text-white mb-4">Publish New Alert</h2>
+    <p class="text-xs text-gray-500 mb-4">Publishing also sends an immediate push to all app users. The hook follows the alert style in Settings: {% if breaking_style.mode == 'stop' %}"Stop the presses!" every time{% elif breaking_style.mode == 'extra' %}"Extra! Extra!" every time{% else %}alternating between "Stop the presses!" and "Extra! Extra!" (next: "{{ 'Extra! Extra!' if breaking_style.last_hook == 'stop' else 'Stop the presses!' }}"){% endif %}.</p>
     <form method="POST" action="/admin/breaking/create" class="space-y-4">
       <div>
         <label class="block text-xs text-gray-400 mb-1">Headline <span class="text-red-400">*</span></label>

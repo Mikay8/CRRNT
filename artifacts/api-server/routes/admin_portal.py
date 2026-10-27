@@ -14,6 +14,7 @@ Actions (POST, redirect back):
   POST /admin/cleanup
   POST /admin/breaking/create
   POST /admin/breaking/{id}/dismiss
+  POST /admin/breaking-style/save
   POST /admin/feedback/{id}/reviewed
   POST /admin/feedback/{id}/delete
   POST /admin/stories/{id}/delete
@@ -220,6 +221,7 @@ async def admin_users(
 async def admin_breaking(request: Request, _: None = Depends(_verify_admin)):
     active = await _safe_db(db.get_active_breaking_news(), None)
     recent = await _safe_db(db.get_recent_breaking_news(limit=10), [])
+    breaking_style = await _safe_db(app_settings.get_breaking_style(), {"mode": "alternate", "last_hook": None})
     return templates.TemplateResponse(
         request,
         "admin/breaking.html",
@@ -227,6 +229,7 @@ async def admin_breaking(request: Request, _: None = Depends(_verify_admin)):
             "page": "breaking",
             "active": active,
             "recent": recent,
+            "breaking_style": breaking_style,
         },
     )
 
@@ -239,6 +242,13 @@ async def create_breaking(
     _: None = Depends(_verify_admin),
 ):
     await _safe_db(db.insert_breaking_news(headline, link, ttl_hours), None)
+    # Breaking push: best-effort, never blocks publishing the alert itself.
+    try:
+        from services import notifications
+
+        await notifications.send_breaking_push(headline)
+    except Exception as exc:
+        log.warning("Breaking push failed: %s", exc)
     return RedirectResponse(url="/admin/breaking", status_code=302)
 
 
@@ -286,6 +296,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
     story_expiry = await app_settings.get_story_expiry()
     admin_emails = await app_settings.get_admin_emails()
     schedule_times = await app_settings.get_schedule_times()
+    breaking_style = await app_settings.get_breaking_style()
     feeds = await app_settings.get_rss_feeds()
     env_status = {
         "DATABASE_URL": bool(os.environ.get("DATABASE_URL")),
@@ -319,6 +330,7 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
             "story_expiry": story_expiry,
             "admin_emails": admin_emails,
             "schedule_times": schedule_times,
+            "breaking_style": breaking_style,
             "feeds": feeds,
             "sources_msg": request.query_params.get("sources_msg"),
             "sources_ok": request.query_params.get("sources_ok") == "1",
@@ -388,6 +400,16 @@ async def save_schedule(request: Request, _: None = Depends(_verify_admin)):
         ih, im, ch, cm = 8, 0, 3, 0
     await app_settings.save_schedule_times(ih, im, ch, cm)
     sched.reschedule(ih, im, ch, cm)
+    return RedirectResponse(url="/admin/settings", status_code=302)
+
+
+@router.post("/breaking-style/save")
+async def save_breaking_style(request: Request, _: None = Depends(_verify_admin)):
+    form = dict(await request.form())
+    mode = form.get("breaking_style_mode", "alternate")
+    if mode not in ("alternate", "stop", "extra"):
+        mode = "alternate"
+    await app_settings.save_breaking_style(mode)
     return RedirectResponse(url="/admin/settings", status_code=302)
 
 

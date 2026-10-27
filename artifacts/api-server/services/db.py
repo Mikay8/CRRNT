@@ -550,3 +550,16 @@ async def delete_feedback(feedback_id: str) -> None:
     sql = "DELETE FROM beta_feedback WHERE id = $1::uuid"
     async with get_pool().acquire() as conn:
         await conn.execute(sql, feedback_id)
+
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+async def get_recently_inserted_stories(cutoff, limit: int = 50) -> list[dict[str, Any]]:
+    """Stories inserted (created_at) after `cutoff`, newest-published first —
+    the feed's own order, so stories[0] is the Morning Edition's top story."""
+    sql = (
+        "SELECT * FROM stories WHERE created_at >= $1 "
+        "ORDER BY published_at DESC NULLS LAST LIMIT $2"
+    )
+    async with get_pool().acquire() as conn:
+        rs = await conn.fetch(sql, cutoff, limit)
+    return _rows(rs)

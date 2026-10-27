@@ -132,6 +132,20 @@ async def register_push_token(body: PushTokenBody) -> dict:
         return {"status": "ok"}
 
 
+@app.delete("/api/push-token", tags=["push"])
+async def unregister_push_token(body: PushTokenBody) -> dict:
+    """In-app off switch: deletes this device's token so the server stops
+    sending it pushes. Deliberately unauthenticated like registration —
+    beta testers are guests, and a token is only ever its own device's."""
+    try:
+        from services import push
+
+        await push.remove_token(body.token)
+        return {"status": "removed"}
+    except Exception:
+        return {"status": "ok"}
+
+
 # ── Beta feedback (Settings → suggestion box) ────────────────────────────────
 # Deliberately unauthenticated: beta testers are guests (accounts are off),
 # so there is no token to check. Messages are length-capped and stored in the

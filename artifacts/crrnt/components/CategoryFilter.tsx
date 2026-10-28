@@ -1,5 +1,6 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
+import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { CATEGORIES, CATEGORY_ICONS, type Category } from "@/constants/categories";
@@ -9,39 +10,54 @@ interface CategoryFilterProps {
   onChange: (next: Category | null) => void;
   /** Horizontal inset of the scrolling row (desktop header aligns it flush). */
   inset?: number;
-  /** "tabs" renders text tabs with an accent underline (mobile feed header). */
-  variant?: "chips" | "tabs";
+  /** "glass" renders each category as its own frosted pill (feed header). */
+  variant?: "chips" | "glass";
 }
 
 export function CategoryFilter({ active, onChange, inset = 16, variant = "chips" }: CategoryFilterProps) {
-  const { theme: palette } = useThemeContext();
+  const { theme: palette, isDark } = useThemeContext();
 
   const handle = (next: Category | null) => {
     Haptics.selectionAsync().catch(() => undefined);
     onChange(next);
   };
 
-  if (variant === "tabs") {
+  if (variant === "glass") {
     return (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.tabRow, { paddingHorizontal: inset }]}
+        contentContainerStyle={[styles.glassRow, { paddingHorizontal: inset }]}
       >
         {[{ key: null, label: "All", color: palette.text, icon: null }, ...CATEGORIES].map((cat) => {
           const on = active === cat.key;
-          const color = on ? cat.color : palette.textMuted;
+          // Labels stay in text colours for AA contrast (several category
+          // colours fall under 4.5:1 in light mode); the icon carries the colour.
+          const labelColor = on ? palette.text : palette.textMuted;
+          const iconColor = on ? cat.color : palette.textMuted;
           return (
             <Pressable
               key={cat.key ?? "all"}
               onPress={() => handle(cat.key)}
               accessibilityRole="tab"
               accessibilityState={{ selected: on }}
-              style={({ pressed }) => [styles.tab, { opacity: pressed ? 0.7 : 1 }]}
+              style={({ pressed }) => [
+                styles.glassTab,
+                cat.icon ? null : styles.glassTabNoIcon,
+                { borderColor: on ? palette.text + "33" : palette.borderStrong + "AA", opacity: pressed ? 0.7 : 1 },
+              ]}
             >
-              {cat.icon ? <Ionicons name={CATEGORY_ICONS[cat.icon]} size={14} color={color} /> : null}
-              <Text style={[styles.label, { color }]}>{cat.label}</Text>
-              {on ? <View style={[styles.underline, { backgroundColor: palette.accent }]} /> : null}
+              <BlurView
+                intensity={Platform.OS === "android" ? 60 : 40}
+                tint={isDark ? "dark" : "light"}
+                experimentalBlurMethod="dimezisBlurView"
+                style={StyleSheet.absoluteFill}
+              />
+              {/* Near-opaque fill so labels keep their contrast over any photo. */}
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.bgElevated + "F0" }]} />
+              {on ? <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.text + "1F" }]} /> : null}
+              {cat.icon ? <Ionicons name={CATEGORY_ICONS[cat.icon]} size={14} color={iconColor} /> : null}
+              <Text style={[styles.label, { color: labelColor }]}>{cat.label}</Text>
             </Pressable>
           );
         })}
@@ -131,23 +147,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 0.2,
   },
-  tabRow: {
-    gap: 24,
+  glassRow: {
+    gap: 8,
+    paddingVertical: 4,
   },
-  tab: {
+  glassTab: {
+    height: 38,
+    overflow: "hidden",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingTop: 8,
-    paddingBottom: 11,
+    paddingLeft: 12,
+    paddingRight: 14,
+    borderRadius: 999,
+    borderWidth: 1,
   },
-  underline: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 3,
-    borderRadius: 2,
+  glassTabNoIcon: {
+    paddingHorizontal: 16,
   },
 });
 

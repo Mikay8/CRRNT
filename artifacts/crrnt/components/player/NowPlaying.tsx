@@ -150,7 +150,7 @@ function MobilePlayer() {
       top: 8 + (artTop - 8) * P,
       width: size,
       height: size,
-      borderRadius: aS / 4 + (22 - aS / 4) * P,
+      borderRadius: aS / 2 + (22 - aS / 2) * P,
       shadowOpacity: P * 0.5,
     };
   });

@@ -42,6 +42,34 @@ test.describe("feed header", () => {
     await expect(allTab).toBeInViewport();
     expect(tabsAfter.y).toBeLessThan(tabsBefore.y - 20);
   });
+
+  test("mini player artwork is a circle", async ({ page }) => {
+    await page.goto("/");
+    await page.getByLabel("Play story").first().click({ timeout: 15_000 });
+    // On phone web the tap can also open the story page; come back to the feed.
+    if (!(await page.getByRole("tab", { name: "All" }).isVisible())) await page.goBack();
+    await expect(page.getByRole("tab", { name: "All" })).toBeVisible({ timeout: 10_000 });
+    const openPlayer = page.getByLabel("Open player");
+    await expect(openPlayer).toBeInViewport({ timeout: 10_000 });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: "test-results/mini-player.png" });
+
+    // The artwork is the first square box inside the mini bar's container.
+    // The artwork sits at the bar's left edge: the square box whose left is
+    // 8px inside the bar.
+    const radiusRatio = await openPlayer.evaluate((el) => {
+      const bar = el.parentElement!.parentElement!;
+      const b = bar.getBoundingClientRect();
+      for (const n of Array.from(bar.children) as HTMLElement[]) {
+        const r = n.getBoundingClientRect();
+        if (Math.abs(r.left - b.left - 8) < 2 && r.width > 30 && Math.abs(r.width - r.height) < 1) {
+          return parseFloat(getComputedStyle(n).borderTopLeftRadius) / r.width;
+        }
+      }
+      return -1;
+    });
+    expect(radiusRatio).toBeGreaterThanOrEqual(0.49);
+  });
 });
 
 test.describe("feed header (desktop web)", () => {

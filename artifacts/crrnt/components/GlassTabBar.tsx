@@ -4,12 +4,15 @@ import type { Tabs } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Easing,
   interpolate,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { NAV, useNavChrome, useTabBarBottom } from "@/contexts/NavChromeContext";
@@ -31,6 +34,10 @@ const OVERSHOOT = Easing.bezier(0.3, 1.15, 0.5, 1);
 const FAST = { duration: 260, easing: OVERSHOOT };
 const SLOW = { duration: 500, easing: OVERSHOOT };
 const PAD = 5;
+// Sliding a finger along the bar: the pill lifts and swells a little, then
+// springs into the tab it's released over.
+const SETTLE = { stiffness: 380, damping: 26, mass: 1 };
+const SWELL = 0.14;
 
 function TabButton({
   label,
@@ -115,6 +122,12 @@ export default function GlassTabBar({ state, descriptors, emitter, navigateToTab
   const indL = useSharedValue(PAD + state.index * tabW);
   const indR = useSharedValue(PAD + (state.index + 1) * tabW);
   const prevIndex = useRef(state.index);
+  // Scrub state: `lift` 0 → 1 while a finger slides along the bar, `stretch`
+  // grows with its speed, and `scrubTab` is the tab under it (null at rest).
+  const lift = useSharedValue(0);
+  const stretch = useSharedValue(0);
+  const hoverTab = useSharedValue(state.index);
+  const [scrubTab, setScrubTab] = useState<number | null>(null);
   // Guard against rapid taps interleaving expand/navigate events and
   // hammering the navigator mid-transition (TestFlight blank-screen cause).
   // Only actual navigations stamp it; expand taps and focused taps don't,
@@ -141,6 +154,9 @@ export default function GlassTabBar({ state, descriptors, emitter, navigateToTab
     return { transform: [{ translateX: collapse.value * (NAV.tabH / 2 - center) }] };
   });
 
+  const activeTint = theme.accent;
+  const idleTint = theme.textMuted;
+
   // The active-tab pill fades out as the bar collapses, so the collapsed
   // feed button is just the glass circle and the icon — no blue disc
   // behind it making the icon look off-centre.
@@ -150,11 +166,69 @@ export default function GlassTabBar({ state, descriptors, emitter, navigateToTab
     const half = NAV.tabH / 2 - PAD;
     const left = interpolate(c, [0, 1], [indL.value, center - half]);
     const right = interpolate(c, [0, 1], [indR.value, center + half]);
-    return { left, width: right - left, opacity: interpolate(c, [0, 1], [1, 0]) };
+    const l = lift.value;
+    const st = stretch.value;
+    return {
+      left,
+      width: right - left,
+      opacity: interpolate(c, [0, 1], [1, 0]),
+      transform: [{ scaleY: 1 + l * 0.1 - st * 0.12 }],
+      backgroundColor: l > 0 ? activeTint + (l > 0.5 ? "40" : "33") : activeTint + "29",
+    };
   });
 
-  const activeTint = theme.accent;
-  const idleTint = theme.textMuted;
+  const goTo = (i: number) => {
+    const route = state.routes[i];
+    const focused = i === state.index;
+    if (!focused && Date.now() - lastNavAt.current < 300) {
+      return;
+    }
+    const event = emitter.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
+    if (!focused && !event.defaultPrevented) {
+      lastNavAt.current = Date.now();
+      Haptics.selectionAsync().catch(() => undefined);
+      navigateToTab(route.key);
+    }
+  };
+
+  const onScrubTab = (i: number | null) => {
+    if (i !== null) Haptics.selectionAsync().catch(() => undefined);
+    setScrubTab(i);
+  };
+
+  // Horizontal drags only, so plain taps still reach the tab buttons.
+  const scrub = Gesture.Pan()
+    .enabled(!isCollapsed)
+    .activeOffsetX([-8, 8])
+    .failOffsetY([-20, 20])
+    .onStart((e) => {
+      lift.value = withSpring(1, SETTLE);
+      hoverTab.value = Math.min(count - 1, Math.max(0, Math.floor((e.x - PAD) / tabW)));
+      runOnJS(onScrubTab)(hoverTab.value);
+    })
+    .onUpdate((e) => {
+      const center = Math.min(PAD + (count - 0.5) * tabW, Math.max(PAD + tabW / 2, e.x));
+      stretch.value = Math.min(Math.abs(e.velocityX) / 4000, 0.3);
+      const half = (tabW / 2) * (1 + SWELL + stretch.value);
+      indL.value = center - half;
+      indR.value = center + half;
+      const tab = Math.min(count - 1, Math.max(0, Math.floor((center - PAD) / tabW)));
+      if (tab !== hoverTab.value) {
+        hoverTab.value = tab;
+        runOnJS(onScrubTab)(tab);
+      }
+    })
+    // onEnd, not onFinalize: a plain tap never activates the pan and must not land here.
+    .onEnd(() => {
+      const tab = hoverTab.value;
+      lift.value = withSpring(0, SETTLE);
+      stretch.value = withSpring(0, SETTLE);
+      indL.value = withSpring(PAD + tab * tabW, SETTLE);
+      indR.value = withSpring(PAD + (tab + 1) * tabW, SETTLE);
+      runOnJS(onScrubTab)(null);
+      runOnJS(goTo)(tab);
+    });
+
 
   return (
     <Animated.View
@@ -167,11 +241,13 @@ export default function GlassTabBar({ state, descriptors, emitter, navigateToTab
         style={StyleSheet.absoluteFill}
       />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.bgElevated + (isDark ? "B8" : "C8") }]} />
+      <GestureDetector gesture={scrub}>
       <Animated.View style={[styles.row, { width: barW }, rowStyle]}>
-        <Animated.View style={[styles.indicator, { backgroundColor: activeTint + "29" }, indicatorStyle]} />
+        <Animated.View style={[styles.indicator, indicatorStyle]} />
         <View style={{ width: PAD }} />
         {state.routes.map((route, i) => {
-          const focused = i === state.index;
+          // While scrubbing, the tab under the finger lights up instead.
+          const focused = i === (scrubTab ?? state.index);
           const { options } = descriptors[route.key];
           const label = typeof options.title === "string" ? options.title : route.name;
           const onPress = () => {
@@ -179,15 +255,7 @@ export default function GlassTabBar({ state, descriptors, emitter, navigateToTab
               setCollapsed(false);
               return;
             }
-            if (!focused && Date.now() - lastNavAt.current < 300) {
-              return;
-            }
-            const event = emitter.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
-            if (!focused && !event.defaultPrevented) {
-              lastNavAt.current = Date.now();
-              Haptics.selectionAsync().catch(() => undefined);
-              navigateToTab(route.key);
-            }
+            goTo(i);
           };
           return (
             <TabButton
@@ -203,6 +271,7 @@ export default function GlassTabBar({ state, descriptors, emitter, navigateToTab
           );
         })}
       </Animated.View>
+      </GestureDetector>
     </Animated.View>
   );
 }

@@ -18,6 +18,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from "react-native-reanimated";
+import { BlurView } from "expo-blur";
 import { router } from "expo-router";
 import {
   useListStories,
@@ -174,7 +175,11 @@ export default function FeedScreen() {
               ) : null}
             </>
           }
-          below={<CategoryFilter active={category} onChange={setCategory} inset={0} variant="tabs" />}
+          below={
+            <View style={styles.desktopPills}>
+              <CategoryFilter active={category} onChange={setCategory} inset={0} variant="glass" />
+            </View>
+          }
         />
         <StoryGrid
           stories={stories}
@@ -233,7 +238,17 @@ export default function FeedScreen() {
           </View>
         </Animated.View>
 
-        <CategoryFilter active={category} onChange={pickCategory} inset={hPad} variant="tabs" />
+        {/* Backdrop band so the pills never sit straight on a bright photo. */}
+        <View style={styles.pillBand}>
+          <BlurView
+            intensity={40}
+            tint={isDark ? "dark" : "light"}
+            experimentalBlurMethod="dimezisBlurView"
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.bg + "EB" }]} />
+          <CategoryFilter active={category} onChange={pickCategory} inset={12} variant="glass" />
+        </View>
       </Animated.View>
       {/* Opaque strip over the status-bar area for the logo row to slide under. */}
       <View style={[styles.statusCover, { height: statusPad }]} />
@@ -279,19 +294,22 @@ function createStyles(palette: ThemeColors) {
       left: 0,
       right: 0,
       zIndex: 10,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: palette.divider,
-      backgroundColor: palette.bg,
     },
     titleRow: {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      paddingBottom: 8,
+      paddingBottom: 10,
+      backgroundColor: palette.bg,
     },
     headerActions: {
       flexDirection: "row",
       alignItems: "center",
+    },
+    pillBand: {
+      paddingBottom: 6,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.divider,
     },
     statusCover: {
       position: "absolute",
@@ -319,6 +337,10 @@ function createStyles(palette: ThemeColors) {
       fontFamily: "Inter_600SemiBold",
       fontSize: 13,
       color: "#fff",
+    },
+    desktopPills: {
+      paddingTop: 14,
+      paddingBottom: 14,
     },
     loading: {
       paddingVertical: 80,

@@ -67,11 +67,19 @@ function buildSpeechText(story: Story): string {
  * carry for media_url) fails that conversion and throws — which used to
  * abort the whole setActiveForLockScreen call, leaving audio playing with
  * Control Center showing "Not Playing". Null/undefined is fine; "" is not.
+ * Stories with no usable media_url fall back to the hosted app icon, so the
+ * card always shows art: expo-audio's native loader fetches over the
+ * network only, so a bundled asset can't be used here (and the site's
+ * favicon is ICO, which iOS can't decode). Swap for a crrnt-news.com-hosted
+ * icon later if preferred.
  */
+const FALLBACK_ARTWORK_URL =
+  "https://raw.githubusercontent.com/Mikay8/CRRNT/main/artifacts/crrnt/assets/images/icon.png";
+
 function buildLockScreenMetadata(story: Story) {
   const rawArtwork = (story as any).media_url as string | null | undefined;
   const artworkUrl =
-    rawArtwork && /^https?:\/\//i.test(rawArtwork) ? rawArtwork : undefined;
+    rawArtwork && /^https?:\/\//i.test(rawArtwork) ? rawArtwork : FALLBACK_ARTWORK_URL;
   return {
     title: story.title,
     artist: "CRRNT",
@@ -84,6 +92,11 @@ async function configureAudioSession() {
     await setAudioModeAsync({
       playsInSilentMode: true,
       shouldPlayInBackground: true,
+      // Required for lock-screen association: without doNotMix the session
+      // stays mixWithOthers and iOS may not attach Control Center / lock
+      // screen controls to this player (audio plays, Center shows "Not
+      // Playing"). See Expo docs note on setActiveForLockScreen.
+      interruptionMode: "doNotMix",
     });
   } catch {
     // Non-critical — continue without it

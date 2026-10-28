@@ -92,8 +92,8 @@ function MobilePlayer() {
   }, [isPlayerOpen, closePlayer]);
 
   const artTop = insets.top + 84;
-  const artSize = Math.min(W - 64, H * 0.4);
-  const bodyTop = artTop + artSize + 36;
+  const artSize = Math.min(W - 64, H * 0.34);
+  const bodyTop = artTop + artSize + 24;
   const fullRadius = Platform.OS === "ios" ? 44 : 0;
 
   const drag = Gesture.Pan()
@@ -294,7 +294,7 @@ function MobilePlayer() {
 
             <View style={[styles.fullBody, { top: bodyTop }]}>
               <View>
-                <Text style={styles.fullTitle} numberOfLines={3}>
+                <Text style={styles.fullTitle} numberOfLines={2}>
                   {story?.title}
                 </Text>
                 <Text style={styles.fullSource}>
@@ -448,8 +448,8 @@ function createStyles(theme: ThemeColors) {
       letterSpacing: 1.5,
       color: theme.textMuted,
     },
-    fullBody: { position: "absolute", left: 32, right: 32, gap: 20 },
-    fullTitle: { fontFamily: "Inter_700Bold", fontSize: 22, lineHeight: 27, color: theme.text },
+    fullBody: { position: "absolute", left: 32, right: 32, gap: 16 },
+    fullTitle: { fontFamily: "Inter_700Bold", fontSize: 20, lineHeight: 25, color: theme.text },
     fullSource: { fontFamily: "Inter_400Regular", fontSize: 14, color: theme.textMuted, marginTop: 6 },
     controls: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 36 },
     bigPlay: {

@@ -47,6 +47,21 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter(prefix="/admin", tags=["admin-portal"])
 _basic = HTTPBasic(auto_error=False)
 
+# The valid story categories, shared by the stories filter dropdown and the
+# category edit control (and its validation). Kept in sync with ingestion's
+# category set; "all" is a filter pseudo-value, never a stored category.
+CATEGORIES = [
+    "celebrity",
+    "tech",
+    "government",
+    "sports",
+    "business",
+    "science",
+    "entertainment",
+    "world",
+    "health",
+]
+
 # Wrong-password lockout: 10 failures per IP in 15 minutes blocks that IP
 # until the oldest failure ages out. A successful login clears the count.
 _failed_logins = rate_limit.SlidingWindowLimiter(limit=10, window=15 * 60.0)
@@ -172,17 +187,7 @@ async def admin_stories(
             "stories": stories,
             "total": total,
             "filter_category": category or "",
-            "categories": [
-                "celebrity",
-                "tech",
-                "government",
-                "sports",
-                "business",
-                "science",
-                "entertainment",
-                "world",
-                "health",
-            ],
+            "categories": CATEGORIES,
         },
     )
 
@@ -190,6 +195,19 @@ async def admin_stories(
 @router.post("/stories/{story_id}/delete")
 async def delete_story(story_id: str, _: None = Depends(_verify_admin)):
     await _safe_db(db.delete_story(story_id), None)
+    return RedirectResponse(url="/admin/stories", status_code=302)
+
+
+@router.post("/stories/{story_id}/category")
+async def update_story_category(
+    story_id: str,
+    category: str = Form(...),
+    _: None = Depends(_verify_admin),
+):
+    # Only accept known categories; anything else (e.g. a tampered form)
+    # leaves the story unchanged rather than storing a bad value.
+    if category in CATEGORIES:
+        await _safe_db(db.update_story_category(story_id, category), None)
     return RedirectResponse(url="/admin/stories", status_code=302)
 
 

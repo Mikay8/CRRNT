@@ -140,13 +140,16 @@ export default function GlassTabBar({ state, descriptors, emitter, navigateToTab
     return { transform: [{ translateX: collapse.value * (NAV.tabH / 2 - center) }] };
   });
 
+  // The active-tab pill fades out as the bar collapses, so the collapsed
+  // feed button is just the glass circle and the icon — no blue disc
+  // behind it making the icon look off-centre.
   const indicatorStyle = useAnimatedStyle(() => {
     const c = collapse.value;
     const center = PAD + index.value * tabW + tabW / 2;
     const half = NAV.tabH / 2 - PAD;
     const left = interpolate(c, [0, 1], [indL.value, center - half]);
     const right = interpolate(c, [0, 1], [indR.value, center + half]);
-    return { left, width: right - left };
+    return { left, width: right - left, opacity: interpolate(c, [0, 1], [1, 0]) };
   });
 
   const activeTint = theme.accent;

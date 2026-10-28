@@ -7,6 +7,12 @@ Pass 1 — Claude extracts per story:
 
 Pass 2 — Grok searches X directly (x_search tool) and analyzes sentiment:
   sentimentLabel, sentimentScore, peopleSay
+
+Pass 2b — StockTwits ticker sentiment (cheap replacement for Pass 2, used
+  only when a story HAS a ticker): pull the ticker's recent StockTwits
+  stream (public endpoint, no auth), keep only the posts that actually
+  relate to THIS story, and let Haiku analyze those into the same
+  sentimentLabel / sentimentScore / peopleSay / featuredPosts fields.
 """
 from __future__ import annotations
 
@@ -18,6 +24,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+import httpx
 from anthropic import AsyncAnthropic
 from xai_sdk import AsyncClient as AsyncXaiClient
 from xai_sdk.chat import system as xai_system, user as xai_user
@@ -352,6 +359,240 @@ def _parse_json(text: str) -> dict[str, Any]:
     return {}
 
 
+# ── Pass 2b: StockTwits ticker sentiment ────────────────────────────────
+# Cheap replacement for the Grok pass, used only when a story HAS a ticker:
+#   1. Pull the ticker's recent StockTwits stream (public endpoint, no auth).
+#   2. Keep only the posts that actually relate to THIS story. A ticker
+#      stream is about the ticker in general, so the ticker itself never
+#      counts as a relevance hit — otherwise every post would match and the
+#      sentiment would describe the ticker, not the story.
+#   3. Haiku reads the survivors and returns the same sentiment fields the
+#      Grok pass returns, so the DB and the app need no changes.
+# Featured-post URLs point at StockTwits, and the prompt forbids claiming
+# they are X/Twitter posts. If nothing relevant survives, the story gets
+# "not enough data", exactly like a Grok pass that found nothing.
+STOCKTWITS_STREAM_URL = (
+    "https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
+)
+STOCKTWITS_POST_URL = "https://stocktwits.com/{username}/status/{message_id}"
+_SOCIAL_STREAM_LIMIT = 30
+_SOCIAL_MAX_POSTS = 12
+_SOCIAL_KEYWORD_STOPWORDS = {
+    "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with",
+    "by", "at", "from", "as", "is", "are", "was", "were", "it", "its",
+    "this", "that", "after", "amid", "into", "over", "per", "via",
+    "says", "say", "new", "more", "than", "but", "not", "has", "have",
+}
+
+SOCIAL_SENTIMENT_SYSTEM_PROMPT = (
+    "You analyze social media sentiment about news stories for CRRNT - an app "
+    "that makes the news feel personal and real.\n\n"
+    "The posts below come from StockTwits users discussing this ticker. "
+    "First decide which posts are actually about THIS story, not just the "
+    "ticker in general - ignore posts that only mention the ticker without "
+    "touching the story's topic. Then write a casual honest summary of how "
+    "everyday people are actually reacting in the relevant posts - not Wall "
+    "Street, not pundits. How are real people feeling? Angry? Worried? "
+    "Relieved? Unbothered? Be direct and specific. Avoid corporate tone "
+    "entirely. Never claim these are X/Twitter posts - they are StockTwits "
+    "posts, and the summary must not name a platform at all.\n\n"
+    "IMPORTANT: Use plain ASCII text only. No smart quotes, no curly quotes, "
+    "no em dashes, no en dashes, no ellipsis characters, no Unicode "
+    "punctuation. Use straight quotes (\"), hyphens (-), and three dots "
+    "(...) instead.\n\n"
+    "sentimentLabel must be exactly one of: "
+    "'mostly positive' | 'mostly frustrated' | 'split' | 'surprisingly calm' "
+    "| 'not enough data'\n\n"
+    "Only use 'not enough data' if none of the supplied posts are actually "
+    "about this story. Finding some relevant posts, even a small number, is "
+    "enough to make a call. Do not use 'not enough data' just because "
+    "opinions are mixed - that is what 'split' is for.\n\n"
+    "sentimentScore is a float from -1.0 (very negative) to 1.0 (very "
+    "positive), or null if sentimentLabel is 'not enough data'.\n\n"
+    "peopleSay (2-3 sentences, max 280 characters): capture the actual vibe "
+    "of the conversation in plain casual language. What is the dominant "
+    "feeling and why? If opinions are split, say who is on each side in "
+    "plain terms. Null if sentimentLabel is 'not enough data'.\n\n"
+    "featuredPosts: an array of 2-4 posts from the supplied list that best "
+    "represent the range of reaction (pick ones that support your peopleSay "
+    "summary - if opinions are split, include posts from both sides). Empty "
+    "array if sentimentLabel is 'not enough data'. Each item is an object "
+    "with keys: handle (string, exactly as given - never invent one), "
+    "text (string, max 200 characters - quote or closely paraphrase what "
+    "they actually said, do not fabricate), url (string, exactly as given "
+    "for this specific post - never invent one).\n\n"
+    "ALWAYS reply with a single JSON object - no prose, no markdown - "
+    "with keys: sentimentLabel (string), sentimentScore (float|null), "
+    "peopleSay (string|null), featuredPosts (array)."
+)
+
+
+def _social_keywords(story: dict[str, Any]) -> set[str]:
+    """Keywords that tie a post to THIS story (never the ticker itself)."""
+    raw_parts = [story.get("title") or "", story.get("companyName") or ""]
+    raw_parts.extend(story.get("topics") or [])
+    raw_parts.extend(story.get("people") or [])
+    keywords: set[str] = set()
+    for part in raw_parts:
+        for token in re.findall(r"[a-z0-9]+", str(part).lower()):
+            if len(token) >= 3 and token not in _SOCIAL_KEYWORD_STOPWORDS:
+                keywords.add(token)
+    ticker = (story.get("ticker") or "").strip().lower()
+    if ticker:
+        keywords.discard(ticker)
+        keywords.discard(ticker.replace(".", ""))
+    return keywords
+
+
+async def fetch_stocktwits_posts(ticker: str) -> list[dict[str, Any]]:
+    """Recent StockTwits messages for a ticker (public endpoint, no auth)."""
+    url = STOCKTWITS_STREAM_URL.format(ticker=ticker)
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.get(url, params={"limit": _SOCIAL_STREAM_LIMIT})
+            if resp.status_code != 200:
+                log.warning("StockTwits stream %s -> HTTP %s", ticker, resp.status_code)
+                return []
+            data = resp.json()
+    except Exception as exc:
+        log.warning("StockTwits fetch failed for %s: %s", ticker, exc)
+        return []
+    posts: list[dict[str, Any]] = []
+    for msg in data.get("messages") or []:
+        user = msg.get("user") or {}
+        handle = (user.get("username") or "").strip()
+        text = (msg.get("body") or "").strip()
+        msg_id = msg.get("id")
+        if not (handle and text and msg_id):
+            continue
+        posts.append({
+            "handle": handle,
+            "text": text,
+            "url": STOCKTWITS_POST_URL.format(username=handle, message_id=msg_id),
+            "created_at": msg.get("created_at") or "",
+        })
+    return posts
+
+
+def select_relevant_posts(
+    posts: list[dict[str, Any]],
+    story: dict[str, Any],
+    max_posts: int = _SOCIAL_MAX_POSTS,
+) -> list[dict[str, Any]]:
+    """Keep only posts that mention the story's topic, newest-first on ties."""
+    keywords = _social_keywords(story)
+    if not keywords:
+        return []
+    scored: list[tuple[int, str, dict[str, Any]]] = []
+    for post in posts:
+        tokens = set(re.findall(r"[a-z0-9]+", post.get("text", "").lower()))
+        hits = len(keywords & tokens)
+        if hits:
+            scored.append((hits, post.get("created_at") or "", post))
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [post for _, _, post in scored[:max_posts]]
+
+
+async def analyze_social_sentiment(
+    story: dict[str, Any], posts: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Haiku pass over the relevant posts; same output shape as Grok."""
+    title = story.get("title") or ""
+    summary = story.get("storySummary") or story.get("description") or ""
+    listed = "\n".join(
+        f"{i + 1}. @{p['handle']}: {p['text'][:300]} (url: {p['url']})"
+        for i, p in enumerate(posts)
+    )
+    user_prompt = (
+        f"Story: {title}\nSummary: {summary[:300]}\n\n"
+        f"Posts about this ticker:\n{listed}\n\n"
+        "Decide which posts are actually about this story, then reply "
+        "with JSON only."
+    )
+    try:
+        client = _get_client()
+        msg = await client.messages.create(
+            model=MODEL,
+            max_tokens=1000,
+            temperature=0,
+            system=SOCIAL_SENTIMENT_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        text = "".join(
+            b.text for b in msg.content if getattr(b, "type", "") == "text"
+        )
+        parsed = _parse_json(text)
+    except Exception as exc:
+        log.warning("Social sentiment failed for '%s': %s", title[:60], exc)
+        parsed = {}
+
+    label = parsed.get("sentimentLabel") or "not enough data"
+    score = parsed.get("sentimentScore")
+    if label == "not enough data":
+        score = None
+    elif score is not None:
+        try:
+            score = max(-1.0, min(1.0, float(score)))
+        except (TypeError, ValueError):
+            score = None
+
+    allowed_urls = {p["url"] for p in posts}
+    featured_posts: list[dict[str, str]] = []
+    if label != "not enough data":
+        for post in (parsed.get("featuredPosts") or [])[:4]:
+            if not isinstance(post, dict):
+                continue
+            url = (post.get("url") or "").strip()
+            handle = _sanitize((post.get("handle") or "").strip().lstrip("@"))
+            text = _sanitize((post.get("text") or "").strip())[:200]
+            if not (url and handle and text):
+                continue
+            if url not in allowed_urls:
+                # Haiku cited a post it was not given - drop it.
+                continue
+            featured_posts.append({"handle": handle, "text": text, "url": url})
+
+    return {
+        "sentimentLabel": label,
+        "sentimentScore": score,
+        "peopleSay": _sanitize(parsed.get("peopleSay") or "") or None,
+        "featuredPosts": featured_posts,
+    }
+
+
+async def enrich_story_social(story: dict[str, Any]) -> dict[str, Any]:
+    """Pass 2b: StockTwits fetch + relevance filter + Haiku sentiment."""
+    title = story.get("title") or ""
+    ticker = (story.get("ticker") or "").strip().upper()
+    result = {
+        "sentimentLabel": "not enough data",
+        "sentimentScore": None,
+        "peopleSay": None,
+        "featuredPosts": [],
+    }
+    if not ticker:
+        story.update(result)
+        return story
+    posts = await fetch_stocktwits_posts(ticker)
+    relevant = select_relevant_posts(posts, story)
+    if not relevant:
+        log.info("Social sentiment: no relevant posts for '%s'", title[:60])
+        story.update(result)
+        return story
+    log.info(
+        "Social sentiment: %d/%d relevant posts for '%s'",
+        len(relevant), len(posts), title[:60],
+    )
+    analyzed = await analyze_social_sentiment(story, relevant)
+    story.update({
+        "sentimentLabel": analyzed["sentimentLabel"],
+        "sentimentScore": analyzed["sentimentScore"],
+        "peopleSay": analyzed["peopleSay"],
+        "featuredPosts": analyzed["featuredPosts"],
+    })
+    return story
+
+
 def _is_buzzfeed_quiz(story: dict[str, Any]) -> bool:
     source = (story.get("source") or "").strip().lower()
     title = (story.get("title") or "").strip().lower()
@@ -450,7 +691,11 @@ async def enrich_all(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return s
         if (s.get("category") or "").strip().lower() in _SENTIMENT_SKIP_CATEGORIES:
             return s
-        if not (s.get("ticker") or s.get("people") or s.get("topics")):
+        if s.get("ticker"):
+            # Ticker stories use the StockTwits + Haiku flow, not Grok.
+            async with sem2:
+                return await enrich_story_social(s)
+        if not (s.get("people") or s.get("topics")):
             return s
         async with sem2:
             return await enrich_story_tweets(s)

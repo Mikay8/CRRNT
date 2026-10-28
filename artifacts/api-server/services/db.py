@@ -103,6 +103,15 @@ async def delete_story(story_id: str) -> None:
         await conn.execute("DELETE FROM stories WHERE id = $1", story_id)
 
 
+async def update_story_category(story_id: str, category: str) -> None:
+    # Category is a CRRNT-side label, not source content, so editing it
+    # needs no audio regeneration: the TTS script never mentions it.
+    async with get_pool().acquire() as conn:
+        await conn.execute(
+            "UPDATE stories SET category = $2 WHERE id = $1", story_id, category
+        )
+
+
 async def get_stories(
     *,
     category: Optional[str] = None,

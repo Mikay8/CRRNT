@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -273,6 +273,108 @@ export function StoryCard({ story, variant = "list" }: StoryCardProps) {
     router.push({ pathname: "/story/[id]", params: { id: story.id } });
   };
 
+  const cardBody = (
+    <Animated.View
+      style={[styles.card, hovered && styles.cardHovered, cardStyle]}
+      onLayout={(e) => {
+        cardH.value = e.nativeEvent.layout.height;
+      }}
+    >
+      <Pressable
+        onPress={onPress}
+        onHoverIn={() => onHover(true)}
+        onHoverOut={() => onHover(false)}
+        style={({ pressed }) => [feature && styles.featureRow, { opacity: pressed ? 0.85 : 1 }]}
+      >
+        <View style={feature ? styles.featureMediaWrap : undefined}>
+          <StoryImage
+            uri={story.media_url}
+            category={story.category}
+            style={[styles.media, feature && styles.featureMedia]}
+          />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.stamp,
+              { borderColor: color, [dir >= 0 ? "left" : "right"]: 18 },
+              stampStyle,
+            ]}
+          >
+            <Text style={[styles.stampText, { color }]}>{action.label.toUpperCase()}</Text>
+          </Animated.View>
+        </View>
+
+        <View style={[styles.body, feature && styles.featureBody]}>
+          <View style={styles.row}>
+            <View style={styles.rowLeft}>
+              <Pressable
+                onPress={handlePlayButton}
+                hitSlop={6}
+                accessibilityLabel={desktop && isCurrent && isPlaying ? "Pause story" : "Play story"}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons
+                  name={desktop && isCurrent && isPlaying ? "pause-circle" : "play-circle"}
+                  size={22}
+                  color="#22C55E"
+                />
+              </Pressable>
+              <CategoryBadge category={story.category} />
+            </View>
+            <View style={styles.actions}>
+              {ticker ? (
+                <View style={styles.tickerPill}>
+                  <Text style={styles.tickerText}>${ticker}</Text>
+                </View>
+              ) : null}
+              {desktop && !(isCurrent && isPlaying) ? (
+                <Pressable
+                  onPress={handleQueueButton}
+                  onHoverIn={() => onHover(true)}
+                  style={({ hovered: btnHovered }) => [
+                    styles.queueBtn,
+                    { opacity: hovered || queued ? 1 : 0 },
+                    btnHovered && { backgroundColor: palette.text + "12" },
+                  ]}
+                  accessibilityLabel={queued ? "Remove from queue" : "Add to queue"}
+                >
+                  <Ionicons name="add" size={20} color={queued ? QUEUE_AMBER : palette.textDim} />
+                </Pressable>
+              ) : null}
+              {canSave ? <SaveButton story={story} /> : null}
+            </View>
+          </View>
+
+          <Text style={[styles.title, feature && styles.featureTitle]} numberOfLines={feature ? 4 : 3}>
+            {story.title}
+          </Text>
+
+          <Text style={[styles.insight, feature && styles.featureInsight]} numberOfLines={feature ? 3 : 2}>
+            {story.one_liner}
+          </Text>
+
+          <View style={styles.footer}>
+            <Text style={styles.source} numberOfLines={1}>
+              {displaySource}
+            </Text>
+            <View style={styles.footerRight}>
+              {isToday(timestamp) ? (
+                <View style={styles.todayBadge}>
+                  <Text style={styles.todayBadgeText}>Today</Text>
+                </View>
+              ) : null}
+              {timestamp ? (
+                <Text style={styles.timestamp}>
+                  {formatRelativeTime(timestamp)}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+
   return (
     <View style={desktop ? styles.gridContainer : styles.swipeContainer}>
       <Animated.View
@@ -295,107 +397,7 @@ export function StoryCard({ story, variant = "list" }: StoryCardProps) {
         </Animated.View>
       </Animated.View>
 
-      <GestureDetector gesture={swipe}>
-        <Animated.View
-          style={[styles.card, hovered && styles.cardHovered, cardStyle]}
-          onLayout={(e) => {
-            cardH.value = e.nativeEvent.layout.height;
-          }}
-        >
-          <Pressable
-            onPress={onPress}
-            onHoverIn={() => onHover(true)}
-            onHoverOut={() => onHover(false)}
-            style={({ pressed }) => [feature && styles.featureRow, { opacity: pressed ? 0.85 : 1 }]}
-          >
-            <View style={feature ? styles.featureMediaWrap : undefined}>
-              <StoryImage
-                uri={story.media_url}
-                category={story.category}
-                style={[styles.media, feature && styles.featureMedia]}
-              />
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.stamp,
-                  { borderColor: color, [dir >= 0 ? "left" : "right"]: 18 },
-                  stampStyle,
-                ]}
-              >
-                <Text style={[styles.stampText, { color }]}>{action.label.toUpperCase()}</Text>
-              </Animated.View>
-            </View>
-
-            <View style={[styles.body, feature && styles.featureBody]}>
-              <View style={styles.row}>
-                <View style={styles.rowLeft}>
-                  <Pressable
-                    onPress={handlePlayButton}
-                    hitSlop={6}
-                    accessibilityLabel={desktop && isCurrent && isPlaying ? "Pause story" : "Play story"}
-                    style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-                  >
-                    <Ionicons
-                      name={desktop && isCurrent && isPlaying ? "pause-circle" : "play-circle"}
-                      size={22}
-                      color="#22C55E"
-                    />
-                  </Pressable>
-                  <CategoryBadge category={story.category} />
-                </View>
-                <View style={styles.actions}>
-                  {ticker ? (
-                    <View style={styles.tickerPill}>
-                      <Text style={styles.tickerText}>${ticker}</Text>
-                    </View>
-                  ) : null}
-                  {desktop && !(isCurrent && isPlaying) ? (
-                    <Pressable
-                      onPress={handleQueueButton}
-                      onHoverIn={() => onHover(true)}
-                      style={({ hovered: btnHovered }) => [
-                        styles.queueBtn,
-                        { opacity: hovered || queued ? 1 : 0 },
-                        btnHovered && { backgroundColor: palette.text + "12" },
-                      ]}
-                      accessibilityLabel={queued ? "Remove from queue" : "Add to queue"}
-                    >
-                      <Ionicons name="add" size={20} color={queued ? QUEUE_AMBER : palette.textDim} />
-                    </Pressable>
-                  ) : null}
-                  {canSave ? <SaveButton story={story} /> : null}
-                </View>
-              </View>
-
-              <Text style={[styles.title, feature && styles.featureTitle]} numberOfLines={feature ? 4 : 3}>
-                {story.title}
-              </Text>
-
-              <Text style={[styles.insight, feature && styles.featureInsight]} numberOfLines={feature ? 3 : 2}>
-                {story.one_liner}
-              </Text>
-
-              <View style={styles.footer}>
-                <Text style={styles.source} numberOfLines={1}>
-                  {displaySource}
-                </Text>
-                <View style={styles.footerRight}>
-                  {isToday(timestamp) ? (
-                    <View style={styles.todayBadge}>
-                      <Text style={styles.todayBadgeText}>Today</Text>
-                    </View>
-                  ) : null}
-                  {timestamp ? (
-                    <Text style={styles.timestamp}>
-                      {formatRelativeTime(timestamp)}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-            </View>
-          </Pressable>
-        </Animated.View>
-      </GestureDetector>
+      {Platform.OS === "web" ? cardBody : <GestureDetector gesture={swipe}>{cardBody}</GestureDetector>}
     </View>
   );
 }

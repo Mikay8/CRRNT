@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BackHandler, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -342,8 +342,22 @@ export default function QueueSheet() {
 
   const sheetY = useSharedValue(sheetH + 40);
 
+  // Mount only while open (or while the close animation is finishing), so a
+  // closed sheet can never peek into view. On web the sheet lives below the
+  // app container in the page flow, where a scrolled document can reveal it.
+  const [render, setRender] = useState(isQueueOpen);
+  const openRef = useRef(isQueueOpen);
+  openRef.current = isQueueOpen;
+
   useEffect(() => {
-    sheetY.value = withTiming(isQueueOpen ? 0 : sheetH + 40, QUEUE_EASE);
+    if (isQueueOpen) {
+      setRender(true);
+      sheetY.value = withTiming(0, QUEUE_EASE);
+    } else {
+      sheetY.value = withTiming(sheetH + 40, QUEUE_EASE, (done) => {
+        if (done && !openRef.current) runOnJS(setRender)(false);
+      });
+    }
   }, [isQueueOpen, sheetH, sheetY]);
 
   useEffect(() => {
@@ -375,6 +389,8 @@ export default function QueueSheet() {
   const dimStyle = useAnimatedStyle(() => ({
     opacity: 0.55 * Math.max(0, 1 - sheetY.value / sheetH),
   }));
+
+  if (!render) return null;
 
   return (
     <>

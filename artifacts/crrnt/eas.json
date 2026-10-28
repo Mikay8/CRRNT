@@ -9,7 +9,8 @@
       "distribution": "internal",
       "ios": {
         "simulator": false,
-        "buildConfiguration": "Debug"
+        "buildConfiguration": "Debug",
+        "image": "sdk-54"
       }
     },
     "simulator": {
@@ -17,13 +18,15 @@
       "distribution": "internal",
       "ios": {
         "simulator": true,
-        "buildConfiguration": "Debug"
+        "buildConfiguration": "Debug",
+        "image": "sdk-54"
       }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
-        "buildConfiguration": "Release"
+        "buildConfiguration": "Release",
+        "image": "sdk-54"
       },
       "env": {
         "EXPO_PUBLIC_DOMAIN": "api-server-production-1079.up.railway.app"
@@ -33,6 +36,9 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_DOMAIN": "api-server-production-1079.up.railway.app"
+      },
+      "ios": {
+        "image": "sdk-54"
       }
     }
   },

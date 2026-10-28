@@ -369,7 +369,7 @@ function ExtraButton({
 
 function createStyles(theme: ThemeColors) {
   return StyleSheet.create({
-    dim: { ...StyleSheet.absoluteFillObject, backgroundColor: "#05070B", zIndex: 20 },
+    dim: { ...StyleSheet.absoluteFill, backgroundColor: "#05070B", zIndex: 20 },
     shell: {
       position: "absolute",
       zIndex: 30,
@@ -389,7 +389,7 @@ function createStyles(theme: ThemeColors) {
       shadowRadius: 50,
     },
     artScrim: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: "rgba(0,0,0,0.35)",
       alignItems: "center",
       justifyContent: "center",

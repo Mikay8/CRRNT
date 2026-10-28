@@ -12,7 +12,7 @@ export function useIsDesktop(): boolean {
 export const DESKTOP = {
   margin: 20,
   navTabW: 96,
-  navW: 96 * 3 + 10,
+  navW: 96 * 4 + 10,
   barH: 64,
   barMaxW: 420,
   queueW: 380,

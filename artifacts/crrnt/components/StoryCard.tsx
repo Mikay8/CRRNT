@@ -447,7 +447,7 @@ function createStyles(palette: ThemeColors) {
       justifyContent: "center",
     },
     actionBg: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       borderRadius: 18,
       flexDirection: "row",
       alignItems: "center",

@@ -20,6 +20,7 @@ type TabBarProps = Parameters<NonNullable<React.ComponentProps<typeof Tabs>["tab
 
 const ICONS: Record<string, { on: keyof typeof Ionicons.glyphMap; off: keyof typeof Ionicons.glyphMap }> = {
   index: { on: "trending-up", off: "trending-up" },
+  search: { on: "search", off: "search-outline" },
   saved: { on: "bookmark", off: "bookmark-outline" },
   settings: { on: "person-circle", off: "person-circle-outline" },
 };
@@ -93,7 +94,10 @@ function TabButton({
   );
 }
 
-export default function GlassTabBar({ state, descriptors, navigation }: TabBarProps) {
+export default function GlassTabBar({ state, descriptors, emitter, navigateToTab }: TabBarProps) {
+  // SDK 58 replaced the tab bar's `navigation` prop with `emitter` and
+  // `navigateToTab`. useNavigation() here resolves to the parent navigator,
+  // which has no emit(), so the props are the only way to fire tabPress.
   const { theme, isDark } = useThemeContext();
   const { collapse, expand, isCollapsed, setCollapsed } = useNavChrome();
   const { width: screenW } = useWindowDimensions();
@@ -111,6 +115,11 @@ export default function GlassTabBar({ state, descriptors, navigation }: TabBarPr
   const indL = useSharedValue(PAD + state.index * tabW);
   const indR = useSharedValue(PAD + (state.index + 1) * tabW);
   const prevIndex = useRef(state.index);
+  // Guard against rapid taps interleaving expand/navigate events and
+  // hammering the navigator mid-transition (TestFlight blank-screen cause).
+  // Only actual navigations stamp it; expand taps and focused taps don't,
+  // so expand-then-tap-to-navigate still works.
+  const lastNavAt = useRef(0);
 
   useEffect(() => {
     const movingRight = state.index > prevIndex.current;
@@ -170,10 +179,14 @@ export default function GlassTabBar({ state, descriptors, navigation }: TabBarPr
               setCollapsed(false);
               return;
             }
-            const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
+            if (!focused && Date.now() - lastNavAt.current < 300) {
+              return;
+            }
+            const event = emitter.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
             if (!focused && !event.defaultPrevented) {
+              lastNavAt.current = Date.now();
               Haptics.selectionAsync().catch(() => undefined);
-              navigation.navigate(route.name, route.params);
+              navigateToTab(route.key);
             }
           };
           return (

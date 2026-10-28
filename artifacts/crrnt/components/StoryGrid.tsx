@@ -84,7 +84,7 @@ export default function StoryGrid({
           <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} />
         </>
       }
-      ListEmptyComponent={width > 0 ? ListEmptyComponent : null}
+      ListEmptyComponent={width > 0 ? (ListEmptyComponent ?? undefined) : undefined}
       renderItem={({ item: row }) => (
         <View style={{ flexDirection: "row", gap: GAP, marginBottom: GAP, alignItems: "flex-start" }}>
           {row.map(({ story, span }) => (

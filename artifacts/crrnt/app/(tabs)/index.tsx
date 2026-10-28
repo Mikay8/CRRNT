@@ -1,24 +1,26 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Image,
   Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
-  TextInput,
   View,
+  type FlatList,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import { BlurView } from "expo-blur";
+import Animated, {
+  runOnJS,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
 import {
   useListStories,
-  useSearchStories,
   type Story,
 } from "@workspace/api-client-react";
 import StoryCard from "@/components/StoryCard";
@@ -44,10 +46,6 @@ export default function FeedScreen() {
   const { user, accessToken } = useAuth();
   const isGuest = !user;
   const [category, setCategory] = useState<Category | null>(null);
-  const [searchVisible, setSearchVisible] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const styles = useMemo(() => createStyles(palette), [palette]);
   const { onFeedScroll } = useNavChrome();
@@ -57,59 +55,27 @@ export default function FeedScreen() {
   const [desktopHeadH, setDesktopHeadH] = useState(200);
   const lastY = useRef(0);
 
-  const handleSearchChange = (text: string) => {
-    setSearchQuery(text);
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(
-      () => setDebouncedQuery(text.trim()),
-      300
-    );
-  };
-
-  // Desktop keeps the search box open, so any query is a live search.
-  const isSearchActive = (searchVisible || isDesktop) && debouncedQuery.length >= 1;
-
   const { data, isLoading, isFetching, refetch, error } = useListStories(
     category ? { category } : undefined,
-    { query: { staleTime: 60_000, enabled: !isSearchActive } as any }
+    { query: { staleTime: 60_000 } as any }
   );
 
-  const { data: searchData, isFetching: searchFetching } = useSearchStories(
-    { q: debouncedQuery || " " },
-    { query: { staleTime: 30_000, enabled: isSearchActive } as any }
-  );
-
-  const rawStories: Story[] = isSearchActive
-    ? (searchData?.stories ?? [])
-    : (data?.stories ?? []);
+  const rawStories: Story[] = data?.stories ?? [];
 
   const stories = useMemo(() => {
-    if (isSearchActive) return rawStories;
     return [...rawStories].sort((a, b) => {
       const ta = a.published_at ? new Date(a.published_at).getTime() : 0;
       const tb = b.published_at ? new Date(b.published_at).getTime() : 0;
       return tb - ta;
     });
-  }, [rawStories, isSearchActive]);
+  }, [rawStories]);
 
   // Measured, since the header's height differs by platform (web has no inset).
   const [mobileHeadH, setMobileHeadH] = useState(0);
+  const [topRowH, setTopRowH] = useState(0);
+  const listRef = useRef<FlatList<Story>>(null);
+  const todayLabel = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const headerHeight = 96;
-
-  const openSearch = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
-      () => undefined
-    );
-    setSearchVisible(true);
-    setSearchQuery("");
-    setDebouncedQuery("");
-  };
-
-  const closeSearch = () => {
-    setSearchVisible(false);
-    setSearchQuery("");
-    setDebouncedQuery("");
-  };
 
   const handleRefresh = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
@@ -118,10 +84,7 @@ export default function FeedScreen() {
     await refetch();
   }, [refetch]);
 
-  const showLoading =
-    isLoading && !isSearchActive
-      ? stories.length === 0
-      : isSearchActive && searchFetching && stories.length === 0;
+  const showLoading = isLoading && stories.length === 0;
   const showEmpty = !showLoading && stories.length === 0;
 
   const hPad = Math.max(16, insets.left + 4);
@@ -141,18 +104,11 @@ export default function FeedScreen() {
       <View style={styles.loading}>
         <ActivityIndicator color={palette.accent} />
         <Text style={styles.loadingText}>
-          {isSearchActive ? "Searching…" : "Loading today's stories…"}
+          Loading today's stories…
         </Text>
       </View>
     ) : showEmpty ? (
-      isSearchActive ? (
-        <EmptyState
-          icon="search-outline"
-          title="No results"
-          message={`No stories matched "${debouncedQuery}". Try a ticker symbol, company name, or topic.`}
-        />
-      ) : (
-        <EmptyState
+      <EmptyState
           icon="newspaper-outline"
           title={
             error ? "Couldn't load the feed" : "Today's feed is being prepared"
@@ -165,8 +121,29 @@ export default function FeedScreen() {
           actionLabel="Refresh now"
           onAction={handleRefresh}
         />
-      )
     ) : null;
+
+  // Mobile: the logo row scrolls away with the feed while the category
+  // tabs stay pinned to the top.
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+    runOnJS(reportScroll)(e.contentOffset.y);
+    runOnJS(onFeedScroll)(e.contentOffset.y);
+  });
+  const statusPad = (Platform.OS === "web" ? 16 : insets.top) + 8;
+  const headerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -Math.min(Math.max(scrollY.value, 0), topRowH) }],
+  }));
+  const topRowStyle = useAnimatedStyle(() => ({
+    opacity: topRowH > 0 ? 1 - Math.min(Math.max(scrollY.value, 0) / topRowH, 1) : 1,
+  }));
+
+  // Switching category keeps the tabs pinned rather than jumping back to the logo.
+  const pickCategory = (next: Category | null) => {
+    setCategory(next);
+    if (scrollY.value > topRowH) listRef.current?.scrollToOffset({ offset: topRowH, animated: false });
+  };
 
   // Desktop: tuck the header's title and pills away on a deliberate
   // downward scroll; bring them back on any upward scroll or near the top.
@@ -183,39 +160,13 @@ export default function FeedScreen() {
       <View style={styles.container}>
         <DesktopHeader
           mini={headerMini}
+          pinBelow
           onFullHeight={setDesktopHeadH}
-          aside={
-            isSearchActive ? (
-              <Text style={styles.searchMetaText}>
-                {searchFetching
-                  ? "Searching…"
-                  : `${searchData?.totalCount ?? 0} ${searchData?.totalCount === 1 ? "result" : "results"} for "${debouncedQuery}"`}
-              </Text>
-            ) : null
-          }
           tools={
             <>
               {isFetching && stories.length > 0 ? (
                 <ActivityIndicator size="small" color={palette.textDim} />
               ) : null}
-              <View style={styles.desktopSearch}>
-                <Ionicons name="search-outline" size={18} color={palette.textDim} />
-                <TextInput
-                  style={styles.desktopSearchInput}
-                  placeholder="Search stories, tickers, topics"
-                  placeholderTextColor={palette.textDim}
-                  value={searchQuery}
-                  onChangeText={handleSearchChange}
-                  returnKeyType="search"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                {searchQuery ? (
-                  <Pressable onPress={closeSearch} hitSlop={8} accessibilityLabel="Clear search">
-                    <Ionicons name="close" size={16} color={palette.textDim} />
-                  </Pressable>
-                ) : null}
-              </View>
               {AUTH_ENABLED && isGuest ? (
                 <Pressable onPress={() => router.push("/login" as any)} style={styles.getAccountBtn}>
                   <Text style={styles.getAccountText}>Log in or sign up</Text>
@@ -223,15 +174,11 @@ export default function FeedScreen() {
               ) : null}
             </>
           }
-          below={
-            <View style={styles.desktopPills}>
-              <CategoryFilter active={category} onChange={setCategory} inset={0} />
-            </View>
-          }
+          below={<CategoryFilter active={category} onChange={setCategory} inset={0} variant="tabs" />}
         />
         <StoryGrid
           stories={stories}
-          feature={!category && !isSearchActive}
+          feature={!category}
           onScroll={(e) => onDesktopScroll(e.nativeEvent.contentOffset.y)}
           contentContainerStyle={{ paddingTop: desktopHeadH + 24, paddingHorizontal: 36, paddingBottom: 160 }}
           ListEmptyComponent={listEmpty}
@@ -242,101 +189,64 @@ export default function FeedScreen() {
 
   return (
     <View style={styles.container}>
-      <View
+      <Animated.View
         onLayout={(e) => setMobileHeadH(e.nativeEvent.layout.height)}
         style={[
           styles.header,
           {
-            paddingTop: (Platform.OS === "web" ? 16 : insets.top) + 8,
+            paddingTop: statusPad,
             paddingLeft: Math.max(0, insets.left),
             paddingRight: Math.max(0, insets.right),
           },
+          headerStyle,
         ]}
       >
-        <View style={[styles.titleRow, { paddingHorizontal: hPad }]}>
-          {searchVisible ? (
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Ticker, company, topic…"
-              placeholderTextColor={palette.textDim}
-              value={searchQuery}
-              onChangeText={handleSearchChange}
-              autoFocus
-              returnKeyType="search"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          ) : (
-            <Image
-              source={isDark ? LOGO_DARK : LOGO_LIGHT}
-              style={{ width: 100, height: 30 }}
-              resizeMode="contain"
-              accessibilityLabel="CRRNT"
-            />
-          )}
+        <Animated.View
+          onLayout={(e) => setTopRowH(e.nativeEvent.layout.height)}
+          style={[styles.titleRow, { paddingHorizontal: hPad }, topRowStyle]}
+        >
+          <Image
+            source={isDark ? LOGO_DARK : LOGO_LIGHT}
+            style={{ width: 100, height: 30 }}
+            resizeMode="contain"
+            accessibilityLabel="CRRNT"
+          />
 
           <View style={styles.headerActions}>
-            {AUTH_ENABLED && isGuest && !searchVisible && (
+            {isFetching && stories.length > 0 ? (
+              <ActivityIndicator
+                size="small"
+                color={palette.textDim}
+                style={{ marginRight: 10 }}
+              />
+            ) : null}
+            {AUTH_ENABLED && isGuest ? (
               <Pressable
                 onPress={() => router.push("/login" as any)}
                 style={styles.getAccountBtn}
               >
                 <Text style={styles.getAccountText}>Log in or sign up</Text>
               </Pressable>
-            )}
-            {!searchVisible && isFetching && stories.length > 0 ? (
-              <ActivityIndicator
-                size="small"
-                color={palette.textDim}
-                style={{ marginRight: 8 }}
-              />
-            ) : null}
-            <Pressable
-              onPress={searchVisible ? closeSearch : openSearch}
-              hitSlop={10}
-              style={styles.iconBtn}
-            >
-              <Ionicons
-                name={searchVisible ? "close" : "search-outline"}
-                size={22}
-                color={palette.textMuted}
-              />
-            </Pressable>
-          </View>
-        </View>
-
-        {searchVisible ? (
-          <View style={[styles.searchMeta, { paddingHorizontal: hPad }]}>
-            {isSearchActive && !searchFetching ? (
-              <Text style={styles.searchMetaText}>
-                {searchData?.totalCount ?? 0}{" "}
-                {searchData?.totalCount === 1 ? "result" : "results"} for{" "}
-                <Text style={styles.searchMetaQuery}>"{debouncedQuery}"</Text>
-              </Text>
-            ) : isSearchActive && searchFetching ? (
-              <Text style={styles.searchMetaText}>Searching…</Text>
             ) : (
-              <Text style={styles.searchMetaText}>
-                Search titles, tickers, insights &amp; more
-              </Text>
+              <Text style={styles.dateLabel}>Today · {todayLabel}</Text>
             )}
           </View>
-        ) : (
-          <CategoryFilter active={category} onChange={setCategory} />
-        )}
-      </View>
+        </Animated.View>
 
-      <FlatList
+        <CategoryFilter active={category} onChange={pickCategory} inset={hPad} variant="tabs" />
+      </Animated.View>
+      {/* Opaque strip over the status-bar area for the logo row to slide under. */}
+      <View style={[styles.statusCover, { height: statusPad }]} />
+
+      <Animated.FlatList
+        ref={listRef}
         data={stories}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <StoryCard story={item} />}
         contentContainerStyle={listPadding}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        onScroll={(e) => {
-          reportScroll(e.nativeEvent.contentOffset.y);
-          onFeedScroll(e.nativeEvent.contentOffset.y);
-        }}
+        onScroll={scrollHandler}
         scrollEventThrottle={16}
         // Keep the render window ahead of a fast fling: more items per
         // batch, batches more often, and a wider window, so fast scrolls
@@ -347,32 +257,15 @@ export default function FeedScreen() {
         updateCellsBatchingPeriod={30}
         initialNumToRender={15}
         refreshControl={
-          !isSearchActive ? (
-            <RefreshControl
-              refreshing={isFetching && stories.length > 0}
-              onRefresh={handleRefresh}
-              tintColor={palette.accent}
-            />
-          ) : undefined
-        }
-        ListEmptyComponent={listEmpty}
-      />
-
-      {/* Blur the feed behind the search bar until there's a query; tap to dismiss */}
-      {searchVisible && !isSearchActive ? (
-        <Pressable
-          style={styles.searchBackdrop}
-          onPress={closeSearch}
-          accessibilityLabel="Close search"
-        >
-          <BlurView
-            intensity={40}
-            tint={isDark ? "dark" : "light"}
-            experimentalBlurMethod="dimezisBlurView"
-            style={StyleSheet.absoluteFill}
+          <RefreshControl
+            refreshing={isFetching && stories.length > 0}
+            onRefresh={handleRefresh}
+            tintColor={palette.accent}
+            progressViewOffset={mobileHeadH}
           />
-        </Pressable>
-      ) : null}
+        }
+        ListEmptyComponent={listEmpty ?? undefined}
+      />
     </View>
   );
 }
@@ -386,7 +279,6 @@ function createStyles(palette: ThemeColors) {
       left: 0,
       right: 0,
       zIndex: 10,
-      paddingBottom: 12,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: palette.divider,
       backgroundColor: palette.bg,
@@ -401,8 +293,20 @@ function createStyles(palette: ThemeColors) {
       flexDirection: "row",
       alignItems: "center",
     },
-    iconBtn: {
-      padding: 4,
+    statusCover: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 11,
+      backgroundColor: palette.bg,
+    },
+    dateLabel: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 11,
+      letterSpacing: 1.5,
+      textTransform: "uppercase",
+      color: palette.textMuted,
     },
     getAccountBtn: {
       paddingHorizontal: 12,
@@ -415,69 +319,6 @@ function createStyles(palette: ThemeColors) {
       fontFamily: "Inter_600SemiBold",
       fontSize: 13,
       color: "#fff",
-    },
-    searchInput: {
-      flex: 1,
-      height: 36,
-      backgroundColor: palette.surfaceHigh,
-      borderRadius: 10,
-      paddingHorizontal: 12,
-      color: palette.text,
-      fontFamily: "Inter_400Regular",
-      fontSize: 15,
-      marginRight: 10,
-    },
-    desktopSearch: {
-      height: 40,
-      width: 300,
-      borderRadius: 20,
-      backgroundColor: palette.surface,
-      borderWidth: 1,
-      borderColor: palette.border,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-      paddingHorizontal: 16,
-    },
-    desktopSearchInput: {
-      flex: 1,
-      minWidth: 0,
-      height: "100%",
-      color: palette.text,
-      fontFamily: "Inter_400Regular",
-      fontSize: 14,
-      outlineStyle: "none",
-    } as object,
-    roundBtn: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: palette.surface,
-      borderWidth: 1,
-      borderColor: palette.border,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    desktopPills: {
-      paddingTop: 18,
-      paddingBottom: 16,
-    },
-    searchBackdrop: {
-      ...StyleSheet.absoluteFillObject,
-      zIndex: 5,
-    },
-    searchMeta: {
-      height: 36,
-      justifyContent: "center",
-    },
-    searchMetaText: {
-      fontFamily: "Inter_400Regular",
-      fontSize: 12,
-      color: palette.textDim,
-    },
-    searchMetaQuery: {
-      color: palette.textMuted,
-      fontFamily: "Inter_500Medium",
     },
     loading: {
       paddingVertical: 80,

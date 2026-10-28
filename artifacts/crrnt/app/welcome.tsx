@@ -11,7 +11,7 @@
  * as the Settings toggle does.
  */
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,7 +27,13 @@ export default function WelcomeScreen() {
   const [denied, setDenied] = useState(false);
 
   // Already dismissed (e.g. deep link after first run) — don't trap the user.
+  // Web never gets this screen at all: WelcomeGate skips web, and this
+  // guard bounces any direct /welcome visit back to the feed.
   useEffect(() => {
+    if (Platform.OS === "web") {
+      router.replace("/(tabs)" as any);
+      return;
+    }
     hasSeenWelcome().then((seen) => {
       if (seen) router.replace("/(tabs)" as any);
     });

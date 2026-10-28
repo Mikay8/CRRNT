@@ -13,7 +13,8 @@ const EASE = { duration: 350, easing: Easing.bezier(0.2, 0.8, 0.2, 1) };
 /**
  * Sticky, blurred desktop page header: logo + date and tools on top, then the
  * optional page title and an optional row (category pills). Scrolling down tucks the
- * title and pills away, leaving just the top row.
+ * title and pills away, leaving just the top row — or, with `pinBelow`, tucks the
+ * top row away and keeps the row below pinned.
  */
 export default function DesktopHeader({
   title,
@@ -21,6 +22,7 @@ export default function DesktopHeader({
   tools,
   below,
   mini,
+  pinBelow = false,
   onFullHeight,
 }: {
   title?: string;
@@ -28,6 +30,8 @@ export default function DesktopHeader({
   tools?: React.ReactNode;
   below?: React.ReactNode;
   mini: boolean;
+  /** Tuck the logo row on scroll instead of the title and `below` row. */
+  pinBelow?: boolean;
   /** Reports the header's untucked height so the page can pad its content. */
   onFullHeight: (h: number) => void;
 }) {
@@ -36,6 +40,7 @@ export default function DesktopHeader({
   const m = useSharedValue(mini ? 1 : 0);
   const [titleH, setTitleH] = useState(44);
   const [belowH, setBelowH] = useState(below ? 68 : 18);
+  const [topH, setTopH] = useState(40);
   const fullH = useRef(0);
 
   useEffect(() => {
@@ -53,10 +58,22 @@ export default function DesktopHeader({
     marginTop: 14 * (1 - m.value),
     opacity: 1 - Math.min(1, m.value * 1.6),
   }));
-  const belowStyle = useAnimatedStyle(() => ({
-    height: belowH * (1 - m.value) + 14 * m.value,
-    opacity: 1 - Math.min(1, m.value * 1.6),
-  }));
+  const belowStyle = useAnimatedStyle(() =>
+    pinBelow
+      ? {}
+      : {
+          height: belowH * (1 - m.value) + 14 * m.value,
+          opacity: 1 - Math.min(1, m.value * 1.6),
+        },
+  );
+  const topStyle = useAnimatedStyle(() =>
+    pinBelow
+      ? {
+          height: topH * (1 - m.value),
+          opacity: 1 - Math.min(1, m.value * 1.6),
+        }
+      : {},
+  );
 
   return (
     <View
@@ -72,18 +89,23 @@ export default function DesktopHeader({
       <BlurView intensity={30} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.bg + (mini ? "E6" : "D1") }]} />
 
-      <View style={styles.top}>
-        <View style={styles.brand}>
-          <Image
-            source={isDark ? LOGO_DARK : LOGO_LIGHT}
-            style={{ width: 96, height: 28 }}
-            resizeMode="contain"
-            accessibilityLabel="CRRNT"
-          />
-          <Text style={styles.date}>{today.toUpperCase()}</Text>
+      <Animated.View style={[styles.clip, topStyle]}>
+        <View
+          style={[styles.top, pinBelow && { paddingBottom: 12 }]}
+          onLayout={(e) => setTopH(e.nativeEvent.layout.height)}
+        >
+          <View style={styles.brand}>
+            <Image
+              source={isDark ? LOGO_DARK : LOGO_LIGHT}
+              style={{ width: 96, height: 28 }}
+              resizeMode="contain"
+              accessibilityLabel="CRRNT"
+            />
+            <Text style={styles.date}>{today.toUpperCase()}</Text>
+          </View>
+          {tools ? <View style={styles.tools}>{tools}</View> : null}
         </View>
-        {tools ? <View style={styles.tools}>{tools}</View> : null}
-      </View>
+      </Animated.View>
 
       {title || aside ? (
         <Animated.View style={[styles.clip, titleStyle]}>

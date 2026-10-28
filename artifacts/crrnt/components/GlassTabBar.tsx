@@ -20,6 +20,7 @@ type TabBarProps = Parameters<NonNullable<React.ComponentProps<typeof Tabs>["tab
 
 const ICONS: Record<string, { on: keyof typeof Ionicons.glyphMap; off: keyof typeof Ionicons.glyphMap }> = {
   index: { on: "trending-up", off: "trending-up" },
+  search: { on: "search", off: "search-outline" },
   saved: { on: "bookmark", off: "bookmark-outline" },
   settings: { on: "person-circle", off: "person-circle-outline" },
 };

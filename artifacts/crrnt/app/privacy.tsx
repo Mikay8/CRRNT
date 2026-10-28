@@ -158,14 +158,15 @@ export default function PrivacyPolicyScreen() {
             sends a single install count (day and platform only — no
             identifier). On later launches, at most once a day, it sends a
             random identifier generated on your device, which we use only
-            to count returning devices and to group error reports by
-            device.
+            to count returning devices.
           </Body>
           <Body theme={theme}>
             This identifier is not linked to your name, email, or any
             account, because CRRNT does not require an account in this
-            version. It is never shared with anyone, and it is not an
-            advertising identifier.
+            version. It is linked to a device only, through first-seen and
+            last-seen dates, so we can tell a returning device from a new
+            one. It is not shared with advertisers or other third parties,
+            and it is not an advertising identifier.
           </Body>
           <Body theme={theme}>
             Retention: We delete records for devices that have been

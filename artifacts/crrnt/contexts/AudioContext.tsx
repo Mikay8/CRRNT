@@ -84,6 +84,11 @@ async function configureAudioSession() {
     await setAudioModeAsync({
       playsInSilentMode: true,
       shouldPlayInBackground: true,
+      // Required for lock-screen association: without doNotMix the session
+      // stays mixWithOthers and iOS may not attach Control Center / lock
+      // screen controls to this player (audio plays, Center shows "Not
+      // Playing"). See Expo docs note on setActiveForLockScreen.
+      interruptionMode: "doNotMix",
     });
   } catch {
     // Non-critical — continue without it

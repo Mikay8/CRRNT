@@ -47,12 +47,19 @@ export function CategoryFilter({ active, onChange, inset = 16, variant = "chips"
                 { borderColor: on ? palette.text + "33" : palette.borderStrong + "AA", opacity: pressed ? 0.7 : 1 },
               ]}
             >
-              <BlurView
-                intensity={Platform.OS === "android" ? 60 : 40}
-                tint={isDark ? "dark" : "light"}
-                experimentalBlurMethod="dimezisBlurView"
-                style={StyleSheet.absoluteFill}
-              />
+              {/* No BlurView on web: Safari mangles backdrop-filter inside
+                  an overflow:hidden rounded pill, rendering the labels as
+                  smeared blobs. The near-opaque fill below already gives
+                  the pill its look, so skipping the blur on web changes
+                  nothing visible. Native keeps the blur. */}
+              {Platform.OS !== "web" ? (
+                <BlurView
+                  intensity={Platform.OS === "android" ? 60 : 40}
+                  tint={isDark ? "dark" : "light"}
+                  experimentalBlurMethod="dimezisBlurView"
+                  style={StyleSheet.absoluteFill}
+                />
+              ) : null}
               {/* Near-opaque fill so labels keep their contrast over any photo. */}
               <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.bgElevated + "F0" }]} />
               {on ? <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.text + "1F" }]} /> : null}

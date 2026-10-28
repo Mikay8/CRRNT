@@ -5,7 +5,7 @@ export default function TabsLayout() {
   return (
     <Tabs
       tabBar={(props) => <GlassTabBar {...props} />}
-      screenOptions={{ headerShown: false, animation: "shift" }}
+      screenOptions={{ headerShown: false, animation: "none" }}
     >
       <Tabs.Screen name="index" options={{ title: "Feed" }} />
       <Tabs.Screen name="saved" options={{ title: "Saved" }} />

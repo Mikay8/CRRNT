@@ -117,6 +117,11 @@ export default function GlassTabBar({ state, descriptors }: TabBarProps) {
   const indL = useSharedValue(PAD + state.index * tabW);
   const indR = useSharedValue(PAD + (state.index + 1) * tabW);
   const prevIndex = useRef(state.index);
+  // Guard against rapid taps interleaving expand/navigate events and
+  // hammering the navigator mid-transition (TestFlight blank-screen cause).
+  // Only actual navigations stamp it; expand taps and focused taps don't,
+  // so expand-then-tap-to-navigate still works.
+  const lastNavAt = useRef(0);
 
   useEffect(() => {
     const movingRight = state.index > prevIndex.current;
@@ -173,8 +178,12 @@ export default function GlassTabBar({ state, descriptors }: TabBarProps) {
               setCollapsed(false);
               return;
             }
+            if (!focused && Date.now() - lastNavAt.current < 300) {
+              return;
+            }
             const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
             if (!focused && !event.defaultPrevented) {
+              lastNavAt.current = Date.now();
               Haptics.selectionAsync().catch(() => undefined);
               navigation.navigate(route.name, route.params);
             }

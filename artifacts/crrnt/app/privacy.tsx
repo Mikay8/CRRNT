@@ -91,7 +91,7 @@ export default function PrivacyPolicyScreen() {
             CRRNT Privacy Policy
           </Text>
           <Text style={[pStyles.meta, { color: theme.textDim }]}>
-            Effective date: 27 October 2026
+            Effective date: 28 October 2026
           </Text>
           <Text style={[pStyles.meta, { color: theme.textDim }]}>
             Contact for privacy questions: mikayla@crrnt-news.com
@@ -150,7 +150,31 @@ export default function PrivacyPolicyScreen() {
           </Body>
 
           <Text style={[pStyles.subheading, { color: theme.text }]}>
-            3. Information stored only on your device
+            3. Anonymous usage counts — to measure installs and retention
+          </Text>
+          <Body theme={theme}>
+            To understand how many people use CRRNT and whether they come
+            back, the app sends two anonymous counts. On first launch it
+            sends a single install count (day and platform only — no
+            identifier). On later launches, at most once a day, it sends a
+            random identifier generated on your device, which we use only
+            to count returning devices and to group error reports by
+            device.
+          </Body>
+          <Body theme={theme}>
+            This identifier is not linked to your name, email, or any
+            account, because CRRNT does not require an account in this
+            version. It is never shared with anyone, and it is not an
+            advertising identifier.
+          </Body>
+          <Body theme={theme}>
+            Retention: We delete records for devices that have been
+            inactive for 90 days. Deleting the app removes the identifier
+            from your device.
+          </Body>
+
+          <Text style={[pStyles.subheading, { color: theme.text }]}>
+            4. Information stored only on your device
           </Text>
           <Body theme={theme}>
             The following are stored on your device only, and are not sent
@@ -165,7 +189,7 @@ export default function PrivacyPolicyScreen() {
           </Body>
 
           <Text style={[pStyles.subheading, { color: theme.text }]}>
-            4. Technical information needed to deliver the app
+            5. Technical information needed to deliver the app
           </Text>
           <Body theme={theme}>
             When the app fetches stories, sends a push token, or sends
@@ -196,8 +220,9 @@ export default function PrivacyPolicyScreen() {
           <Heading theme={theme}>How we use information</Heading>
           <Body theme={theme}>
             We use the information above only to provide the news feed,
-            send push notifications you have allowed, and review voluntary
-            beta feedback and improve the app.
+            send push notifications you have allowed, review voluntary
+            beta feedback, measure anonymous usage and retention, and
+            improve the app.
           </Body>
           <Body theme={theme}>
             We do not use it for advertising, and we do not sell it to data
@@ -252,6 +277,11 @@ export default function PrivacyPolicyScreen() {
           <Bullet theme={theme}>
             Saved stories and preferences: These live on your device. Delete
             the app to remove them.
+          </Bullet>
+          <Bullet theme={theme}>
+            Anonymous device identifier: Deleting the app removes the
+            identifier from your device. Records for devices inactive for
+            90 days are deleted from our server.
           </Bullet>
           <Bullet theme={theme}>
             Feedback: Email us at the address above if you want a feedback

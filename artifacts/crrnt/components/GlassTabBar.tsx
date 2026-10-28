@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import type { Tabs } from "expo-router";
-import { useNavigation } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -94,12 +93,10 @@ function TabButton({
   );
 }
 
-export default function GlassTabBar({ state, descriptors }: TabBarProps) {
-  // SDK 58's tab-bar props no longer include `navigation`, and expo-router's
-  // useNavigation() type doesn't expose the tab navigator's emit()/navigate()
-  // even though the runtime object has them. The cast keeps the exact
-  // tab-press behavior (emit tabPress, honor preventDefault, navigate).
-  const navigation = useNavigation() as any;
+export default function GlassTabBar({ state, descriptors, emitter, navigateToTab }: TabBarProps) {
+  // SDK 58 replaced the tab bar's `navigation` prop with `emitter` and
+  // `navigateToTab`. useNavigation() here resolves to the parent navigator,
+  // which has no emit(), so the props are the only way to fire tabPress.
   const { theme, isDark } = useThemeContext();
   const { collapse, expand, isCollapsed, setCollapsed } = useNavChrome();
   const { width: screenW } = useWindowDimensions();
@@ -181,11 +178,11 @@ export default function GlassTabBar({ state, descriptors }: TabBarProps) {
             if (!focused && Date.now() - lastNavAt.current < 300) {
               return;
             }
-            const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
+            const event = emitter.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
             if (!focused && !event.defaultPrevented) {
               lastNavAt.current = Date.now();
               Haptics.selectionAsync().catch(() => undefined);
-              navigation.navigate(route.name, route.params);
+              navigateToTab(route.key);
             }
           };
           return (

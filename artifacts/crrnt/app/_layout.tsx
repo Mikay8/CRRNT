@@ -29,6 +29,7 @@ import {
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AUTH_ENABLED } from "@/constants/features";
+import { reportDeviceMetrics } from "@/lib/deviceMetrics";
 import NowPlaying from "@/components/player/NowPlaying";
 import RecedingScreens from "@/components/player/RecedingScreens";
 import ToastHost from "@/components/ToastHost";
@@ -346,6 +347,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     registerPushToken();
+    // Anonymous usage metrics: one install ping ever + a daily device
+    // heartbeat. Best-effort; failures retry on the next launch.
+    reportDeviceMetrics();
   }, []);
 
   if (!fontsLoaded && !fontError) {

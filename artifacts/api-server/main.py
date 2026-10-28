@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -180,6 +181,68 @@ async def submit_feedback(body: FeedbackBody) -> dict:
         log.warning("Beta feedback store failed: %s", exc)
         raise HTTPException(status_code=503, detail="Could not save feedback — please try again later")
     return {"status": "stored"}
+
+
+# ── Anonymous usage metrics ───────────────────────────────────────────────────
+# Two unauthenticated endpoints (beta testers are guests, same reasoning as
+# feedback). Privacy: /install carries no identifier at all and only bumps
+# an aggregate daily counter; /device carries a random UUID generated on
+# the device and upserts one row (first_seen kept, last_seen refreshed).
+# Neither endpoint accepts or stores IPs, names, emails, or accounts.
+# The general rate-limit middleware already covers both paths. On DB
+# failure both return 503 (not a fake ok) so the app leaves its flags
+# unset and retries on the next launch — same contract as feedback.
+_METRIC_PLATFORMS = ("ios", "android", "web")
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+
+
+class MetricsInstallBody(BaseModel):
+    platform: str
+    app_version: str | None = None
+
+
+class MetricsDeviceBody(BaseModel):
+    device_id: str
+    platform: str
+    app_version: str | None = None
+
+
+@app.post("/api/metrics/install", tags=["metrics"])
+async def record_install_metric(body: MetricsInstallBody) -> dict:
+    from fastapi import HTTPException
+
+    if body.platform not in _METRIC_PLATFORMS:
+        return {"status": "ignored"}
+    try:
+        from services import db
+
+        await db.record_install(body.platform)
+    except Exception as exc:
+        log.warning("Metrics install store failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Could not record install")
+    return {"status": "ok"}
+
+
+@app.post("/api/metrics/device", tags=["metrics"])
+async def record_device_metric(body: MetricsDeviceBody) -> dict:
+    from fastapi import HTTPException
+
+    if body.platform not in _METRIC_PLATFORMS:
+        return {"status": "ignored"}
+    device_id = (body.device_id or "").lower()
+    if not _UUID_RE.fullmatch(device_id):
+        return {"status": "ignored"}
+    try:
+        from services import db
+
+        await db.record_device(device_id, body.platform, (body.app_version or "unknown")[:32])
+    except Exception as exc:
+        log.warning("Metrics device store failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Could not record device")
+    return {"status": "ok"}
+
 
 # ── Admin portal (Jinja2, HTTP Basic Auth) ────────────────────────────────────
 app.include_router(admin_portal.router)         # already prefixed /admin

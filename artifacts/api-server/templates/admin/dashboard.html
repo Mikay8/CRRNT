@@ -100,8 +100,51 @@
       <div class="text-3xl font-bold text-white mt-1">{{ total_stories }}</div>
     </div>
     <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
-      <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Total Users</div>
-      <div class="text-3xl font-bold text-white mt-1">{{ total_users }}</div>
+      <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">New Users (all time)</div>
+      <div class="text-3xl font-bold text-white mt-1">{{ install_stats.total }}</div>
+      <div class="text-gray-500 text-xs mt-1">Today {{ install_stats.today }} · Last 7 days {{ install_stats.last7 }}</div>
+      <div class="text-gray-600 text-xs mt-1">Aggregate daily counts — no identifiers stored.</div>
+    </div>
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
+      <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Devices Active</div>
+      <div class="text-3xl font-bold text-white mt-1">{{ device_stats.active7 }}</div>
+      <div class="text-gray-500 text-xs mt-1">Last 7 days · {{ device_stats.active30 }} last 30 days · {{ device_stats.total }} total</div>
+      <div class="text-gray-600 text-xs mt-1">Anonymous device IDs; rows inactive 90 days are purged.</div>
+    </div>
+  </div>
+
+  <!-- New users — last 14 days -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-700">
+      <h2 class="text-sm font-semibold text-white">New Users — Last 14 Days</h2>
+    </div>
+    <div class="overflow-x-auto">
+      {% if install_stats.daily %}
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-700 text-gray-400 text-xs uppercase tracking-wider">
+            <th class="px-5 py-3 text-left">Day</th>
+            <th class="px-5 py-3 text-right">iOS</th>
+            <th class="px-5 py-3 text-right">Android</th>
+            <th class="px-5 py-3 text-right">Web</th>
+            <th class="px-5 py-3 text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-700/50">
+          {% for row in install_stats.daily %}
+          <tr class="hover:bg-gray-700/30 transition-colors">
+            <td class="px-5 py-3 text-gray-300 font-mono text-xs">{{ row.day }}</td>
+            <td class="px-5 py-3 text-gray-300 text-right">{{ row.ios }}</td>
+            <td class="px-5 py-3 text-gray-300 text-right">{{ row.android }}</td>
+            <td class="px-5 py-3 text-gray-300 text-right">{{ row.web }}</td>
+            <td class="px-5 py-3 text-white text-right font-medium">{{ row.total }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="px-5 py-8 text-center text-gray-500 text-sm">No installs recorded yet.</div>
+      {% endif %}
     </div>
   </div>
 

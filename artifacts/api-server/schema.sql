@@ -202,3 +202,25 @@ ON CONFLICT (key) DO NOTHING;
 -- ─────────────────────────────────────────
 
 ALTER TABLE stories ADD COLUMN IF NOT EXISTS featured_posts JSONB;
+
+-- Migration 002 — anonymous usage metrics (also in migrations/002_anonymous_metrics.sql).
+-- install_counts is aggregate-only (one row per day per platform, no identifiers).
+-- devices is keyed by a random UUID generated on the device, never joined to
+-- accounts, names, emails, or IPs. Rows inactive 90 days are purged on write.
+CREATE TABLE IF NOT EXISTS install_counts (
+  day DATE NOT NULL,
+  platform TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, platform)
+);
+
+CREATE TABLE IF NOT EXISTS devices (
+  device_id TEXT PRIMARY KEY,
+  first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  platform TEXT NOT NULL,
+  app_version TEXT NOT NULL DEFAULT 'unknown'
+);
+
+CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen);
+CREATE INDEX IF NOT EXISTS idx_devices_first_seen ON devices(first_seen);

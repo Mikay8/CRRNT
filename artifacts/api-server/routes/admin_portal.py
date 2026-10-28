@@ -4,7 +4,6 @@ Routes:
   GET  /admin                → redirect to /admin/dashboard
   GET  /admin/dashboard
   GET  /admin/stories
-  GET  /admin/users
   GET  /admin/breaking
   GET  /admin/feedback
   GET  /admin/settings
@@ -142,7 +141,13 @@ async def admin_root(_: None = Depends(_verify_admin)):
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, _: None = Depends(_verify_admin)):
     total_stories = await _safe_db(db.count_stories(), 0)
-    total_users = await _safe_db(db.count_users(), 0)
+    install_stats = await _safe_db(
+        db.install_totals(),
+        {"total": 0, "today": 0, "last7": 0, "daily": []},
+    )
+    device_stats = await _safe_db(
+        db.device_stats(), {"total": 0, "active7": 0, "active30": 0}
+    )
     ingest_logs = await _safe_db(db.get_ingestion_logs(limit=5), [])
     breaking = await _safe_db(db.get_active_breaking_news(), None)
     ingest_status = ingestion.get_status()
@@ -155,7 +160,8 @@ async def dashboard(request: Request, _: None = Depends(_verify_admin)):
         {
             "page": "dashboard",
             "total_stories": total_stories,
-            "total_users": total_users,
+            "install_stats": install_stats,
+            "device_stats": device_stats,
             "ingest_logs": ingest_logs,
             "breaking": breaking,
             "ingest_status": ingest_status,
@@ -209,27 +215,6 @@ async def update_story_category(
     if category in CATEGORIES:
         await _safe_db(db.update_story_category(story_id, category), None)
     return RedirectResponse(url="/admin/stories", status_code=302)
-
-
-# ── Users ─────────────────────────────────────────────────────────────────────
-
-
-@router.get("/users", response_class=HTMLResponse)
-async def admin_users(
-    request: Request,
-    _: None = Depends(_verify_admin),
-):
-    users = await _safe_db(db.list_users(limit=100), [])
-    total = await _safe_db(db.count_users(), 0)
-    return templates.TemplateResponse(
-        request,
-        "admin/users.html",
-        {
-            "page": "users",
-            "users": users,
-            "total": total,
-        },
-    )
 
 
 # ── Breaking news ─────────────────────────────────────────────────────────────

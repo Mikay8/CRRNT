@@ -488,6 +488,95 @@ async def push_token_count() -> int:
         return await conn.fetchval("SELECT COUNT(*) FROM push_tokens") or 0
 
 
+# ── Anonymous metrics ─────────────────────────────────────────────────────────
+# Privacy: install_counts is aggregate-only (one row per day per platform,
+# no identifiers). devices is keyed by a random UUID generated on the
+# device — never joined to accounts, names, emails, or IPs. Stale device
+# rows are purged on every heartbeat write so retention is self-enforcing.
+
+
+async def record_install(platform: str) -> None:
+    sql = """INSERT INTO install_counts (day, platform, count)
+             VALUES (CURRENT_DATE, $1, 1)
+             ON CONFLICT (day, platform)
+             DO UPDATE SET count = install_counts.count + 1"""
+    async with get_pool().acquire() as conn:
+        await conn.execute(sql, platform)
+
+
+async def record_device(device_id: str, platform: str, app_version: str) -> None:
+    sql = """INSERT INTO devices (device_id, platform, app_version)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (device_id) DO UPDATE
+               SET last_seen = NOW(),
+                   platform = EXCLUDED.platform,
+                   app_version = EXCLUDED.app_version"""
+    async with get_pool().acquire() as conn:
+        await conn.execute(sql, device_id, platform, app_version)
+        # Self-enforcing retention: drop devices silent for 90 days.
+        await conn.execute(
+            "DELETE FROM devices WHERE last_seen < NOW() - INTERVAL '90 days'"
+        )
+
+
+async def install_totals() -> dict:
+    """Aggregate install counts: totals plus per-day rows (14 days) with a
+    per-platform split, for the admin dashboard. No device data involved."""
+    async with get_pool().acquire() as conn:
+        total = await conn.fetchval("SELECT COALESCE(SUM(count), 0) FROM install_counts") or 0
+        today = (
+            await conn.fetchval(
+                "SELECT COALESCE(SUM(count), 0) FROM install_counts WHERE day = CURRENT_DATE"
+            )
+            or 0
+        )
+        last7 = (
+            await conn.fetchval(
+                "SELECT COALESCE(SUM(count), 0) FROM install_counts "
+                "WHERE day >= CURRENT_DATE - 6"
+            )
+            or 0
+        )
+        rows = await conn.fetch(
+            "SELECT day, platform, count FROM install_counts "
+            "ORDER BY day DESC, platform"
+        )
+    daily: dict[str, dict] = {}
+    for r in rows:
+        day = str(r["day"])
+        entry = daily.setdefault(day, {"day": day, "total": 0, "ios": 0, "android": 0, "web": 0})
+        entry["total"] += r["count"]
+        if r["platform"] in ("ios", "android", "web"):
+            entry[r["platform"]] += r["count"]
+    return {
+        "total": total,
+        "today": today,
+        "last7": last7,
+        "daily": sorted(daily.values(), key=lambda d: d["day"], reverse=True)[:14],
+    }
+
+
+async def device_stats() -> dict:
+    """Retention snapshot from the anonymous device table: total devices
+    ever seen (within the 90-day retention window) plus devices active in
+    the last 7 / 30 days."""
+    async with get_pool().acquire() as conn:
+        total = await conn.fetchval("SELECT COUNT(*) FROM devices") or 0
+        active7 = (
+            await conn.fetchval(
+                "SELECT COUNT(*) FROM devices WHERE last_seen >= NOW() - INTERVAL '7 days'"
+            )
+            or 0
+        )
+        active30 = (
+            await conn.fetchval(
+                "SELECT COUNT(*) FROM devices WHERE last_seen >= NOW() - INTERVAL '30 days'"
+            )
+            or 0
+        )
+    return {"total": total, "active7": active7, "active30": active30}
+
+
 # ── Password reset tokens ──────────────────────────────────────────────────────
 
 async def create_password_reset_token(user_id: str, token: str, ttl: timedelta) -> None:

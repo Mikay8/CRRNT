@@ -188,6 +188,19 @@ function ThemedApp() {
   // ships no theme-color at all (hence white chrome in dark mode).
   // This follows the app's toggle, not the device's color scheme, and
   // updates live when the theme changes.
+  //
+  // FRAGILE — may break in a later iOS version. Read this before debugging
+  // tint issues: Safari 26 ignores <meta name="theme-color"> in tabs
+  // entirely. Instead it samples position:fixed/sticky elements near the
+  // viewport edges and tints the nearest toolbar from their
+  // background-color. CRRNT has no qualifying element (the tab bar is
+  // absolute, content is in flow), so Safari falls back to default light
+  // glass — light chrome over a dark page. The two invisible fixed strips
+  // below give Safari something to sample without changing the visible
+  // design: opacity:0 fixed elements are still sampled (display:none would
+  // NOT be). This relies on undocumented Safari sampling behavior that
+  // Apple may change; if chrome tinting stops matching the theme after an
+  // iOS update, these strips are the first thing to re-check or remove.
   useEffect(() => {
     if (Platform.OS !== "web" || typeof document === "undefined") return;
     let meta = document.querySelector('meta[name="theme-color"]');
@@ -197,6 +210,33 @@ function ThemedApp() {
       document.head.appendChild(meta);
     }
     meta.setAttribute("content", theme.bg);
+
+    const mkStrip = (id: string, edge: "top" | "bottom") => {
+      let el = document.getElementById(id);
+      if (!el) {
+        el = document.createElement("div");
+        el.id = id;
+        el.setAttribute("aria-hidden", "true");
+        el.style.position = "fixed";
+        el.style.left = "0";
+        el.style.right = "0";
+        el.style.height = "1px";
+        el.style.opacity = "0";
+        el.style.pointerEvents = "none";
+        el.style.zIndex = "9999";
+        if (edge === "top") el.style.top = "0";
+        else el.style.bottom = "0";
+        document.body.appendChild(el);
+      }
+      el.style.backgroundColor = theme.bg;
+      return el;
+    };
+    const top = mkStrip("crrnt-safari-tint-top", "top");
+    const bottom = mkStrip("crrnt-safari-tint-bottom", "bottom");
+    return () => {
+      top.remove();
+      bottom.remove();
+    };
   }, [theme.bg]);
 
   return (

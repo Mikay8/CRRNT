@@ -15,6 +15,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import CategoryBadge from "@/components/CategoryBadge";
+import PhotoCredit from "@/components/PhotoCredit";
 import SaveButton from "@/components/SaveButton";
 import StoryImage from "@/components/StoryImage";
 import { useAudio } from "@/contexts/AudioContext";
@@ -302,6 +303,9 @@ export function StoryCard({ story, variant = "list" }: StoryCardProps) {
           >
             <Text style={[styles.stampText, { color }]}>{action.label.toUpperCase()}</Text>
           </Animated.View>
+          {story.image_credit_name ? (
+            <PhotoCredit name={story.image_credit_name} profileUrl={story.image_credit_url} />
+          ) : null}
         </View>
 
         <View style={[styles.body, feature && styles.featureBody]}>

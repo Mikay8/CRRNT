@@ -30,6 +30,7 @@ import { canSaveStories } from "@/constants/features";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import CategoryBadge from "@/components/CategoryBadge";
+import PhotoCredit from "@/components/PhotoCredit";
 import PriceChart from "@/components/PriceChart";
 import SaveButton from "@/components/SaveButton";
 import EmptyState from "@/components/EmptyState";
@@ -317,7 +318,12 @@ export default function StoryDetailScreen() {
         scrollIndicatorInsets={{ top: insets.top, bottom: insets.bottom }}
         automaticallyAdjustsScrollIndicatorInsets={false}
       >
-        <StoryImage uri={story.media_url} category={story.category} style={styles.hero} />
+        <View style={styles.heroWrap}>
+          <StoryImage uri={story.media_url} category={story.category} style={styles.hero} />
+          {story.image_credit_name ? (
+            <PhotoCredit name={story.image_credit_name} profileUrl={story.image_credit_url} bottom={60} />
+          ) : null}
+        </View>
 
         <View style={[styles.heroOverlay, { height: insets.top + 220 }]} />
 
@@ -751,6 +757,7 @@ function createStyles(palette: ThemeColors) {
       backgroundColor: palette.bg,
     },
     hero: { width: "100%", height: 280, backgroundColor: palette.surfaceHigh },
+    heroWrap: { position: "relative" },
     heroOverlay: {
       position: "absolute",
       top: 0,

@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS stories (
   published_at TIMESTAMPTZ,
   source_url TEXT,
   media_url TEXT,
+  image_credit_name TEXT,
+  image_credit_url TEXT,
+  image_source TEXT,
 
   summary TEXT,
   life_impact TEXT,
@@ -62,6 +65,23 @@ CREATE TABLE IF NOT EXISTS stories (
   expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Unsplash image pool: per-category generic photos (no RSS publisher photos).
+-- Stories carry the pool image_url plus photographer credit columns.
+CREATE TABLE IF NOT EXISTS image_pool (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  category TEXT NOT NULL,
+  unsplash_photo_id TEXT UNIQUE NOT NULL,
+  image_url TEXT NOT NULL,
+  photographer_name TEXT NOT NULL,
+  photographer_url TEXT NOT NULL,
+  photo_url TEXT NOT NULL,
+  download_location TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_image_pool_category ON image_pool(category);
 
 CREATE TABLE IF NOT EXISTS story_audio (
   story_id UUID PRIMARY KEY REFERENCES stories(id) ON DELETE CASCADE,

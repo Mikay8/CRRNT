@@ -21,7 +21,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import app_settings, audio_storage, db, enrichment, fish_audio, ranking, rss
+from services import app_settings, audio_storage, db, enrichment, fish_audio, ranking, rss, unsplash_pool
 
 log = logging.getLogger("crrnt.ingestion")
 
@@ -257,6 +257,10 @@ async def run_ingestion(
         enriched = await enrichment.enrich_all(raw)
         log.info("Enriched %d stories", len(enriched))
 
+        # Fill the Unsplash pool for the categories in this run (no-op when
+        # the pool is already stocked; never raises).
+        await unsplash_pool.ensure_pools({s.get("category") for s in enriched if s.get("category")})
+
         inserted_stories: list[dict] = []
         tts_count = 0
         for story in enriched:
@@ -273,8 +277,26 @@ async def run_ingestion(
                 if not external_id:
                     row.pop("external_id", None)
 
+                # Pool image REPLACES the RSS publisher image (no publisher
+                # photos). No pool image -> media_url NULL -> the app falls
+                # back to its bundled category art.
+                pool_img = await unsplash_pool.pick_for_story(row.get("category"))
+                if pool_img:
+                    row["media_url"] = pool_img["image_url"]
+                    row["image_credit_name"] = pool_img["photographer_name"]
+                    row["image_credit_url"] = pool_img["photographer_url"]
+                    row["image_source"] = "unsplash"
+                else:
+                    row["media_url"] = None
+                    row["image_credit_name"] = None
+                    row["image_credit_url"] = None
+                    row["image_source"] = None
+
                 inserted = await db.insert_story(row)
                 enriched_count += 1
+                if pool_img:
+                    await unsplash_pool.mark_used(pool_img["id"])
+                    await unsplash_pool.trigger_download(pool_img["download_location"])
                 inserted_stories.append({
                     "title": row.get("title"),
                     "category": row.get("category"),

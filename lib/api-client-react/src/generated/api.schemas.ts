@@ -52,6 +52,10 @@ export interface Story {
   published_at?: string;
   source_url?: string;
   media_url?: string | null;
+  /** Unsplash photographer credit for the pool image (overlay byline). Hand-added: the backend serves these via SELECT *; add to the OpenAPI spec on the next client regen. */
+  image_credit_name?: string | null;
+  image_credit_url?: string | null;
+  image_source?: string | null;
   /** AI-generated story summary */
   summary?: string;
   /** How this story directly affects the reader's life */

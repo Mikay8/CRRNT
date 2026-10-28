@@ -415,6 +415,17 @@ export default function SettingsScreen() {
           {Platform.OS !== "web" && <NotificationsSection theme={theme} />}
 
           <BetaFeedback theme={theme} />
+
+          <SectionHeader label="Legal" theme={theme} />
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Row
+              icon="document-text-outline"
+              label="Privacy Policy"
+              onPress={() => router.push("/privacy" as any)}
+              theme={theme}
+              last
+            />
+          </View>
         </ScrollView>
       </View>
     );
@@ -612,6 +623,18 @@ export default function SettingsScreen() {
         {Platform.OS !== "web" && <NotificationsSection theme={theme} />}
 
         <BetaFeedback theme={theme} />
+
+        {/* ── Legal ──────────────────────────────────────────────── */}
+        <SectionHeader label="Legal" theme={theme} />
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Row
+            icon="document-text-outline"
+            label="Privacy Policy"
+            onPress={() => router.push("/privacy" as any)}
+            theme={theme}
+            last
+          />
+        </View>
 
         {/* ── Security ──────────────────────────────────────────────── */}
         <SectionHeader label="Security" theme={theme} />

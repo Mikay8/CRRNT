@@ -70,6 +70,17 @@ async function registerPushToken(): Promise<void> {
     const { isNotificationsOptedOut } = await import("../lib/notifications");
     if (await isNotificationsOptedOut()) return;
 
+    // Welcome screen owns the first notification ask: if it hasn't been
+    // seen yet and the OS permission is still undecided, don't prompt
+    // here — the welcome screen asks first (soft ask, then system
+    // prompt). Users who already granted or denied never see welcome
+    // and flow through here unchanged.
+    const { hasSeenWelcome } = await import("../lib/welcome");
+    if (!(await hasSeenWelcome())) {
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status === "undetermined") return;
+    }
+
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== "granted") {
@@ -162,6 +173,43 @@ function AuthGate() {
 }
 
 /**
+ * Routes first-run users to the welcome screen. Native only, and only
+ * while the OS notification permission is still undecided: users who
+ * already granted or denied have decided, so welcome is marked seen for
+ * them and never shown. Runs on segment changes; the welcome screen
+ * itself guards against deep links after dismissal.
+ */
+function WelcomeGate() {
+  const segments = useSegments();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (Platform.OS === "web") return;
+        if (!Device.isDevice) return;
+        if (segments[0] === "welcome") return;
+        const { hasSeenWelcome, markWelcomeSeen } = await import("../lib/welcome");
+        if (await hasSeenWelcome()) return;
+        const { status } = await Notifications.getPermissionsAsync();
+        if (cancelled) return;
+        if (status === "undetermined") {
+          router.replace("/welcome" as any);
+        } else {
+          // Already decided — no welcome needed, and don't re-check.
+          await markWelcomeSeen();
+        }
+      } catch {
+        // Welcome is non-critical; the feed stays reachable.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [segments]);
+  return null;
+}
+
+/**
  * Routes notification taps. Both CRRNT push types land on the feed for now:
  * the Morning Edition IS the feed, and breaking cards render at the top of
  * it. (Breaking items link external articles today, not CRRNT stories, so
@@ -249,6 +297,7 @@ function ThemedApp() {
               <QueryClientProvider client={queryClient}>
                 <AuthTokenWirer />
                 <AuthGate />
+                <WelcomeGate />
                 <NotificationTapRouter />
                 <SavedStoriesProvider>
                   <AudioProvider>
@@ -303,6 +352,10 @@ function ThemedApp() {
                             <Stack.Screen
                               name="privacy"
                               options={{ headerShown: false, presentation: "card" }}
+                            />
+                            <Stack.Screen
+                              name="welcome"
+                              options={{ headerShown: false, gestureEnabled: false }}
                             />
                             <Stack.Screen
                               name="support"

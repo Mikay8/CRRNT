@@ -303,9 +303,9 @@ function BetaFeedback({ theme }: { theme: ThemeColors }) {
           ]}
         >
           {sending ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={theme.onAccent} />
           ) : (
-            <Text style={feedbackStyles.sendBtnText}>
+            <Text style={[feedbackStyles.sendBtnText, { color: theme.onAccent }]}>
               {sent ? "Sent — thanks!" : "Send feedback"}
             </Text>
           )}

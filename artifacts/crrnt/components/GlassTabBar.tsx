@@ -309,7 +309,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   label: {
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Inter_700Bold",
     fontSize: 11,
     letterSpacing: 0.1,
   },

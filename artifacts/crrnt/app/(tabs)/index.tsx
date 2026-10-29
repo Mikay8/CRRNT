@@ -336,7 +336,7 @@ function createStyles(palette: ThemeColors) {
     getAccountText: {
       fontFamily: "Inter_600SemiBold",
       fontSize: 13,
-      color: "#fff",
+      color: palette.onAccent,
     },
     desktopPills: {
       paddingTop: 14,

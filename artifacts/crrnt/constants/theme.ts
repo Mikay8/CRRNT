@@ -19,6 +19,7 @@ export interface ThemeColors {
   textDim: string;
   accent: string;
   accentDim: string;
+  onAccent: string;
   positive: string;
   negative: string;
   warning: string;
@@ -44,9 +45,10 @@ export const darkTheme: ThemeColors = {
   borderStrong: "#243A52",
   text: "#E8F4FF",
   textMuted: "#7098B4",
-  textDim: "#405E78",
-  accent: "#06B6D4",
+  textDim: "#6390B5",
+  accent: "#22D3EE",
   accentDim: "#0891B2",
+  onAccent: "#061828",
   positive: "#10B981",
   negative: "#F87171",
   warning: "#F59E0B",
@@ -72,9 +74,10 @@ export const lightTheme: ThemeColors = {
   borderStrong: "#8BBDD8",
   text: "#061828",
   textMuted: "#3A6080",
-  textDim: "#6A8CA8",
-  accent: "#0891B2",
-  accentDim: "#0E7490",
+  textDim: "#4A6B85",
+  accent: "#0E7490",
+  accentDim: "#155E75",
+  onAccent: "#FFFFFF",
   positive: "#059669",
   negative: "#DC2626",
   warning: "#D97706",

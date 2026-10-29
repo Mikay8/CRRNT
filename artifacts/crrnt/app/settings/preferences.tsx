@@ -281,9 +281,9 @@ export default function PreferencesScreen() {
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={theme.onAccent} />
           ) : (
-            <Text style={sStyles.saveBtnText}>
+            <Text style={[sStyles.saveBtnText, { color: theme.onAccent }]}>
               {saved ? "Saved ✓" : "Save preferences"}
             </Text>
           )}

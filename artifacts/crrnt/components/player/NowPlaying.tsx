@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   BackHandler,
   Platform,
@@ -186,8 +186,15 @@ function MobilePlayer() {
     seekTo(Math.max(0, Math.min(durationMs, positionMs + deltaMs))).catch(() => undefined);
   };
 
+  // Same double-tap guard as StoryCard: router.push does not dedupe, so a
+  // second tap on the player before the first push lands would stack an
+  // identical story screen, costing one extra back press per duplicate.
+  const lastNavRef = useRef(0);
   const openStory = () => {
     if (!story) return;
+    const now = Date.now();
+    if (now - lastNavRef.current < 1000) return;
+    lastNavRef.current = now;
     closePlayer();
     router.push({ pathname: "/story/[id]", params: { id: story.id } });
   };

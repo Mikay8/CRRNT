@@ -1,9 +1,9 @@
-"""APScheduler wrapper — runs ingestion daily at 6 AM Eastern,
-cleanup daily at 3 AM Eastern. Both times are admin-configurable
-(app_settings.schedule_times) and take effect immediately via reschedule().
-Also runs the Morning Edition push daily at 7:30 AM Eastern (fixed, not
-admin-configurable yet): if the admin moves ingestion later than 7:30, the
-push simply covers whatever was inserted in the last 12 hours that day.
+"""APScheduler wrapper — ingestion and cleanup run daily at admin-configurable
+times (app_settings.schedule_times, currently 06:00 / 03:00), taking effect
+immediately via reschedule(). Also runs the Morning Edition push daily at
+7:30 AM Eastern (fixed, not admin-configurable yet): if the admin moves
+ingestion later than 7:30, the push simply covers whatever was inserted in
+the last 12 hours that day. All three times are Eastern, not UTC.
 """
 from __future__ import annotations
 
@@ -15,6 +15,13 @@ from apscheduler.triggers.cron import CronTrigger
 from services import ingestion, ingest_config
 
 log = logging.getLogger("crrnt.scheduler")
+
+# Every trigger below carries this explicitly. Do NOT rely on the scheduler's
+# timezone: APScheduler only applies it to triggers given as strings, while
+# a pre-built CronTrigger with no timezone falls back to the container's
+# local zone — UTC on Railway. That silently ran ingestion at 2 AM ET and
+# the Morning Edition push at 3:30 AM ET for months (2026-10-28).
+_TZ = "America/New_York"
 
 _scheduler: AsyncIOScheduler | None = None
 
@@ -42,7 +49,7 @@ async def start() -> None:
     global _scheduler
     if _scheduler is not None:
         return
-    _scheduler = AsyncIOScheduler(timezone="America/New_York")
+    _scheduler = AsyncIOScheduler(timezone=_TZ)
 
     from services import app_settings
     times = await app_settings.get_schedule_times()
@@ -51,7 +58,7 @@ async def start() -> None:
 
     _scheduler.add_job(
         _daily_ingest,
-        CronTrigger(hour=ih, minute=im),
+        CronTrigger(hour=ih, minute=im, timezone=_TZ),
         id="daily_ingestion",
         replace_existing=True,
         coalesce=True,
@@ -59,7 +66,7 @@ async def start() -> None:
     )
     _scheduler.add_job(
         _daily_cleanup,
-        CronTrigger(hour=ch, minute=cm),
+        CronTrigger(hour=ch, minute=cm, timezone=_TZ),
         id="daily_cleanup",
         replace_existing=True,
         coalesce=True,
@@ -67,7 +74,7 @@ async def start() -> None:
     )
     _scheduler.add_job(
         _daily_digest_push,
-        CronTrigger(hour=7, minute=30),
+        CronTrigger(hour=7, minute=30, timezone=_TZ),
         id="daily_digest_push",
         replace_existing=True,
         coalesce=True,
@@ -83,11 +90,11 @@ def reschedule(ingest_hour: int, ingest_minute: int, cleanup_hour: int, cleanup_
         return
     _scheduler.reschedule_job(
         "daily_ingestion",
-        trigger=CronTrigger(hour=ingest_hour, minute=ingest_minute),
+        trigger=CronTrigger(hour=ingest_hour, minute=ingest_minute, timezone=_TZ),
     )
     _scheduler.reschedule_job(
         "daily_cleanup",
-        trigger=CronTrigger(hour=cleanup_hour, minute=cleanup_minute),
+        trigger=CronTrigger(hour=cleanup_hour, minute=cleanup_minute, timezone=_TZ),
     )
     log.info(
         "Schedule updated — ingestion %02d:%02d ET, cleanup %02d:%02d ET",

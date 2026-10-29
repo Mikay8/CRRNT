@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
@@ -37,6 +37,8 @@ const PLAY_GREEN = "#22C55E";
 const QUEUE_AMBER = "#F59E0B";
 /** Snap-back after a swipe: settles with one small overshoot rather than a wobble. */
 const RETURN_SPRING = { stiffness: 260, damping: 30 };
+/** Window in which a repeat story tap is treated as a double-tap, not a new navigation. */
+const NAV_GUARD_MS = 1000;
 
 type SwipeKind = "play" | "queue" | "playing" | "save" | "unsave";
 
@@ -257,6 +259,21 @@ export function StoryCard({ story, variant = "list" }: StoryCardProps) {
     };
   });
 
+  const lastNavRef = useRef(0);
+  /**
+   * Double-tap guard for story navigation: router.push does not dedupe, so a
+   * second tap before the first push lands stacks an identical story screen,
+   * and each duplicate costs one extra back press before the feed reappears.
+   * Returns false when the tap is swallowed. The window is per card, so
+   * tapping a different card right after is unaffected.
+   */
+  const claimNav = () => {
+    const now = Date.now();
+    if (now - lastNavRef.current < NAV_GUARD_MS) return false;
+    lastNavRef.current = now;
+    return true;
+  };
+
   const handlePlayButton = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
     if (desktop) {
@@ -265,11 +282,13 @@ export function StoryCard({ story, variant = "list" }: StoryCardProps) {
       else playStory(story).catch(() => undefined);
       return;
     }
+    if (!claimNav()) return;
     playStory(story).catch(() => undefined);
     router.push({ pathname: "/story/[id]", params: { id: story.id } });
   };
 
   const onPress = () => {
+    if (!claimNav()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
     router.push({ pathname: "/story/[id]", params: { id: story.id } });
   };

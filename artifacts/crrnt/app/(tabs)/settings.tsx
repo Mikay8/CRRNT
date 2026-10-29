@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -216,6 +218,10 @@ function BetaFeedback({ theme }: { theme: ThemeColors }) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Tracks whether the box is focused so a Done button can close the
+  // keyboard: a multiline input has no return-to-dismiss, and the screen
+  // previously offered no way to close it at all.
+  const [focused, setFocused] = useState(false);
 
   const handleSend = async () => {
     const message = text.trim();
@@ -235,6 +241,8 @@ function BetaFeedback({ theme }: { theme: ThemeColors }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setText("");
       setSent(true);
+      // Sending ends the typing session, so close the keyboard too.
+      Keyboard.dismiss();
     } catch {
       setError("Couldn't send that — check your connection and try again.");
     } finally {
@@ -256,6 +264,8 @@ function BetaFeedback({ theme }: { theme: ThemeColors }) {
             setText(v);
             setSent(false);
           }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           placeholder="Share a suggestion or report a bug…"
           placeholderTextColor={theme.textDim}
           multiline
@@ -270,6 +280,17 @@ function BetaFeedback({ theme }: { theme: ThemeColors }) {
             },
           ]}
         />
+        {focused ? (
+          <Pressable
+            onPress={() => Keyboard.dismiss()}
+            hitSlop={8}
+            style={feedbackStyles.doneBtn}
+          >
+            <Text style={[feedbackStyles.doneBtnText, { color: theme.accent }]}>
+              Done
+            </Text>
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={handleSend}
           disabled={!text.trim() || sending}
@@ -326,6 +347,16 @@ const feedbackStyles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
   },
+  doneBtn: {
+    alignSelf: "flex-end",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 4,
+  },
+  doneBtnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 15,
+  },
   sendBtnText: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 15,
@@ -378,10 +409,15 @@ export default function SettingsScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.bg, paddingTop: insets.top }, desktopFrame]}>
         <Text style={[styles.screenTitle, { color: theme.text }, desktopColumn]}>Settings</Text>
-        <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: bottomPad }, desktopColumn]}
-          showsVerticalScrollIndicator={false}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[styles.content, { paddingBottom: bottomPad }, desktopColumn]}
+            showsVerticalScrollIndicator={false}
+          >
           <View style={[styles.accountCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={[styles.avatar, { backgroundColor: theme.surfaceHigh }]}>
               <Ionicons name="person-outline" size={22} color={theme.accent} />
@@ -426,7 +462,8 @@ export default function SettingsScreen() {
               last
             />
           </View>
-        </ScrollView>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </View>
     );
   }
@@ -536,10 +573,15 @@ export default function SettingsScreen() {
       />
       <Text style={[styles.screenTitle, { color: theme.text }, desktopColumn]}>Settings</Text>
 
-      <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: bottomPad }, desktopColumn]}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[styles.content, { paddingBottom: bottomPad }, desktopColumn]}
+          showsVerticalScrollIndicator={false}
+        >
         {/* ── Email verification banner ──────────────────────────────── */}
         {user.email_verified === false && (
           <View style={bannerStyles.banner}>
@@ -670,7 +712,8 @@ export default function SettingsScreen() {
             last
           />
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

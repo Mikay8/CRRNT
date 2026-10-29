@@ -30,9 +30,11 @@
     {% endif %}
   </form>
 
-  <!-- Stories table -->
+  <!-- Stories table on md+; stacked cards below md, where the 7-column
+       table otherwise needs sideways scrolling and the per-row actions
+       are too small to tap reliably. -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-    <div class="overflow-x-auto">
+    <div class="overflow-x-auto hidden md:block">
       {% if stories %}
       <table class="w-full text-sm">
         <thead>
@@ -88,6 +90,41 @@
           {% endfor %}
         </tbody>
       </table>
+      {% else %}
+      <div class="px-5 py-12 text-center text-gray-500 text-sm">
+        No stories match the current filter.
+      </div>
+      {% endif %}
+    </div>
+    <div class="md:hidden divide-y divide-gray-700/50">
+      {% if stories %}
+      {% for s in stories %}
+      <div class="p-4 space-y-3">
+        <div>
+          <div class="text-white font-medium">{{ s.title or '—' }}</div>
+          {% if s.stock_note %}<div class="text-cyan-400 text-xs mt-0.5">{{ s.stock_note }}</div>{% endif %}
+        </div>
+        <form method="POST" action="/admin/stories/{{ s.id }}/category" class="flex gap-2 items-center">
+          <select name="category" class="flex-1 bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-cyan-500">
+            {% for cat in categories %}
+            <option value="{{ cat }}" {% if s.category == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-cyan-400 text-sm font-medium rounded-lg transition-colors shrink-0">Save</button>
+        </form>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
+          {% if s.sentiment_label %}
+            <span class="text-gray-300">{{ s.sentiment_label }}{% if s.sentiment_score is not none %} ({{ "%.2f"|format(s.sentiment_score) }}){% endif %}</span>
+          {% endif %}
+          <span>TTS {% if s.tts_url %}<span class="text-green-400">✓</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</span>
+          <span>{{ s.published_at[:10] if s.published_at else '—' }} → {{ s.expires_at[:10] if s.expires_at else '—' }}</span>
+        </div>
+        <form method="POST" action="/admin/stories/{{ s.id }}/delete"
+              onsubmit="return confirm('Delete this story?')">
+          <button type="submit" class="w-full px-3 py-2.5 bg-red-900/50 hover:bg-red-800 text-red-300 text-xs font-medium rounded-lg transition-colors">Delete story</button>
+        </form>
+      </div>
+      {% endfor %}
       {% else %}
       <div class="px-5 py-12 text-center text-gray-500 text-sm">
         No stories match the current filter.

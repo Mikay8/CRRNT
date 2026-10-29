@@ -11,6 +11,10 @@
 
   {% if items %}
   <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+    <!-- Wide table on md+; stacked cards below md, where the 5-column
+         table otherwise blows out the viewport and pushes Status/Actions
+         off-screen with no scroll container. -->
+    <div class="overflow-x-auto hidden md:block">
     <table class="w-full text-sm">
       <thead>
         <tr class="border-b border-gray-700 text-gray-400 text-xs uppercase tracking-wider">
@@ -52,6 +56,35 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
+    <div class="md:hidden divide-y divide-gray-700/50">
+      {% for f in items %}
+      <div class="p-4 space-y-2">
+        <div class="text-gray-200 whitespace-pre-wrap break-words">{{ f.message }}</div>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
+          <span>{{ f.platform or '—' }}{% if f.app_version %} v{{ f.app_version }}{% endif %}</span>
+          <span>{{ f.created_at[:19] if f.created_at else '?' }}</span>
+          {% if f.reviewed_at %}
+            <span class="text-emerald-400 font-medium">Reviewed</span>
+          {% elif f.emailed_at %}
+            <span class="text-amber-400 font-medium">Emailed, awaiting review</span>
+          {% else %}
+            <span class="text-cyan-400 font-medium">New</span>
+          {% endif %}
+        </div>
+        <div class="flex gap-2 pt-1">
+          {% if not f.reviewed_at %}
+          <form method="POST" action="/admin/feedback/{{ f.id }}/reviewed" class="flex-1">
+            <button type="submit" class="w-full px-3 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs font-medium rounded-lg transition-colors">Mark reviewed</button>
+          </form>
+          {% endif %}
+          <form method="POST" action="/admin/feedback/{{ f.id }}/delete" onsubmit="return confirm('Delete this feedback?')" class="flex-1">
+            <button type="submit" class="w-full px-3 py-2.5 bg-red-900/50 hover:bg-red-800 text-red-300 text-xs font-medium rounded-lg transition-colors">Delete</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
   </div>
   {% else %}
   <div class="bg-gray-800 border border-gray-700/60 rounded-xl p-5">

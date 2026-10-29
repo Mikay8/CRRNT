@@ -154,6 +154,22 @@ overrides:
   "@expo/ngrok-bin>@expo/ngrok-bin-sunos-x64": "-"
   "@expo/ngrok-bin>@expo/ngrok-bin-win32-ia32": "-"
   "@expo/ngrok-bin>@expo/ngrok-bin-win32-x64": "-"
+  # @expo/metro pins metro 0.87.1 but react-native's cli plugin pulls 0.87.2;
+  # two copies break iOS bundling ("reading 'transformFile'"), so keep one.
+  metro: "0.87.1"
+  metro-babel-transformer: "0.87.1"
+  metro-cache: "0.87.1"
+  metro-cache-key: "0.87.1"
+  metro-config: "0.87.1"
+  metro-core: "0.87.1"
+  metro-file-map: "0.87.1"
+  metro-minify-terser: "0.87.1"
+  metro-resolver: "0.87.1"
+  metro-runtime: "0.87.1"
+  metro-source-map: "0.87.1"
+  metro-symbolicate: "0.87.1"
+  metro-transform-plugins: "0.87.1"
+  metro-transform-worker: "0.87.1"
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"

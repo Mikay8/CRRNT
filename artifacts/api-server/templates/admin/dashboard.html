@@ -11,16 +11,16 @@
       <p class="text-gray-500 text-sm mt-0.5">CRRNT system overview</p>
     </div>
     <div class="flex flex-wrap gap-2">
-      <form method="POST" action="/admin/ingest">
-        <button type="submit" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg transition-colors">
+      <form method="POST" action="/admin/ingest" class="flex-1 sm:flex-none">
+        <button type="submit" class="w-full sm:w-auto px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg transition-colors">
           ⚡ Trigger Ingest
         </button>
       </form>
-      <a href="/admin/settings" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium rounded-lg transition-colors">
+      <a href="/admin/settings" class="flex-1 sm:flex-none text-center px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium rounded-lg transition-colors">
         ⚙ Config
       </a>
-      <form method="POST" action="/admin/cleanup">
-        <button type="submit" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
+      <form method="POST" action="/admin/cleanup" class="flex-1 sm:flex-none">
+        <button type="submit" class="w-full sm:w-auto px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
           🧹 Run Cleanup
         </button>
       </form>
@@ -95,10 +95,11 @@
 
   <!-- Stat cards -->
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
+    <a href="/admin/stories" class="block bg-gray-800 border border-gray-700 hover:border-gray-500 rounded-xl p-5 transition-colors">
       <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Total Stories</div>
       <div class="text-3xl font-bold text-white mt-1">{{ total_stories }}</div>
-    </div>
+      <div class="text-gray-600 text-xs mt-1">View stories →</div>
+    </a>
     <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
       <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">New Users (all time)</div>
       <div class="text-3xl font-bold text-white mt-1">{{ install_stats.total }}</div>

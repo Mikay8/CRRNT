@@ -369,7 +369,7 @@ export function StoryCard({ story, variant = "list" }: StoryCardProps) {
           </View>
 
           <Text style={[styles.title, feature && styles.featureTitle]} numberOfLines={feature ? 4 : 3}>
-            {story.title}
+            {story.display_title || story.title}
           </Text>
 
           <Text style={[styles.insight, feature && styles.featureInsight]} numberOfLines={feature ? 3 : 2}>

@@ -6,7 +6,7 @@ Pipeline:
   2. Drop stale, in-batch duplicate, and already-stored articles
   3. Claude ranking — one batched call per category, keep only the
      configured top N per category (falls back to newest-first)
-  4. Claude Pass 1 — summary, life_impact, wallet_impact, one_liner, stock_note
+  4. Claude Pass 1 — display_title, summary (merged body), one_liner, stock_note
   5. Grok x_search Pass 2 — sentiment_label, sentiment_score, people_say, featured_posts
   6. Insert story row to Postgres (get UUID; the post-enrichment
      duplicate check stays as a safety net)
@@ -158,6 +158,7 @@ async def _to_story_row(raw: dict[str, Any]) -> dict[str, Any]:
     return {
         "external_id": raw.get("articleId") or raw.get("external_id"),
         "title": raw.get("title"),
+        "display_title": raw.get("displayTitle") or raw.get("display_title"),
         "category": raw.get("category"),
         "published_at": pub,
         "source_url": raw.get("link") or raw.get("source_url"),

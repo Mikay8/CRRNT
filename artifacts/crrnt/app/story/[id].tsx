@@ -353,7 +353,7 @@ export default function StoryDetailScreen() {
             </View>
           </View>
 
-          <Text style={styles.title}>{story.title}</Text>
+          <Text style={styles.title}>{story.display_title || story.title}</Text>
 
           {/* Audio player row */}
           <View style={styles.audioRow}>

@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS stories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   external_id TEXT UNIQUE,
   title TEXT,
+  display_title TEXT,
   category TEXT,
   published_at TIMESTAMPTZ,
   source_url TEXT,

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Pressable, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { BlurView } from "expo-blur";
 import { router } from "expo-router";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import Animated, {
   interpolateColor,
@@ -45,7 +45,7 @@ function fullFrame(w: number, h: number, queueInset: number) {
  * Esc collapses the panel or closes the queue.
  */
 export default function DesktopPlayer() {
-  const { story, isPlaying, isBarVisible, queue, togglePlayPause, seekTo } =
+  const { story, isPlaying, isBarVisible, queue, canPrevious, playNext, playPrevious, togglePlayPause, seekTo } =
     useAudio();
   const { positionMs, durationMs } = useAudioProgress();
   const { expand, queue: queueAnim, isPlayerOpen, openPlayer, closePlayer, isQueueOpen, setQueueOpen } =
@@ -143,11 +143,6 @@ export default function DesktopPlayer() {
   const meta = getCategoryMeta(story?.category ?? null);
   const catColor = meta?.color ?? theme.accent;
   const progress = durationMs > 0 ? Math.min(positionMs / durationMs, 1) : 0;
-
-  const skip = (deltaMs: number) => {
-    if (durationMs <= 0) return;
-    seekTo(Math.max(0, Math.min(durationMs, positionMs + deltaMs))).catch(() => undefined);
-  };
 
   const openStory = () => {
     if (!story) return;
@@ -290,8 +285,13 @@ export default function DesktopPlayer() {
               labelColor={theme.textMuted}
             />
             <View style={styles.controls}>
-              <Pressable onPress={() => skip(-15000)} accessibilityLabel="Back 15 seconds">
-                <MaterialCommunityIcons name="rewind-15" size={32} color={theme.text} />
+              <Pressable
+                onPress={() => playPrevious().catch(() => undefined)}
+                disabled={!canPrevious}
+                style={{ opacity: canPrevious ? 1 : 0.3 }}
+                accessibilityLabel="Previous story"
+              >
+                <Ionicons name="play-skip-back" size={30} color={theme.text} />
               </Pressable>
               <HoverScale style={styles.bigPlay} onPress={togglePlayPause} label={isPlaying ? "Pause" : "Play"}>
                 <Ionicons
@@ -301,8 +301,13 @@ export default function DesktopPlayer() {
                   style={isPlaying ? undefined : { marginLeft: 3 }}
                 />
               </HoverScale>
-              <Pressable onPress={() => skip(15000)} accessibilityLabel="Forward 15 seconds">
-                <MaterialCommunityIcons name="fast-forward-15" size={32} color={theme.text} />
+              <Pressable
+                onPress={() => playNext().catch(() => undefined)}
+                disabled={queue.length === 0}
+                style={{ opacity: queue.length > 0 ? 1 : 0.3 }}
+                accessibilityLabel="Next story"
+              >
+                <Ionicons name="play-skip-forward" size={30} color={theme.text} />
               </Pressable>
             </View>
             <View style={styles.extras}>

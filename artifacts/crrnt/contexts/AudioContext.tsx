@@ -1,10 +1,9 @@
 import {
-  useAudioPlayer,
-  useAudioPlayerStatus,
+  useAudioPlaylist,
+  useAudioPlaylistStatus,
   setAudioModeAsync,
 } from "expo-audio";
 import * as Speech from "expo-speech";
-import { Platform } from "react-native";
 import { getBaseUrl } from "@workspace/api-client-react";
 import type { Story } from "@workspace/api-client-react";
 import React, {
@@ -24,8 +23,10 @@ interface AudioContextType {
   isAudioLoading: boolean;
   isBarVisible: boolean;
   queue: Story[];
+  canPrevious: boolean;
   playStory: (story: Story) => Promise<void>;
   playNext: () => Promise<void>;
+  playPrevious: () => Promise<void>;
   playFromQueue: (index: number) => Promise<void>;
   togglePlayPause: () => Promise<void>;
   seekTo: (ms: number) => Promise<void>;
@@ -58,6 +59,15 @@ function buildSpeechText(story: Story): string {
   if (story.people_say)
     parts.push("What people are saying. " + story.people_say);
   return parts.join(" ");
+}
+
+/**
+ * A story is audio-capable when it carries a playable file URL. Stories
+ * without one (Fish synthesis failed at ingestion) fall back to device
+ * speech synthesis and can never sit inside the native playlist.
+ */
+function isAudioStory(story: Story): boolean {
+  return !!story.tts_url;
 }
 
 /**
@@ -104,16 +114,22 @@ async function configureAudioSession() {
 }
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
-  const { getAuthHeader, accessToken } = useAuth();
+  const { accessToken } = useAuth();
   const [story, setStory] = useState<Story | null>(null);
   const storyRef = useRef<Story | null>(null);
   const [isBarVisible, setIsBarVisible] = useState(false);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
+  const [canPrevious, setCanPrevious] = useState(false);
 
   const [isAudioMode, setIsAudioMode] = useState(false);
   const isAudioModeRef = useRef(false);
 
-  // Queue state
+  // Play-order model: one list — [...played, current, ...upcoming] — with
+  // an index pointing at the current story. The exposed queue is always
+  // list[index+1..], and Previous is simply index-1, so stories are never
+  // destroyed by advancing the way the old pop-the-queue model did.
+  const listRef = useRef<Story[]>([]);
+  const indexRef = useRef(-1);
   const [queue, setQueue] = useState<Story[]>([]);
   const queueRef = useRef<Story[]>([]);
 
@@ -122,7 +138,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [speechDurationMs, setSpeechDurationMs] = useState(0);
   const [speechPlaying, setSpeechPlaying] = useState(false);
 
-  const blobUrlRef = useRef<string | null>(null);
   const speechTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speechOffsetRef = useRef<{ startTime: number; offsetMs: number } | null>(null);
   const speechTextRef = useRef<string>("");
@@ -132,73 +147,32 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const speechPositionMsRef = useRef(0);
   const speechGenRef = useRef(0);
 
-  // Ref for calling playNext from speech/audio end callbacks (avoids circular dep issues)
-  const playNextRef = useRef<() => Promise<void>>(async () => {});
+  // The native playlist (expo-audio AudioPlaylist) holds the audio-capable
+  // stories of the current contiguous run — from just after the previous
+  // speech story (or the list start) up to just before the next speech
+  // story (or the list end). Track-to-track advance, background playback,
+  // and the Control Center / lock-screen next & previous commands all run
+  // natively on it; JS only mirrors the state for the UI.
+  const playlist = useAudioPlaylist({ updateInterval: 200, loop: "none" });
+  const playlistStatus = useAudioPlaylistStatus(playlist);
+  const winFromRef = useRef(0); // list index the loaded window starts at
+  const winBoundaryRef = useRef(0); // list index the loaded window ends before
+  const winLoadedRef = useRef(false); // whether a window was ever loaded
 
-  const player = useAudioPlayer(null, { updateInterval: 200 });
-  const audioStatus = useAudioPlayerStatus(player);
-
-  // expo-audio v1.1.1 iOS bug (GitHub #37653): periodic time observer stops firing after seek/pause.
-  // Hybrid fix: duration from audioStatus (load event, not affected), position/playing polled directly.
   const [audioPositionMs, setAudioPositionMs] = useState(0);
   const [audioDurationMs, setAudioDurationMs] = useState(0);
   const [audioIsPlaying, setAudioIsPlaying] = useState(false);
 
   const audioDurationMsRef = useRef(0);
-  // Track end detection refs for auto-advance
+  // End-of-window detection: shared by the status event and the poll so a
+  // finished last loaded track advances exactly once. The poll only trusts
+  // a playing -> stopped transition, so a user pausing near the end of the
+  // last track is never mistaken for a finish.
   const wasPlayingRef = useRef(false);
   const audioEndFiredRef = useRef(false);
 
-  useEffect(() => {
-    const d = audioStatus.duration;
-    if (typeof d === "number" && isFinite(d) && d > 0) {
-      const ms = Math.round(d * 1000);
-      audioDurationMsRef.current = ms;
-      setAudioDurationMs(ms);
-      setIsAudioLoading(false);
-      // Re-publish once the item is actually loaded: if the first publish
-      // raced the load (duration still 0), iOS can drop it, and this is
-      // also what refreshes Control Center with the real duration.
-      if (isAudioModeRef.current && storyRef.current) {
-        try {
-          player.updateLockScreenMetadata(buildLockScreenMetadata(storyRef.current));
-        } catch (e) {
-          console.warn("[Audio] updateLockScreenMetadata failed", e);
-        }
-      }
-    }
-  }, [audioStatus.duration]);
-
-  // Poll currentTime and playing — bypasses stale observer. Also detects track end for auto-advance.
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const t = player.currentTime;
-      if (typeof t === "number" && isFinite(t)) {
-        setAudioPositionMs(Math.round(t * 1000));
-      }
-      const isNowPlaying = player.playing ?? false;
-      setAudioIsPlaying(isNowPlaying);
-
-      // Detect natural track end: was playing → stopped near end → fire once
-      if (
-        wasPlayingRef.current &&
-        !isNowPlaying &&
-        !audioEndFiredRef.current &&
-        isAudioModeRef.current
-      ) {
-        const dur = audioDurationMsRef.current;
-        if (dur > 0 && typeof t === "number" && isFinite(t) && dur - t * 1000 < 1500) {
-          audioEndFiredRef.current = true;
-          if (queueRef.current.length > 0) {
-            playNextRef.current().catch(() => {});
-          }
-        }
-      }
-      if (isNowPlaying) audioEndFiredRef.current = false;
-      wasPlayingRef.current = isNowPlaying;
-    }, 200);
-    return () => clearInterval(timer);
-  }, [player]);
+  // Ref for advancing from speech/end callbacks without stale closures.
+  const advanceRef = useRef<() => void>(() => {});
 
   const _setStory = (s: Story | null) => {
     storyRef.current = s;
@@ -223,6 +197,126 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const _setQueue = (q: Story[]) => {
     queueRef.current = q;
     setQueue(q);
+  };
+
+  /** Re-derive the exposed story / queue / canPrevious from list + index. */
+  const _syncDerived = () => {
+    const list = listRef.current;
+    const idx = indexRef.current;
+    _setStory(idx >= 0 && idx < list.length ? list[idx] : null);
+    _setQueue(idx >= 0 ? list.slice(idx + 1) : [...list]);
+    setCanPrevious(idx > 0);
+  };
+
+  /** Playlist index of a list index, or -1 when it isn't loaded. */
+  const _audioOrdinal = (listIdx: number): number => {
+    const list = listRef.current;
+    if (listIdx < winFromRef.current || listIdx >= winBoundaryRef.current) return -1;
+    let ord = 0;
+    for (let i = winFromRef.current; i < listIdx; i++) {
+      if (isAudioStory(list[i])) ord++;
+    }
+    return isAudioStory(list[listIdx]) ? ord : -1;
+  };
+
+  /** List index for a playlist index within the loaded window. */
+  const _listIndexForOrdinal = (ord: number): number => {
+    const list = listRef.current;
+    let seen = -1;
+    for (let i = winFromRef.current; i < winBoundaryRef.current && i < list.length; i++) {
+      if (isAudioStory(list[i])) {
+        seen++;
+        if (seen === ord) return i;
+      }
+    }
+    return -1;
+  };
+
+  /** Source URI for an audio story, mirroring the old native player path:
+   * a presigned S3 URL is self-authenticating; only our own API's relative
+   * fallback path needs the base URL and a ?token=. */
+  const _sourceFor = (s: Story): { uri: string } => {
+    const path = s.tts_url ?? "";
+    if (/^https?:\/\//i.test(path)) return { uri: path };
+    const baseUrl = getBaseUrl() ?? "";
+    const alreadyHasToken = path.includes("token=");
+    const uri =
+      !alreadyHasToken && accessToken
+        ? `${baseUrl}${path}?token=${encodeURIComponent(accessToken)}`
+        : `${baseUrl}${path}`;
+    return { uri };
+  };
+
+  const _activateLockScreen = (s: Story) => {
+    try {
+      playlist.setActiveForLockScreen(true, buildLockScreenMetadata(s), {
+        showNextTrack: true,
+        showPreviousTrack: true,
+        showSeekForward: false,
+        showSeekBackward: false,
+      });
+    } catch (e) {
+      // Never swallow this silently: a failed activation is exactly
+      // "audio plays but Control Center shows Not Playing".
+      console.warn("[Audio] setActiveForLockScreen failed", e);
+    }
+  };
+
+  /**
+   * (Re)load the playlist window around a list index: the contiguous run
+   * of audio-capable stories containing it, bounded by speech stories.
+   * Returns the playlist ordinal of the given index.
+   */
+  const _loadWindow = (aroundIdx: number): number => {
+    const list = listRef.current;
+    let from = aroundIdx;
+    while (from > 0 && isAudioStory(list[from - 1])) from--;
+    let boundary = aroundIdx + 1;
+    while (boundary < list.length && isAudioStory(list[boundary])) boundary++;
+    try {
+      playlist.clear();
+      for (let i = from; i < boundary; i++) {
+        if (isAudioStory(list[i])) playlist.add(_sourceFor(list[i]));
+      }
+    } catch (e) {
+      console.warn("[Audio] playlist window load failed", e);
+    }
+    winFromRef.current = from;
+    winBoundaryRef.current = boundary;
+    winLoadedRef.current = true;
+    return _audioOrdinal(aroundIdx);
+  };
+
+  /**
+   * After a queue mutation, re-sync the loaded sources AFTER the current
+   * story to match the list up to the next speech story. Sources at and
+   * before the current story are never touched, so playback of the
+   * current track is undisturbed.
+   */
+  const _resyncTail = () => {
+    const list = listRef.current;
+    const idx = indexRef.current;
+    if (idx < 0) return;
+    let boundary = idx + 1;
+    while (boundary < list.length && isAudioStory(list[boundary])) boundary++;
+    // No window loaded yet (e.g. queue built before anything played, or
+    // an all-speech session): the next audio start loads from the list.
+    if (!winLoadedRef.current) return;
+    // Loaded sources belonging to list positions up to the current story.
+    let keepCount = 0;
+    const upto = Math.min(idx, winBoundaryRef.current - 1);
+    for (let i = winFromRef.current; i <= upto && i < list.length; i++) {
+      if (isAudioStory(list[i])) keepCount++;
+    }
+    try {
+      while (playlist.trackCount > keepCount) playlist.remove(keepCount);
+      for (let i = idx + 1; i < boundary; i++) {
+        if (isAudioStory(list[i])) playlist.add(_sourceFor(list[i]));
+      }
+    } catch (e) {
+      console.warn("[Audio] playlist tail resync failed", e);
+    }
+    winBoundaryRef.current = boundary;
   };
 
   const positionMs = isAudioMode ? audioPositionMs : speechPositionMs;
@@ -299,7 +393,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        // Natural end — tear down cleanly then auto-advance queue if needed.
+        // Natural end — tear down cleanly then advance if a story follows.
         _setSpeechPlaying(false);
         if (speechTimerRef.current) {
           clearInterval(speechTimerRef.current);
@@ -309,8 +403,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         speechPausedAtMsRef.current = 0;
         _setSpeechPositionMs(0);
 
-        if (queueRef.current.length > 0) {
-          setTimeout(() => playNextRef.current().catch(() => {}), 500);
+        if (indexRef.current < listRef.current.length - 1) {
+          setTimeout(() => advanceRef.current(), 500);
         }
       };
 
@@ -328,199 +422,275 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const playStory = useCallback(
-    async (newStory: Story) => {
-      // Reset auto-advance detection for new track
-      wasPlayingRef.current = false;
-      audioEndFiredRef.current = false;
+  /** Start playback of the audio story at a list index, loading or
+   * extending the native window when the track isn't loaded yet. */
+  const _playAudioAt = useCallback(
+    (listIdx: number) => {
+      let ord = _audioOrdinal(listIdx);
+      if (ord < 0 || ord >= playlist.trackCount) {
+        ord = _loadWindow(listIdx);
+      }
+      if (ord >= 0 && playlist.currentIndex !== ord) {
+        try {
+          playlist.skipTo(ord);
+        } catch (e) {
+          console.warn("[Audio] playlist skipTo failed", e);
+        }
+      }
+      playlist.play();
+      _activateLockScreen(listRef.current[listIdx]);
+    },
+    [playlist],
+  );
 
+  /** The one router every transition goes through: next, previous, queue
+   * taps, card taps (via playStory), speech end, and window end. */
+  const startAt = useCallback(
+    async (listIdx: number) => {
+      const list = listRef.current;
+      if (listIdx < 0 || listIdx >= list.length) return;
+      const target = list[listIdx];
+
+      audioEndFiredRef.current = false;
+      wasPlayingRef.current = false;
+      indexRef.current = listIdx;
+      _syncDerived();
       setIsAudioLoading(true);
       _stopSpeech();
-      player.pause();
-      _setAudioMode(false);
-
-      _setStory(newStory);
+      playlist.pause();
       setIsBarVisible(true);
       _setSpeechPositionMs(0);
       setSpeechDurationMs(0);
-      _setSpeechPlaying(false);
       speechPausedAtMsRef.current = 0;
       setAudioDurationMs(0);
       audioDurationMsRef.current = 0;
       setAudioPositionMs(0);
 
-      // tts_url is a fully-qualified presigned S3 URL when audio was generated
-      // at ingestion. With no tts_url there's nothing to play — the
-      // /api/stories/{id}/audio endpoint reads the same column and 404s — so
-      // skip straight to speech synthesis. (Native can't detect that 404: the
-      // player just loads silence, which left iPhone audio dead.)
-      const audioPath = newStory.tts_url ?? null;
-      const isAbsoluteAudioUrl = !!audioPath && /^https?:\/\//i.test(audioPath);
-      const baseUrl = getBaseUrl() ?? "";
-      let audioStarted = false;
+      await configureAudioSession();
 
-      if (audioPath) {
-        await configureAudioSession();
-
-        if (typeof document !== "undefined") {
-          // Web: fetch (auth header only for our own API — a presigned S3 URL
-          // is self-authenticating and an extra Authorization header on a
-          // cross-origin request to it can fail CORS preflight)
-          const fullUrl = isAbsoluteAudioUrl ? audioPath : `${baseUrl}${audioPath}`;
-          if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
-          try {
-            const res = await fetch(fullUrl, {
-              headers: isAbsoluteAudioUrl ? undefined : getAuthHeader(),
-            });
-            if (res.ok) {
-              const rawBlob = await res.blob();
-              // Detect base64 response: if first char is ASCII printable (not 0xFF), decode it
-              const header = await rawBlob.slice(0, 1).arrayBuffer();
-              const firstByte = new Uint8Array(header)[0];
-              let audioBlob: Blob;
-              if (firstByte < 0x80) {
-                // Base64 text — decode to binary MP3
-                const b64 = await rawBlob.text();
-                const binary = Uint8Array.from(atob(b64.trim()), (c) => c.charCodeAt(0));
-                audioBlob = new Blob([binary], { type: "audio/mpeg" });
-              } else {
-                audioBlob = new Blob([await rawBlob.arrayBuffer()], { type: "audio/mpeg" });
-              }
-              const blobUrl = URL.createObjectURL(audioBlob);
-              blobUrlRef.current = blobUrl;
-              setIsAudioLoading(false);
-              // Pre-load duration via HTML5 Audio — expo-audio web reports it late
-              const probeEl = document.createElement("audio");
-              const probeDur = await new Promise<number>((resolve) => {
-                probeEl.onloadedmetadata = () => resolve((probeEl as any).duration as number);
-                probeEl.onerror = () => resolve(0);
-                probeEl.src = blobUrl;
-              });
-              if (probeDur > 0 && isFinite(probeDur)) {
-                const ms = Math.round(probeDur * 1000);
-                audioDurationMsRef.current = ms;
-                setAudioDurationMs(ms);
-              }
-              player.replace({ uri: blobUrl });
-              audioStarted = true;
-            }
-          } catch {
-            // fall through to speech synthesis
-          }
-        } else {
-          // Native: a presigned S3 URL is self-authenticating and already
-          // has its own query string — only our own API's fallback path
-          // needs baseUrl and a ?token= appended.
-          if (blobUrlRef.current) {
-            URL.revokeObjectURL(blobUrlRef.current);
-            blobUrlRef.current = null;
-          }
-          let nativeUrl: string;
-          if (isAbsoluteAudioUrl) {
-            nativeUrl = audioPath;
-          } else {
-            const alreadyHasToken = audioPath.includes("token=");
-            nativeUrl =
-              !alreadyHasToken && accessToken
-                ? `${baseUrl}${audioPath}?token=${encodeURIComponent(accessToken)}`
-                : `${baseUrl}${audioPath}`;
-          }
-          player.replace({ uri: nativeUrl });
-          audioStarted = true;
-        }
-      }
-
-      if (audioStarted) {
+      if (isAudioStory(target)) {
         _setAudioMode(true);
-        player.play();
-        try {
-          player.setActiveForLockScreen(true, buildLockScreenMetadata(newStory));
-        } catch (e) {
-          // Never swallow this silently again: a failed activation is
-          // exactly "audio plays but Control Center shows Not Playing".
-          console.warn("[Audio] setActiveForLockScreen failed", e);
-        }
+        _playAudioAt(listIdx);
       } else {
-        // No audio URL or audio fetch failed — fall back to speech synthesis
-        setIsAudioLoading(false);
-        await configureAudioSession();
+        // Speech detour: the playlist idles (paused, not lock-screen
+        // active) while the device voice reads this story.
+        playlist.pause();
+        try {
+          playlist.setActiveForLockScreen(false);
+        } catch {
+          // Non-critical
+        }
         _setAudioMode(false);
+        setIsAudioLoading(false);
 
-        const text = buildSpeechText(newStory);
+        const text = buildSpeechText(target);
         speechTextRef.current = text;
-
         const wordCount = text.split(/\s+/).length;
         const estimatedMs = Math.max(Math.round((wordCount / 2.3) * 1000), 5000);
         setSpeechDurationMs(estimatedMs);
         speechDurationMsRef.current = estimatedMs;
-
         _startSpeechFrom(text, 0, estimatedMs);
       }
     },
-    [player, _stopSpeech, _startSpeechFrom],
+    [playlist, _stopSpeech, _startSpeechFrom, _playAudioAt],
+  );
+
+  const advance = useCallback(() => {
+    if (indexRef.current < listRef.current.length - 1) {
+      startAt(indexRef.current + 1).catch(() => {});
+    }
+  }, [startAt]);
+
+  useEffect(() => {
+    advanceRef.current = advance;
+  }, [advance]);
+
+  // Native track changes (auto-advance inside the window, Control Center
+  // / lock-screen next & previous, in-app skipTo) are adopted into the
+  // list model so the UI and queue always mirror what is playing.
+  useEffect(() => {
+    const sub = playlist.addListener("trackChanged", ({ currentIndex }) => {
+      const listIdx = _listIndexForOrdinal(currentIndex);
+      if (listIdx < 0 || listIdx === indexRef.current) return;
+      indexRef.current = listIdx;
+      audioEndFiredRef.current = false;
+      _syncDerived();
+      setAudioPositionMs(0);
+      setAudioDurationMs(0);
+      audioDurationMsRef.current = 0;
+      const s = listRef.current[listIdx];
+      if (s) {
+        try {
+          playlist.updateLockScreenMetadata(buildLockScreenMetadata(s));
+        } catch (e) {
+          console.warn("[Audio] updateLockScreenMetadata failed", e);
+        }
+      }
+    });
+    return () => sub.remove();
+  }, [playlist]);
+
+  // Loaded duration: clear the loading state, and re-publish lock-screen
+  // metadata once the item is actually loaded — if the first publish raced
+  // the load, iOS can drop it, and this refreshes Control Center with the
+  // real duration.
+  useEffect(() => {
+    const d = playlistStatus.duration;
+    if (typeof d === "number" && isFinite(d) && d > 0 && isAudioModeRef.current) {
+      const ms = Math.round(d * 1000);
+      audioDurationMsRef.current = ms;
+      setAudioDurationMs(ms);
+      setIsAudioLoading(false);
+      const s = storyRef.current;
+      if (s) {
+        try {
+          playlist.updateLockScreenMetadata(buildLockScreenMetadata(s));
+        } catch (e) {
+          console.warn("[Audio] updateLockScreenMetadata failed", e);
+        }
+      }
+    }
+    if (playlistStatus.isLoaded) setIsAudioLoading(false);
+  }, [playlistStatus.duration, playlistStatus.isLoaded, playlist]);
+
+  // End of the loaded window: the last loaded track finished and the
+  // playlist has nothing to advance into natively. If the list continues
+  // (a speech story, or the next audio run), move there. The playing /
+  // near-end checks keep this from firing when the playlist auto-advanced
+  // into its last track (that finish belongs to the previous track).
+  const _handleWindowEnd = useCallback(() => {
+    if (!isAudioModeRef.current || audioEndFiredRef.current) return;
+    if (playlist.playing) return;
+    if (playlist.currentIndex < playlist.trackCount - 1) return;
+    const dur = audioDurationMsRef.current;
+    const t = playlist.currentTime;
+    if (dur <= 0 || typeof t !== "number" || !isFinite(t)) return;
+    if (dur - t * 1000 >= 1500) return;
+    if (indexRef.current >= listRef.current.length - 1) return;
+    audioEndFiredRef.current = true;
+    advanceRef.current();
+  }, [playlist]);
+
+  useEffect(() => {
+    if (playlistStatus.didJustFinish) _handleWindowEnd();
+  }, [playlistStatus.didJustFinish, _handleWindowEnd]);
+
+  // Poll position / playing for the UI (expo-audio's periodic observer is
+  // unreliable after seek/pause, so position has always been polled), with
+  // the window-end check as a backstop to the status event.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!isAudioModeRef.current) return;
+      const t = playlist.currentTime;
+      if (typeof t === "number" && isFinite(t)) {
+        setAudioPositionMs(Math.round(t * 1000));
+      }
+      const isNowPlaying = playlist.playing ?? false;
+      setAudioIsPlaying(isNowPlaying);
+      if (isNowPlaying) {
+        audioEndFiredRef.current = false;
+      } else if (wasPlayingRef.current) {
+        _handleWindowEnd();
+      }
+      wasPlayingRef.current = isNowPlaying;
+    }, 200);
+    return () => clearInterval(timer);
+  }, [playlist, _handleWindowEnd]);
+
+  const playStory = useCallback(
+    async (newStory: Story) => {
+      // A fresh tap keeps the existing up-next tail (same contract as
+      // before) but starts a new list anchored at the tapped story.
+      const tail = listRef.current.slice(indexRef.current + 1);
+      listRef.current = [newStory, ...tail];
+      winLoadedRef.current = false;
+      winFromRef.current = 0;
+      winBoundaryRef.current = 0;
+      await startAt(0);
+    },
+    [startAt],
   );
 
   const addToQueue = useCallback((s: Story) => {
-    _setQueue([...queueRef.current, s]);
+    listRef.current = [...listRef.current, s];
+    _syncDerived();
+    _resyncTail();
   }, []);
 
   const addToQueueTop = useCallback((s: Story) => {
-    _setQueue([s, ...queueRef.current]);
+    const list = [...listRef.current];
+    list.splice(indexRef.current + 1, 0, s);
+    listRef.current = list;
+    _syncDerived();
+    _resyncTail();
   }, []);
 
   const removeFromQueue = useCallback((index: number) => {
-    const q = [...queueRef.current];
-    q.splice(index, 1);
-    _setQueue(q);
+    const list = [...listRef.current];
+    const listIdx = indexRef.current + 1 + index;
+    if (listIdx <= indexRef.current || listIdx >= list.length) return;
+    list.splice(listIdx, 1);
+    listRef.current = list;
+    _syncDerived();
+    _resyncTail();
   }, []);
 
   const moveInQueue = useCallback((from: number, to: number) => {
-    const q = [...queueRef.current];
-    if (from < 0 || from >= q.length || from === to) return;
-    const [moved] = q.splice(from, 1);
-    q.splice(Math.max(0, Math.min(to, q.length)), 0, moved);
-    _setQueue(q);
+    const list = [...listRef.current];
+    const base = indexRef.current + 1;
+    const fromIdx = base + from;
+    const toIdx = base + to;
+    if (fromIdx < base || fromIdx >= list.length || fromIdx === toIdx) return;
+    const [moved] = list.splice(fromIdx, 1);
+    list.splice(Math.max(base, Math.min(toIdx, list.length)), 0, moved);
+    listRef.current = list;
+    _syncDerived();
+    _resyncTail();
   }, []);
 
   const clearQueue = useCallback(() => {
-    _setQueue([]);
+    listRef.current = listRef.current.slice(0, indexRef.current + 1);
+    _syncDerived();
+    _resyncTail();
   }, []);
 
   const playNext = useCallback(async () => {
-    if (queueRef.current.length === 0) return;
-    const [next, ...rest] = queueRef.current;
-    _setQueue(rest);
-    await playStory(next);
-  }, [playStory]);
+    if (indexRef.current >= listRef.current.length - 1) return;
+    await startAt(indexRef.current + 1);
+  }, [startAt]);
 
-  const playFromQueue = useCallback(async (index: number) => {
-    const q = queueRef.current;
-    if (index < 0 || index >= q.length) return;
-    const selected = q[index];
-    _setQueue(q.slice(index + 1));
-    await playStory(selected);
-  }, [playStory]);
+  const playPrevious = useCallback(async () => {
+    if (indexRef.current <= 0) return;
+    await startAt(indexRef.current - 1);
+  }, [startAt]);
+
+  const playFromQueue = useCallback(
+    async (index: number) => {
+      const listIdx = indexRef.current + 1 + index;
+      if (index < 0 || listIdx >= listRef.current.length) return;
+      await startAt(listIdx);
+    },
+    [startAt],
+  );
 
   const shuffleQueue = useCallback(() => {
-    const q = [...queueRef.current];
-    for (let i = q.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [q[i], q[j]] = [q[j], q[i]];
+    const list = [...listRef.current];
+    const base = indexRef.current + 1;
+    for (let i = list.length - 1; i > base; i--) {
+      const j = base + Math.floor(Math.random() * (i - base + 1));
+      [list[i], list[j]] = [list[j], list[i]];
     }
-    _setQueue(q);
+    listRef.current = list;
+    _syncDerived();
+    _resyncTail();
   }, []);
-
-  // Keep playNextRef current so speech/audio end callbacks can call it without stale closure issues
-  useEffect(() => {
-    playNextRef.current = playNext;
-  }, [playNext]);
 
   const togglePlayPause = useCallback(async () => {
     if (isAudioModeRef.current) {
-      if (player.playing) {
-        player.pause();
+      if (playlist.playing) {
+        playlist.pause();
       } else {
-        player.play();
+        playlist.play();
       }
       return;
     }
@@ -534,13 +704,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       await configureAudioSession();
       _startSpeechFrom(text, speechPausedAtMsRef.current, speechDurationMsRef.current);
     }
-  }, [player, _stopSpeech, _startSpeechFrom]);
+  }, [playlist, _stopSpeech, _startSpeechFrom]);
 
   const seekTo = useCallback(
     async (ms: number) => {
       if (isAudioModeRef.current) {
-        await player.seekTo(ms / 1000);
-        player.play();
+        await playlist.seekTo(ms / 1000);
+        playlist.play();
         return;
       }
       const text = speechTextRef.current;
@@ -550,26 +720,42 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       await configureAudioSession();
       _startSpeechFrom(text, ms, speechDurationMsRef.current);
     },
-    [player, _stopSpeech, _startSpeechFrom],
+    [playlist, _stopSpeech, _startSpeechFrom],
   );
 
   const dismiss = useCallback(async () => {
     setIsAudioLoading(false);
     _stopSpeech();
-    player.pause();
-    try { player.clearLockScreenControls(); } catch (e) {
+    playlist.pause();
+    try {
+      playlist.clearLockScreenControls();
+    } catch (e) {
       console.warn("[Audio] clearLockScreenControls failed", e);
     }
+    try {
+      playlist.clear();
+    } catch {
+      // Non-critical
+    }
+    winLoadedRef.current = false;
+    winFromRef.current = 0;
+    winBoundaryRef.current = 0;
+    listRef.current = [];
+    indexRef.current = -1;
     _setAudioMode(false);
     setIsBarVisible(false);
     _setStory(null);
+    _setQueue([]);
+    setCanPrevious(false);
     _setSpeechPositionMs(0);
     setSpeechDurationMs(0);
     _setSpeechPlaying(false);
     speechPausedAtMsRef.current = 0;
     speechTextRef.current = "";
-    _setQueue([]);
-  }, [player, _stopSpeech]);
+    setAudioPositionMs(0);
+    setAudioDurationMs(0);
+    audioDurationMsRef.current = 0;
+  }, [playlist, _stopSpeech]);
 
   const value = useMemo(
     () => ({
@@ -578,8 +764,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       isAudioLoading,
       isBarVisible,
       queue,
+      canPrevious,
       playStory,
       playNext,
+      playPrevious,
       playFromQueue,
       togglePlayPause,
       seekTo,
@@ -597,8 +785,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       isAudioLoading,
       isBarVisible,
       queue,
+      canPrevious,
       playStory,
       playNext,
+      playPrevious,
       playFromQueue,
       togglePlayPause,
       seekTo,

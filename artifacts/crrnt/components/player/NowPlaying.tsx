@@ -175,6 +175,14 @@ function MobilePlayer() {
 
   const dimStyle = useAnimatedStyle(() => ({ opacity: clamp01(expand.value) * 0.5 }));
 
+  // Same double-tap guard as StoryCard: router.push does not dedupe, so a
+  // second tap on the player before the first push lands would stack an
+  // identical story screen, costing one extra back press per duplicate.
+  // This ref must stay ABOVE the early return below: hooks cannot run
+  // conditionally, or the first render with a story would run more hooks
+  // than the initial no-story render and React would throw.
+  const lastNavRef = useRef(0);
+
   if (!story && !isBarVisible) return null;
 
   const meta = getCategoryMeta(story?.category ?? null);
@@ -186,10 +194,6 @@ function MobilePlayer() {
     seekTo(Math.max(0, Math.min(durationMs, positionMs + deltaMs))).catch(() => undefined);
   };
 
-  // Same double-tap guard as StoryCard: router.push does not dedupe, so a
-  // second tap on the player before the first push lands would stack an
-  // identical story screen, costing one extra back press per duplicate.
-  const lastNavRef = useRef(0);
   const openStory = () => {
     if (!story) return;
     const now = Date.now();
@@ -201,7 +205,7 @@ function MobilePlayer() {
 
   const share = () => {
     if (!story) return;
-    Share.share({ message: [story.display_title || story.title, story.source_url].filter(Boolean).join("\n") }).catch(
+    Share.share({ message: [story.title, story.source_url].filter(Boolean).join("\n") }).catch(
       () => undefined,
     );
   };
@@ -247,7 +251,7 @@ function MobilePlayer() {
             <Pressable style={StyleSheet.absoluteFill} onPress={openPlayer} accessibilityLabel="Open player" />
             <View style={styles.miniText} pointerEvents="none">
               <Text style={styles.miniTitle} numberOfLines={1}>
-                {story?.display_title || story?.title || ""}
+                {story?.title ?? ""}
               </Text>
               <Text style={styles.miniTime}>
                 {durationMs > 0
@@ -302,7 +306,7 @@ function MobilePlayer() {
             <View style={[styles.fullBody, { top: bodyTop }]}>
               <View>
                 <Text style={styles.fullTitle} numberOfLines={2}>
-                  {story?.display_title || story?.title}
+                  {story?.title}
                 </Text>
                 <Text style={styles.fullSource}>
                   {sourceDomain(story?.source_url)}

@@ -1,12 +1,13 @@
 import {
   ActivityIndicator,
-  Dimensions,
   Linking,
+  Platform,
   Pressable,
   Share,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 import Animated, {
   Extrapolation,
@@ -17,7 +18,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from "react-native-reanimated";
-import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
+import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from "react-native-svg";
 import { BlurView } from "expo-blur";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,7 +33,7 @@ import {
 } from "@workspace/api-client-react";
 import { CATEGORY_ICONS, getCategoryMeta } from "@/constants/categories";
 import StoryImage from "@/components/StoryImage";
-import { useAudio } from "@/contexts/AudioContext";
+import { useAudio, useAudioProgress } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { canSaveStories } from "@/constants/features";
@@ -43,8 +44,10 @@ import PhotoCredit from "@/components/PhotoCredit";
 import PriceChart from "@/components/PriceChart";
 import SaveButton from "@/components/SaveButton";
 import EmptyState from "@/components/EmptyState";
+import WaveBars from "@/components/player/WaveBars";
 import { DetachedTabBar } from "@/components/GlassTabBar";
 import { useChromeBottomPadding, useNavChrome } from "@/contexts/NavChromeContext";
+import { useIsDesktop } from "@/hooks/useLayoutMode";
 import { formatRelativeTime, formatDateTime } from "@/utils/time";
 
 type StockRange = "1d" | "5d" | "1mo" | "1y";
@@ -121,12 +124,14 @@ function sourceDomain(url?: string | null): string {
   }
 }
 
-/** How much of the hero shows above the sheet before scrolling. */
-const SHEET_TOP = 350;
-/** Hero height; the extra past SHEET_TOP sits under the sheet's rounded corners. */
-const HERO_H = 410;
-/** Glass button row height below the safe-area inset. */
-const TOP_ROW_H = 60;
+/**
+ * Mobile fills the screen; desktop web floats the same story view in a
+ * centred panel over the dimmed feed. `sheetTop` is how much hero shows
+ * above the sheet before scrolling; the hero runs `heroH` tall so its extra
+ * sits under the sheet's rounded corners.
+ */
+const MOBILE = { sheetTop: 350, heroH: 410, topRowH: 60 };
+const DESKTOP_PANEL = { sheetTop: 320, heroH: 390, topRowH: 76, maxW: 760, margin: 24, hPad: 52 };
 
 export default function StoryDetailScreen() {
   const { theme: palette, isDark } = useThemeContext();
@@ -141,14 +146,56 @@ export default function StoryDetailScreen() {
   const { story: audioStory, isPlaying, isAudioLoading, playStory, togglePlayPause } =
     useAudio();
   const { isCollapsed, setCollapsed } = useNavChrome();
-  const bottomPad = useChromeBottomPadding();
+  const chromeBottomPad = useChromeBottomPadding();
+  const isDesktop = useIsDesktop();
+  const { width: winW, height: winH } = useWindowDimensions();
 
-  // The nav stays tucked into its single button here so the story gets the
-  // room; hand it back expanded on the way out.
+  const panelW = Math.min(DESKTOP_PANEL.maxW, winW - DESKTOP_PANEL.margin * 2);
+  const L = isDesktop
+    ? {
+        sheetTop: DESKTOP_PANEL.sheetTop,
+        heroH: DESKTOP_PANEL.heroH,
+        barH: DESKTOP_PANEL.topRowH,
+        controlsTop: 16,
+        hPad: DESKTOP_PANEL.hPad,
+        width: panelW,
+        height: winH - DESKTOP_PANEL.margin * 2,
+        bottomPad: 190, // clears the docked audio bar
+      }
+    : {
+        sheetTop: MOBILE.sheetTop,
+        heroH: MOBILE.heroH,
+        barH: insets.top + MOBILE.topRowH,
+        controlsTop: insets.top + 8,
+        hPad: Math.max(20, insets.left + 4),
+        width: winW,
+        height: winH,
+        bottomPad: chromeBottomPad,
+      };
+  const { sheetTop, heroH, barH } = L;
+
+  // On mobile the nav stays tucked into its single button so the story gets
+  // the room; hand it back expanded on the way out. Desktop never tucks it.
   useEffect(() => {
+    if (isDesktop) return;
     setCollapsed(true);
     return () => setCollapsed(false);
-  }, [setCollapsed]);
+  }, [isDesktop, setCollapsed]);
+
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/");
+  };
+
+  // Esc closes the desktop panel, as on the design's other overlays.
+  useEffect(() => {
+    if (!isDesktop || Platform.OS !== "web") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") goBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isDesktop]);
 
   const localFallback = saved.find((s) => s.id === id) ?? null;
 
@@ -196,30 +243,28 @@ export default function StoryDetailScreen() {
   }, [isCollapsed, navOpen]);
   const onScroll = useAnimatedScrollHandler((e) => {
     const y = e.contentOffset.y;
-    if (navOpen.value && y > scrollY.value + 6) {
+    if (!isDesktop && navOpen.value && y > scrollY.value + 6) {
       navOpen.value = false;
       runOnJS(setCollapsed)(true);
     }
     scrollY.value = y;
   });
-  const barH = insets.top + TOP_ROW_H;
-
   const heroStyle = useAnimatedStyle(() => {
     const y = scrollY.value;
-    const scale = y < 0 ? 1 + -y / HERO_H : 1;
+    const scale = y < 0 ? 1 + -y / heroH : 1;
     // Scale grows about the centre; shift down so the top edge stays pinned.
-    const pin = (HERO_H * (scale - 1)) / 2;
+    const pin = (heroH * (scale - 1)) / 2;
     return {
       transform: [{ translateY: (y > 0 ? -y * 0.4 : 0) + pin }, { scale }],
     };
   });
   const shadeStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(0.75, (Math.max(0, scrollY.value) / SHEET_TOP) * 0.75),
+    opacity: Math.min(0.75, (Math.max(0, scrollY.value) / sheetTop) * 0.75),
   }));
   const barStyle = useAnimatedStyle(() => ({
     opacity: interpolate(
       scrollY.value,
-      [SHEET_TOP - barH - 40, SHEET_TOP - barH],
+      [sheetTop - barH - 40, sheetTop - barH],
       [0, 1],
       Extrapolation.CLAMP
     ),
@@ -227,24 +272,43 @@ export default function StoryDetailScreen() {
   const barTitleStyle = useAnimatedStyle(() => {
     const o = interpolate(
       scrollY.value,
-      [SHEET_TOP + 90, SHEET_TOP + 130],
+      [sheetTop + 90, sheetTop + 130],
       [0, 1],
       Extrapolation.CLAMP
     );
     return { opacity: o, transform: [{ translateY: (1 - o) * 8 }] };
   });
 
-  const screenWidth = Dimensions.get("window").width;
-  const hPad = Math.max(20, insets.left + 4);
-  const chartWidth = screenWidth - hPad * 2 - 32;
+  const hPad = L.hPad;
+  const chartWidth = L.width - hPad * 2 - 32;
 
-  const goBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/");
-  };
+  // Desktop: scrim over the feed (click to close) with the story in a panel.
+  // The nav and mini player step aside there; the panel's audio bar stands in.
+  const frame = (children: ReactNode) =>
+    isDesktop ? (
+      <View style={styles.desktopRoot}>
+        <Pressable
+          style={styles.scrim}
+          onPress={goBack}
+          accessibilityLabel="Close story"
+        />
+        <Animated.View
+          entering={FadeInDown.duration(450)}
+          style={[styles.panel, { width: L.width, height: L.height }]}
+        >
+          {children}
+          {story ? <PanelAudioBar story={story} /> : null}
+        </Animated.View>
+      </View>
+    ) : (
+      <View style={styles.container}>
+        {children}
+        <DetachedTabBar />
+      </View>
+    );
 
   if (isLoading && !story) {
-    return (
+    return frame(
       <View style={styles.center}>
         <ActivityIndicator color={palette.accent} />
       </View>
@@ -252,7 +316,7 @@ export default function StoryDetailScreen() {
   }
 
   if (!story) {
-    return (
+    return frame(
       <View style={[styles.center, { paddingTop: insets.top + 60 }]}>
         <EmptyState
           icon="alert-circle-outline"
@@ -308,7 +372,10 @@ export default function StoryDetailScreen() {
   const openNext = () => {
     if (!nextStory) return;
     Haptics.selectionAsync().catch(() => undefined);
-    router.push({ pathname: "/story/[id]", params: { id: nextStory.id } });
+    // Desktop swaps the panel's story in place rather than stacking panels.
+    const next = { pathname: "/story/[id]" as const, params: { id: nextStory.id } };
+    if (isDesktop) router.replace(next);
+    else router.push(next);
   };
 
   const activeTab = RANGE_TABS.find((t) => t.value === stockRange)!;
@@ -321,10 +388,10 @@ export default function StoryDetailScreen() {
   const days = daysRemaining(story.expires_at);
   const nextMeta = nextStory ? getCategoryMeta(nextStory.category) : null;
 
-  return (
-    <View style={styles.container}>
+  return frame(
+    <>
       {/* Hero: fixed behind the scroll view, parallaxes up and dims as the sheet covers it */}
-      <Animated.View style={[styles.hero, { height: HERO_H }, heroStyle]}>
+      <Animated.View style={[styles.hero, { height: heroH }, heroStyle]}>
         <StoryImage
           uri={story.media_url}
           category={story.category}
@@ -353,13 +420,13 @@ export default function StoryDetailScreen() {
         style={styles.scrollView}
         onScroll={onScroll}
         scrollEventThrottle={16}
-        contentContainerStyle={{ paddingBottom: bottomPad }}
+        contentContainerStyle={{ paddingBottom: L.bottomPad }}
         showsVerticalScrollIndicator={false}
         automaticallyAdjustsScrollIndicatorInsets={false}
       >
         {/* Transparent window onto the hero. The credit lives here (not on
             the hero) so it stays tappable above the scroll view. */}
-        <View style={{ height: SHEET_TOP }} pointerEvents="box-none">
+        <View style={{ height: sheetTop }} pointerEvents="box-none">
           {story.image_credit_name ? (
             <PhotoCredit
               name={story.image_credit_name}
@@ -371,9 +438,13 @@ export default function StoryDetailScreen() {
 
         <Animated.View
           entering={FadeInDown.duration(550)}
-          style={[styles.sheet, { paddingHorizontal: hPad }]}
+          style={[
+            styles.sheet,
+            isDesktop && styles.sheetDesktop,
+            { paddingHorizontal: hPad, minHeight: L.height - barH },
+          ]}
         >
-          <View style={styles.grab} />
+          {isDesktop ? null : <View style={styles.grab} />}
 
           <View style={styles.tagsRow}>
             <CategoryBadge category={story.category} size="lg" />
@@ -415,7 +486,7 @@ export default function StoryDetailScreen() {
             </Pressable>
           </View>
 
-          <Text style={styles.title}>{title}</Text>
+          <Text style={[styles.title, isDesktop && styles.titleDesktop]}>{title}</Text>
 
           <Text style={styles.meta}>
             <Text style={styles.metaSource}>{displaySource}</Text>
@@ -424,7 +495,7 @@ export default function StoryDetailScreen() {
               : ""}
           </Text>
 
-          <Text style={styles.summary}>{story.summary ?? story.one_liner}</Text>
+          <Text style={[styles.summary, isDesktop && styles.summaryDesktop]}>{story.summary ?? story.one_liner}</Text>
 
           {/* How does it affect me? */}
           {(story.life_impact || story.personalized_life_impact) ? (
@@ -670,7 +741,7 @@ export default function StoryDetailScreen() {
       {/* Compact title bar: fades in once the sheet reaches the top */}
       <Animated.View
         pointerEvents="none"
-        style={[styles.bar, { height: barH, paddingTop: insets.top }, barStyle]}
+        style={[styles.bar, { height: barH, paddingTop: barH - MOBILE.topRowH }, barStyle]}
       >
         <BlurView
           intensity={40}
@@ -687,10 +758,19 @@ export default function StoryDetailScreen() {
       {/* Floating glass controls */}
       <View
         pointerEvents="box-none"
-        style={[styles.topRow, { top: insets.top + 8, left: hPad - 4, right: hPad - 4 }]}
+        style={[
+          styles.topRow,
+          isDesktop
+            ? { top: L.controlsTop, left: 16, right: 16 }
+            : { top: L.controlsTop, left: hPad - 4, right: hPad - 4 },
+        ]}
       >
-        <GlassButton isDark={isDark} onPress={goBack} label="Back">
-          <Ionicons name="arrow-back" size={22} color="#fff" />
+        <GlassButton
+          isDark={isDark}
+          onPress={goBack}
+          label={isDesktop ? "Close (Esc)" : "Back"}
+        >
+          <Ionicons name={isDesktop ? "close" : "arrow-back"} size={22} color="#fff" />
         </GlassButton>
         <View style={{ flex: 1 }} />
         {canSaveStories(!!user) ? (
@@ -702,10 +782,150 @@ export default function StoryDetailScreen() {
           <Ionicons name="share-outline" size={20} color="#fff" />
         </GlassButton>
       </View>
+    </>
+  );
+}
 
-      <DetachedTabBar />
+/**
+ * Desktop panel's audio bar: the feed's glass mini player, docked to the
+ * panel's bottom edge while the real one steps aside. It shows whatever is
+ * playing, or offers this story when nothing is. Kept separate so progress
+ * ticks only re-render the bar.
+ */
+function PanelAudioBar({ story }: { story: Story }) {
+  const { theme: palette, isDark } = useThemeContext();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+  const {
+    story: audioStory,
+    isPlaying,
+    isAudioLoading,
+    isBarVisible,
+    queue,
+    playStory,
+    togglePlayPause,
+    seekTo,
+  } = useAudio();
+  const { positionMs, durationMs } = useAudioProgress();
+  const { isQueueOpen, setQueueOpen } = useNavChrome();
+  const [railW, setRailW] = useState(0);
+
+  const loaded = isBarVisible && !!audioStory;
+  const shown = loaded ? audioStory : story;
+  const meta = getCategoryMeta(shown.category);
+  const catColor = meta?.color ?? palette.accent;
+  const playing = loaded && isPlaying;
+  const progress = loaded && durationMs > 0 ? Math.min(positionMs / durationMs, 1) : 0;
+
+  const onPlay = () => {
+    if (loaded) togglePlayPause().catch(() => undefined);
+    else playStory(story).catch(() => undefined);
+  };
+  const seekAt = (x: number) => {
+    if (!loaded || durationMs <= 0 || railW <= 0) return;
+    seekTo(Math.max(0, Math.min(1, x / railW)) * durationMs).catch(() => undefined);
+  };
+
+  return (
+    <View style={styles.audioDock} pointerEvents="box-none">
+      <View style={styles.audioBar}>
+        <BlurView intensity={40} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
+        <View
+          style={[StyleSheet.absoluteFill, { backgroundColor: palette.bgElevated + (isDark ? "BD" : "CC") }]}
+        />
+        <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" pointerEvents="none">
+          <Defs>
+            <RadialGradient id="pab-glow" cx="12%" cy="50%" rx="55%" ry="140%">
+              <Stop offset="0" stopColor={catColor} stopOpacity={isDark ? 0.22 : 0.14} />
+              <Stop offset="1" stopColor={catColor} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Rect width="100%" height="100%" fill="url(#pab-glow)" />
+        </Svg>
+
+        <View style={styles.audioArt}>
+          <StoryImage uri={shown.media_url} category={shown.category} style={StyleSheet.absoluteFill} />
+          <View style={styles.audioArtScrim}>
+            <WaveBars isPlaying={playing} color="#fff" />
+          </View>
+        </View>
+
+        <View style={styles.audioTitle}>
+          <Text style={styles.audioTitleText} numberOfLines={1}>
+            {loaded ? shown.display_title || shown.title : "Listen to this story"}
+          </Text>
+          <Text style={styles.audioMeta} numberOfLines={1}>
+            <Text style={{ color: catColor }}>{meta?.label ?? ""}</Text>
+            {loaded && durationMs > 0
+              ? ` · ${formatMs(positionMs)} / ${formatMs(durationMs)}`
+              : loaded && audioStory.id !== story.id
+                ? " · Now playing"
+                : ""}
+          </Text>
+        </View>
+
+        <Pressable
+          onPress={onPlay}
+          disabled={isAudioLoading}
+          accessibilityLabel={playing ? "Pause" : "Play"}
+          style={({ hovered, pressed }) => [
+            styles.audioPlay,
+            { transform: [{ scale: pressed ? 0.95 : hovered ? 1.06 : 1 }] },
+          ]}
+        >
+          {isAudioLoading ? (
+            <ActivityIndicator size="small" color={palette.bg} />
+          ) : (
+            <Ionicons
+              name={playing ? "pause" : "play"}
+              size={16}
+              color={palette.bg}
+              style={playing ? undefined : { marginLeft: 2 }}
+            />
+          )}
+        </Pressable>
+
+        <Pressable
+          onPress={() => setQueueOpen(!isQueueOpen)}
+          accessibilityLabel="Queue"
+          style={({ hovered }) => [
+            styles.audioQueue,
+            isQueueOpen
+              ? { backgroundColor: palette.warning + "29" }
+              : hovered
+                ? { backgroundColor: palette.text + "14" }
+                : null,
+          ]}
+        >
+          <Ionicons name="list" size={20} color={isQueueOpen ? palette.warning : palette.textMuted} />
+          {queue.length > 0 ? (
+            <Text
+              style={[styles.audioQueueCount, { color: isQueueOpen ? palette.warning : palette.textMuted }]}
+            >
+              {queue.length}
+            </Text>
+          ) : null}
+        </Pressable>
+
+        {/* Thin progress line along the bottom edge; click it to seek. */}
+        <Pressable
+          style={styles.audioRailHit}
+          onLayout={(e) => setRailW(e.nativeEvent.layout.width)}
+          onPress={(e) => seekAt(e.nativeEvent.locationX)}
+          accessibilityLabel="Seek"
+        >
+          <View style={styles.audioRail}>
+            <View style={[styles.audioFill, { width: `${progress * 100}%` }]} />
+          </View>
+        </Pressable>
+      </View>
     </View>
   );
+}
+
+function formatMs(ms: number): string {
+  if (!isFinite(ms) || ms < 0) return "0:00";
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 /** 44pt frosted circle that floats over the hero. Without onPress it just frames its child (e.g. SaveButton). */
@@ -772,6 +992,26 @@ function pctChange(start?: number, end?: number): string {
 function createStyles(palette: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: palette.bg },
+    desktopRoot: { flex: 1, backgroundColor: "transparent" },
+    scrim: {
+      ...StyleSheet.absoluteFill,
+      backgroundColor: "rgba(5,7,11,0.62)",
+      ...(Platform.OS === "web" ? ({ backdropFilter: "blur(8px)", cursor: "default" } as object) : null),
+    },
+    panel: {
+      position: "absolute",
+      top: DESKTOP_PANEL.margin,
+      alignSelf: "center",
+      overflow: "hidden",
+      borderRadius: 28,
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.09)",
+      backgroundColor: palette.bg,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 30 },
+      shadowOpacity: 0.6,
+      shadowRadius: 40,
+    },
     scrollView: { flex: 1 },
     center: {
       flex: 1,
@@ -789,7 +1029,6 @@ function createStyles(palette: ThemeColors) {
     },
     heroScrim: { position: "absolute", top: 0, left: 0 },
     sheet: {
-      minHeight: Dimensions.get("window").height - TOP_ROW_H,
       gap: 18,
       paddingTop: 12,
       backgroundColor: palette.bg,
@@ -802,6 +1041,7 @@ function createStyles(palette: ThemeColors) {
       shadowOpacity: 0.4,
       shadowRadius: 24,
     },
+    sheetDesktop: { paddingTop: 30, gap: 20 },
     grab: {
       width: 38,
       height: 5,
@@ -854,6 +1094,7 @@ function createStyles(palette: ThemeColors) {
       color: palette.text,
       letterSpacing: -0.55,
     },
+    titleDesktop: { fontSize: 38, lineHeight: 43, letterSpacing: -0.7 },
     meta: {
       marginTop: -6,
       fontFamily: "Inter_400Regular",
@@ -868,6 +1109,7 @@ function createStyles(palette: ThemeColors) {
       lineHeight: 31,
       color: palette.text,
     },
+    summaryDesktop: { fontSize: 20, lineHeight: 32 },
     insightCard: {
       backgroundColor: palette.bgElevated,
       borderRadius: 16,
@@ -1080,6 +1322,82 @@ function createStyles(palette: ThemeColors) {
       fontSize: 15,
       color: palette.text,
     },
+    // Matches the desktop mini player bar (components/player/DesktopPlayer).
+    audioDock: {
+      position: "absolute",
+      left: 16,
+      right: 16,
+      bottom: 16,
+      alignItems: "center",
+    },
+    audioBar: {
+      width: "100%",
+      maxWidth: 460,
+      height: 64,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingLeft: 10,
+      paddingRight: 10,
+      borderRadius: 32,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: palette.borderStrong + "AA",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 16 },
+      shadowOpacity: 0.5,
+      shadowRadius: 40,
+    },
+    audioArt: {
+      width: 44,
+      height: 44,
+      borderRadius: 11,
+      overflow: "hidden",
+      marginRight: 2,
+      backgroundColor: palette.surfaceHigh,
+    },
+    audioArtScrim: {
+      ...StyleSheet.absoluteFill,
+      backgroundColor: "rgba(0,0,0,0.35)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    audioTitle: { flex: 1, minWidth: 0, gap: 2 },
+    audioTitleText: { fontFamily: "Inter_600SemiBold", fontSize: 14.5, color: palette.text },
+    audioMeta: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 12,
+      color: palette.textMuted,
+      fontVariant: ["tabular-nums"],
+    },
+    audioPlay: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: palette.text,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    audioQueue: {
+      height: 34,
+      paddingHorizontal: 12,
+      borderRadius: 17,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    audioQueueCount: { fontFamily: "Inter_700Bold", fontSize: 13 },
+    audioRailHit: {
+      position: "absolute",
+      left: 32,
+      right: 32,
+      bottom: 0,
+      height: 8,
+      justifyContent: "flex-end",
+      ...(Platform.OS === "web" ? ({ cursor: "pointer" } as object) : null),
+    },
+    audioRail: { height: 2, backgroundColor: palette.text + "14" },
+    audioFill: { height: "100%", backgroundColor: palette.accent, borderRadius: 1 },
     topRow: {
       position: "absolute",
       height: 44,

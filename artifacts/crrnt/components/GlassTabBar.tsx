@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
-import { router, type Tabs, useRootNavigationState } from "expo-router";
+import { router, type Tabs, useRootNavigationState, useSegments } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -110,6 +110,9 @@ export default function GlassTabBar({ state, descriptors, emitter, navigateToTab
   const { width: screenW } = useWindowDimensions();
   const tabBottom = useTabBarBottom();
   const isDesktop = useIsDesktop();
+  // The desktop story panel sits where the nav would; the nav steps aside.
+  const segments = useSegments();
+  const hiddenForStory = isDesktop && segments[0] === "story";
 
   // Desktop: a fixed-width pill parked bottom-left; mobile: full-width bar.
   const barW = isDesktop ? DESKTOP.navW : screenW - NAV.inset * 2;
@@ -229,6 +232,7 @@ export default function GlassTabBar({ state, descriptors, emitter, navigateToTab
       runOnJS(goTo)(tab);
     });
 
+  if (hiddenForStory) return null;
 
   return (
     <Animated.View

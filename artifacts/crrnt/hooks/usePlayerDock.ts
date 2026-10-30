@@ -6,8 +6,9 @@ import { NAV } from "@/contexts/NavChromeContext";
 export function usePlayerDock() {
   const segments = useSegments();
   const { story, isBarVisible } = useAudio();
-  const inTabs = segments[0] === "(tabs)";
-  const visible = isBarVisible && !!story && segments[0] !== "story";
+  // Story screens carry their own copy of the tab bar, so dock the same way there.
+  const inTabs = segments[0] === "(tabs)" || segments[0] === "story";
+  const visible = isBarVisible && !!story;
   return { inTabs, visible };
 }
 

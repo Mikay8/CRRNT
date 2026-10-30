@@ -322,12 +322,7 @@ function ThemedApp() {
                             />
                             <Stack.Screen
                               name="story/[id]"
-                              options={{
-                                title: "",
-                                headerBackTitle: "Back",
-                                headerTransparent: true,
-                                presentation: "card",
-                              }}
+                              options={{ headerShown: false, presentation: "card" }}
                             />
                             <Stack.Screen
                               name="login"

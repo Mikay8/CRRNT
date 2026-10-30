@@ -88,14 +88,19 @@ SYSTEM_PROMPT = (
     "not state. Never ask a question the story does not answer, and never "
     "use 'why' unless the story actually explains why. No all-caps, no "
     "emoji, no shock words the facts do not earn.\n\n"
-    "Write STORYSUMMARY (the whole story in ONE flow, 60-80 words, max 520 "
-    "characters): plain everyday language, like you're explaining it to a "
-    "friend who just asked 'wait, what happened?' The reader just saw the "
-    "display title, so do NOT restate it - start with the next most "
-    "important detail. Explain any term a non-expert would not know the "
-    "first time it appears (tariffs - taxes on imported parts; went "
-    "public - sold shares to regular investors for the first time). Short "
-    "sentences, one idea each, active voice, zero unexplained jargon. "
+    "Write STORYSUMMARY (the whole story in ONE flow, 60-80 words and "
+    "NEVER fewer than 55, max 520 characters): plain everyday language, "
+    "like you're explaining it to a friend who just asked 'wait, what "
+    "happened?' The reader just saw the display title, so do NOT restate "
+    "it - start with the next most important detail. Explain any term a "
+    "non-expert would not know the first time it appears (tariffs - taxes "
+    "on imported parts; went public - sold shares to regular investors "
+    "for the first time). Short sentences, one idea each, active voice, "
+    "zero unexplained jargon. If the source material is thin, do not stop "
+    "short of 55 words - add the most relevant context the source gives "
+    "(who is involved, why it is happening now, what happens next). Never "
+    "pad with filler, and never say the same thing twice to reach the "
+    "length. "
     "Weave in the single most important 'why you care' point as AT MOST "
     "ONE sentence, usually last: a specific price, bill, job, health, or "
     "team consequence - name the thing ('groceries', 'your rent'), never "
@@ -225,6 +230,13 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     life_impact = None
 
     story_summary = _sanitize(parsed.get("storySummary") or "")
+    if story_summary and len(story_summary.split()) < 50:
+        # Measurement only: how often does Haiku land under the floor?
+        # The summary still ships - a thin summary beats none.
+        log.warning(
+            "Story summary under floor: %d words for '%s'",
+            len(story_summary.split()), title[:60],
+        )
     if not story_summary:
         story_summary = (description or title or "").strip() or None
 
@@ -246,6 +258,60 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     })
     log.info("Pass 1 done: '%s' ticker=%s", title[:60], ticker or "none")
     return story
+
+
+PUSH_PICK_SYSTEM_PROMPT = (
+    "You pick the single story that fronts CRRNT's Morning Edition push "
+    "notification - the one headline a regular person is most likely to "
+    "tap at 7:30 in the morning.\n\n"
+    "Choose for a broad everyday audience, not a newsroom: a concrete "
+    "personal stake (their money, health, safety, home, team, or plans) "
+    "beats abstract importance; a real number or a widely known name "
+    "beats a vague roundup; genuine tension the story actually resolves "
+    "beats process and procedure. Skip inside-baseball politics, items "
+    "that need background the push cannot give, and headlines that are "
+    "only a list or a tease with nothing concrete in them. Judge ONLY "
+    "from the headlines and one-liners given - never invent appeal the "
+    "text does not have.\n\n"
+    "ALWAYS reply with a single JSON object - no prose, no markdown "
+    "fences - with one key: index (the number of the chosen story)."
+)
+
+PUSH_PICK_MAX_CANDIDATES = 12
+
+
+async def pick_push_story(stories: list[dict[str, Any]]) -> int:
+    """Return the index of the story that should front the Morning
+    Edition push. Raises on ANY failure (no key, API error, bad JSON,
+    out-of-range index) - the caller falls back to the feed's top story,
+    so a failed pick never blocks or degrades the push."""
+    candidates = stories[:PUSH_PICK_MAX_CANDIDATES]
+    lines = []
+    for i, s in enumerate(candidates):
+        headline = s.get("display_title") or s.get("title") or ""
+        one_liner = s.get("one_liner") or ""
+        lines.append(
+            f"{i}. [{s.get('category') or 'news'}] {headline} -- {one_liner}"
+        )
+    user_prompt = (
+        "Today's stories:\n" + "\n".join(lines)
+        + "\n\nReply with the JSON object only."
+    )
+    client = _get_client()
+    msg = await client.messages.create(
+        model=MODEL,
+        max_tokens=100,
+        system=PUSH_PICK_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+    text = "".join(
+        b.text for b in msg.content if getattr(b, "type", "") == "text"
+    )
+    parsed = _parse_json(text)
+    idx = parsed.get("index")
+    if not isinstance(idx, int) or not 0 <= idx < len(candidates):
+        raise ValueError(f"push pick returned unusable index: {idx!r}")
+    return idx
 
 
 async def enrich_story_tweets(story: dict[str, Any]) -> dict[str, Any]:

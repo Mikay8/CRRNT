@@ -4,8 +4,11 @@ Two triggers, both broadcast (send_push sends to every stored token; there
 is no per-user targeting yet):
 
 - Morning Edition (daily 7:30am ET, scheduler job): "Hot off the press 🗞️"
-  plus the top newly-inserted story's one-liner as the blurb. Fires only
-  when the last 12 hours actually produced stories.
+  plus one story's headline as the blurb. Haiku picks the most tap-worthy
+  of the last 12 hours' stories (see enrichment.pick_push_story); on any
+  pick failure the feed's top story fronts it instead, with its one-liner
+  as the blurb, as before. Fires only when the last 12 hours actually
+  produced stories.
 - Breaking news (admin publishes in the portal): the hook comes from the
   admin "Breaking news alert style" setting — "Stop the presses!",
   "Extra! Extra!", or "alternate", which flips between the two on every
@@ -76,10 +79,35 @@ async def send_morning_digest_push() -> None:
         return
 
     top = stories[0]
-    blurb = top.get("one_liner") or top.get("title") or "Your Morning Edition is ready."
+    pick_source = "feed-top"
+    if len(stories) > 1:
+        try:
+            from services import enrichment
+
+            idx = await enrichment.pick_push_story(stories)
+            top = stories[idx]
+            pick_source = f"haiku-{idx}"
+        except Exception as exc:
+            log.warning(
+                "Morning digest push pick failed - using feed top: %s", exc
+            )
+
+    if top.get("display_title"):
+        blurb = top["display_title"]
+    else:
+        blurb = (
+            top.get("one_liner")
+            or top.get("title")
+            or "Your Morning Edition is ready."
+        )
     if len(stories) > 1:
         body = f"{blurb} Plus {len(stories) - 1} more stories in your Morning Edition."
     else:
         body = blurb
     await push.send_push(MORNING_TITLE, body, data={"type": "digest"})
-    log.info("Morning digest push sent: %d stories, top=%r", len(stories), (top.get("title") or "")[:80])
+    log.info(
+        "Morning digest push sent: %d stories, pick=%s top=%r",
+        len(stories),
+        pick_source,
+        (top.get("display_title") or top.get("title") or "")[:80],
+    )

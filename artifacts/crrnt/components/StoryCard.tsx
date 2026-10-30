@@ -545,7 +545,7 @@ function createStyles(palette: ThemeColors) {
       paddingHorizontal: 10,
       paddingVertical: 4,
       borderRadius: 8,
-      backgroundColor: palette.accent + "1F",
+      backgroundColor: palette.accent + "14",
       borderWidth: 1,
       borderColor: palette.accent + "55",
     },

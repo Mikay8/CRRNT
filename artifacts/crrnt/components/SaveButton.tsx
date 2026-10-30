@@ -11,9 +11,11 @@ import type { Story } from "@workspace/api-client-react";
 interface SaveButtonProps {
   story: Story;
   size?: number;
+  /** Unsaved icon color; defaults to the muted text color. */
+  color?: string;
 }
 
-export function SaveButton({ story, size = 22 }: SaveButtonProps) {
+export function SaveButton({ story, size = 22, color }: SaveButtonProps) {
   const { isSaved, toggleSaved } = useSavedStories();
   const { user } = useAuth();
   const { theme: palette } = useThemeContext();
@@ -45,7 +47,7 @@ export function SaveButton({ story, size = 22 }: SaveButtonProps) {
       <Ionicons
         name={saved ? "bookmark" : "bookmark-outline"}
         size={size}
-        color={saved ? palette.accent : palette.textMuted}
+        color={saved ? palette.accent : color ?? palette.textMuted}
       />
     </Pressable>
   );

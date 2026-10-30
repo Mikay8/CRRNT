@@ -4,14 +4,16 @@ import { CATEGORY_ICONS, getCategoryMeta } from "@/constants/categories";
 
 interface CategoryBadgeProps {
   category: string | null | undefined;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
 }
 
 export function CategoryBadge({ category, size = "sm" }: CategoryBadgeProps) {
   const meta = getCategoryMeta(category);
   if (!meta) return null;
 
-  const dims = size === "md"
+  const dims = size === "lg"
+    ? { padV: 7, padH: 13, font: 14, icon: 15 }
+    : size === "md"
     ? { padV: 6, padH: 12, font: 13, icon: 14 }
     : { padV: 4, padH: 9, font: 11, icon: 11 };
 

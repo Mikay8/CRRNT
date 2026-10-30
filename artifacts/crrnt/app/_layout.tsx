@@ -32,6 +32,7 @@ import { AUTH_ENABLED } from "@/constants/features";
 import { reportDeviceMetrics } from "@/lib/deviceMetrics";
 import NowPlaying from "@/components/player/NowPlaying";
 import RecedingScreens from "@/components/player/RecedingScreens";
+import { useIsDesktop } from "@/hooks/useLayoutMode";
 import ToastHost from "@/components/ToastHost";
 import { ThemeProvider, useThemeContext } from "@/contexts/ThemeContext";
 import { AudioProvider } from "@/contexts/AudioContext";
@@ -230,6 +231,8 @@ function NotificationTapRouter() {
 
 function ThemedApp() {
   const { isDark, theme } = useThemeContext();
+  // Desktop web shows a story as a panel over the feed, so the feed stays rendered beneath it.
+  const isDesktop = useIsDesktop();
 
   // Web only: keep the browser chrome tinted to match the app's own theme.
   // Safari/Chrome read <meta name="theme-color"> for their toolbar color;
@@ -322,12 +325,16 @@ function ThemedApp() {
                             />
                             <Stack.Screen
                               name="story/[id]"
-                              options={{
-                                title: "",
-                                headerBackTitle: "Back",
-                                headerTransparent: true,
-                                presentation: "card",
-                              }}
+                              options={
+                                isDesktop
+                                  ? {
+                                      headerShown: false,
+                                      presentation: "transparentModal",
+                                      animation: "fade",
+                                      contentStyle: { backgroundColor: "transparent" },
+                                    }
+                                  : { headerShown: false, presentation: "card" }
+                              }
                             />
                             <Stack.Screen
                               name="login"

@@ -8,15 +8,15 @@ import { useIsFastScrolling } from "@/hooks/useFastScroll";
 // draws SVGs at their intrinsic "fit inside" size and ignores contentFit, which
 // left the art only part-filling taller frames like the story hero.
 const PLACEHOLDERS: Record<Category, number> = {
-  business: require("@/assets/images/crrnt-business-16x9.jpg"),
-  celebrity: require("@/assets/images/crrnt-celebrity-16x9.jpg"),
-  entertainment: require("@/assets/images/crrnt-entertainment-16x9.jpg"),
-  government: require("@/assets/images/crrnt-government-16x9.jpg"),
-  health: require("@/assets/images/crrnt-health-16x9.jpg"),
-  science: require("@/assets/images/crrnt-science-16x9.jpg"),
-  sports: require("@/assets/images/crrnt-sports-16x9.jpg"),
-  tech: require("@/assets/images/crrnt-tech-16x9.jpg"),
-  world: require("@/assets/images/crrnt-world-16x9.jpg"),
+  business: require("@/assets/images/crrnt-lines-business.jpg"),
+  celebrity: require("@/assets/images/crrnt-lines-celebrity.jpg"),
+  entertainment: require("@/assets/images/crrnt-lines-entertainment.jpg"),
+  government: require("@/assets/images/crrnt-lines-government.jpg"),
+  health: require("@/assets/images/crrnt-lines-health.jpg"),
+  science: require("@/assets/images/crrnt-lines-science.jpg"),
+  sports: require("@/assets/images/crrnt-lines-sports.jpg"),
+  tech: require("@/assets/images/crrnt-lines-tech.jpg"),
+  world: require("@/assets/images/crrnt-lines-world.jpg"),
 };
 
 export function categoryPlaceholder(category: string | null | undefined): number {

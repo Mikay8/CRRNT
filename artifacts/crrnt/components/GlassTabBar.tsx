@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
-import type { Tabs } from "expo-router";
+import { router, type Tabs, useRootNavigationState, useSegments } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -110,6 +110,9 @@ export default function GlassTabBar({ state, descriptors, emitter, navigateToTab
   const { width: screenW } = useWindowDimensions();
   const tabBottom = useTabBarBottom();
   const isDesktop = useIsDesktop();
+  // The desktop story panel sits where the nav would; the nav steps aside.
+  const segments = useSegments();
+  const hiddenForStory = isDesktop && segments[0] === "story";
 
   // Desktop: a fixed-width pill parked bottom-left; mobile: full-width bar.
   const barW = isDesktop ? DESKTOP.navW : screenW - NAV.inset * 2;
@@ -229,6 +232,7 @@ export default function GlassTabBar({ state, descriptors, emitter, navigateToTab
       runOnJS(goTo)(tab);
     });
 
+  if (hiddenForStory) return null;
 
   return (
     <Animated.View
@@ -314,3 +318,43 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 });
+
+// Mirrors the order and titles in app/(tabs)/_layout.tsx.
+const TABS = [
+  { name: "index", title: "Feed", href: "/" },
+  { name: "search", title: "Search", href: "/search" },
+  { name: "saved", title: "Saved", href: "/saved" },
+  { name: "settings", title: "Settings", href: "/settings" },
+] as const;
+
+/**
+ * The tab bar for screens pushed above the tabs (the story screen), which
+ * have no tab navigator of their own. It shows the tab underneath as active,
+ * and any tap pops back down to the tabs on the tapped one.
+ */
+export function DetachedTabBar() {
+  const tabsIndex = tabsIndexIn(useRootNavigationState()) ?? 0;
+  const props = {
+    state: { index: tabsIndex, routes: TABS.map((t) => ({ key: t.name, name: t.name })) },
+    descriptors: Object.fromEntries(TABS.map((t) => [t.name, { options: { title: t.title } }])),
+    emitter: {
+      emit: ({ target }: { target: string }) => {
+        const tab = TABS.find((t) => t.name === target);
+        if (tab) router.dismissTo(tab.href);
+        return { defaultPrevented: true };
+      },
+    },
+    navigateToTab: () => undefined,
+  };
+  return <GlassTabBar {...(props as unknown as TabBarProps)} />;
+}
+
+/** The focused tab's index, wherever the tabs navigator sits in the tree. */
+function tabsIndexIn(state: any): number | undefined {
+  for (const route of state?.routes ?? []) {
+    if (route.name === "(tabs)") return route.state?.index;
+    const nested = tabsIndexIn(route.state);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
+}

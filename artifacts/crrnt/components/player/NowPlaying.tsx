@@ -205,7 +205,7 @@ function MobilePlayer() {
 
   const share = () => {
     if (!story) return;
-    Share.share({ message: [story.title, story.source_url].filter(Boolean).join("\n") }).catch(
+    Share.share({ message: [story.display_title || story.title, story.source_url].filter(Boolean).join("\n") }).catch(
       () => undefined,
     );
   };
@@ -251,7 +251,7 @@ function MobilePlayer() {
             <Pressable style={StyleSheet.absoluteFill} onPress={openPlayer} accessibilityLabel="Open player" />
             <View style={styles.miniText} pointerEvents="none">
               <Text style={styles.miniTitle} numberOfLines={1}>
-                {story?.title ?? ""}
+                {story?.display_title || story?.title || ""}
               </Text>
               <Text style={styles.miniTime}>
                 {durationMs > 0
@@ -306,7 +306,7 @@ function MobilePlayer() {
             <View style={[styles.fullBody, { top: bodyTop }]}>
               <View>
                 <Text style={styles.fullTitle} numberOfLines={2}>
-                  {story?.title}
+                  {story?.display_title || story?.title}
                 </Text>
                 <Text style={styles.fullSource}>
                   {sourceDomain(story?.source_url)}

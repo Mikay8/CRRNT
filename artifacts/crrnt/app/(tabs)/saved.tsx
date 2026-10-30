@@ -51,6 +51,7 @@ export default function SavedScreen() {
         <StoryGrid
           stories={saved}
           feature={false}
+          fromContext="saved"
           onScroll={(e) => {
             const y = e.nativeEvent.contentOffset.y;
             const ly = lastY.current;
@@ -87,7 +88,7 @@ export default function SavedScreen() {
       <FlatList
         data={saved}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <StoryCard story={item} />}
+        renderItem={({ item }) => <StoryCard story={item} fromContext="saved" />}
         contentContainerStyle={{
           paddingTop: insets.top + 96,
           paddingBottom: bottomPad,

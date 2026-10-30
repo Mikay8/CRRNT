@@ -31,6 +31,7 @@ export default function StoryGrid({
   onScroll,
   ListEmptyComponent,
   ListHeaderComponent,
+  fromContext,
 }: {
   stories: Story[];
   feature: boolean;
@@ -38,6 +39,8 @@ export default function StoryGrid({
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   ListEmptyComponent?: React.ReactElement | null;
   ListHeaderComponent?: React.ReactElement | null;
+  /** List context forwarded to each card's story navigation (see StoryCard). */
+  fromContext?: string;
 }) {
   const [width, setWidth] = useState(0);
   const cols = Math.max(1, Math.floor((width + GAP) / (MIN_COL + GAP)));
@@ -89,7 +92,7 @@ export default function StoryGrid({
         <View style={{ flexDirection: "row", gap: GAP, marginBottom: GAP, alignItems: "flex-start" }}>
           {row.map(({ story, span }) => (
             <View key={story.id} style={{ width: colW * span + GAP * (span - 1) }}>
-              <StoryCard story={story} variant={span > 1 ? "feature" : "grid"} />
+              <StoryCard story={story} variant={span > 1 ? "feature" : "grid"} fromContext={fromContext} />
             </View>
           ))}
         </View>

@@ -156,7 +156,7 @@ export default function StoryDetailScreen() {
 
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
   const { user } = useAuth();
   const { saved } = useSavedStories();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
@@ -237,13 +237,52 @@ export default function StoryDetailScreen() {
   });
 
   const story: Story | null = (data as Story | undefined) ?? localFallback;
+
+  // Up Next follows the list the user opened this story from, carried in
+  // the `from` route param: a category tab chains through that category
+  // in tab order and ends there (no wrap), "all" loops the whole feed
+  // continuously, and "saved" chains through the saved stories. Entries
+  // with no list context (search, the player, shared links) fall back to
+  // the story's own category.
+  const upNextContext = useMemo(() => {
+    const byPublishedDesc = (a: Story, b: Story) => {
+      const ta = a.published_at ? new Date(a.published_at).getTime() : 0;
+      const tb = b.published_at ? new Date(b.published_at).getTime() : 0;
+      return tb - ta;
+    };
+    const feedList: Story[] = [
+      ...((feed.data?.stories as Story[] | undefined) ?? []),
+    ].sort(byPublishedDesc);
+    if (from === "saved")
+      return { list: saved, loop: false, label: "your saved stories" as string | null };
+    if (from === "all") return { list: feedList, loop: true, label: null as string | null };
+    const catKey = from && getCategoryMeta(from) ? from : (story?.category ?? null);
+    if (catKey) {
+      return {
+        list: feedList.filter((s) => s.category === catKey),
+        loop: false,
+        label: (getCategoryMeta(catKey)?.label ?? catKey) as string | null,
+      };
+    }
+    return { list: feedList, loop: true, label: null as string | null };
+  }, [from, feed.data, saved, story?.category]);
+
   const nextStory = useMemo(() => {
-    const list: Story[] = feed.data?.stories ?? [];
+    const list = upNextContext.list;
     if (!story || list.length < 2) return null;
     const idx = list.findIndex((s) => s.id === story.id);
-    if (idx === -1) return list[0];
-    return list[(idx + 1) % list.length];
-  }, [feed.data, story?.id]);
+    if (idx === -1) return upNextContext.loop ? list[0] : null;
+    if (idx + 1 < list.length) return list[idx + 1];
+    return upNextContext.loop ? list[0] : null;
+  }, [upNextContext, story?.id]);
+
+  // End of a non-looping list: the Up Next slot shows an "all caught up"
+  // note instead of silently disappearing.
+  const caughtUp =
+    !!story &&
+    !nextStory &&
+    !upNextContext.loop &&
+    upNextContext.list.some((s) => s.id === story.id);
   // The drag-up peek leans on native gesture handling, so it's iOS only;
   // web and Android get the Up next card.
   const hasPeek = Platform.OS === "ios" && !isDesktop && !!nextStory;
@@ -425,7 +464,12 @@ export default function StoryDetailScreen() {
     if (!nextStory) return;
     Haptics.selectionAsync().catch(() => undefined);
     // Desktop swaps the panel's story in place rather than stacking panels.
-    const next = { pathname: "/story/[id]" as const, params: { id: nextStory.id } };
+    // The `from` context rides along so the Up Next chain stays in the
+    // list the user started from.
+    const next = {
+      pathname: "/story/[id]" as const,
+      params: { id: nextStory.id, ...(from ? { from } : {}) },
+    };
     if (isDesktop) router.replace(next);
     else router.push(next);
   };
@@ -792,6 +836,19 @@ export default function StoryDetailScreen() {
                   </View>
                   <Ionicons name="chevron-forward" size={20} color={palette.textDim} />
                 </Pressable>
+              </View>
+            ) : null}
+
+            {/* End of a category / saved list: no Up Next, just the note */}
+            {caughtUp && !hasPeek ? (
+              <View style={styles.next}>
+                <Text style={styles.nextLabel}>Up next</Text>
+                <View style={styles.caughtUpCard}>
+                  <Ionicons name="checkmark-circle" size={20} color={palette.accent} />
+                  <Text style={styles.caughtUpText}>
+                    All caught up{upNextContext.label ? ` in ${upNextContext.label}` : ""}
+                  </Text>
+                </View>
               </View>
             ) : null}
           </Animated.View>
@@ -1575,6 +1632,22 @@ function createStyles(palette: ThemeColors) {
       borderColor: palette.border,
     },
     nextThumb: { width: 88, height: 88, borderRadius: 15 },
+    caughtUpCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      padding: 16,
+      borderRadius: 22,
+      backgroundColor: palette.bgElevated,
+      borderWidth: 1,
+      borderColor: palette.border,
+    },
+    caughtUpText: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 15,
+      color: palette.text,
+      flexShrink: 1,
+    },
     nextText: { flex: 1, minWidth: 0, gap: 6 },
     nextChip: { flexDirection: "row", alignItems: "center", gap: 5 },
     nextChipText: { fontFamily: "Inter_700Bold", fontSize: 12.5, flexShrink: 1 },

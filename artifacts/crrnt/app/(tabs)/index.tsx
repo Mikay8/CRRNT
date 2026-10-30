@@ -184,6 +184,7 @@ export default function FeedScreen() {
         <StoryGrid
           stories={stories}
           feature={!category}
+          fromContext={category ?? "all"}
           onScroll={(e) => onDesktopScroll(e.nativeEvent.contentOffset.y)}
           contentContainerStyle={{ paddingTop: desktopHeadH + 24, paddingHorizontal: 36, paddingBottom: 160 }}
           ListEmptyComponent={listEmpty}
@@ -257,7 +258,7 @@ export default function FeedScreen() {
         ref={listRef}
         data={stories}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <StoryCard story={item} />}
+        renderItem={({ item }) => <StoryCard story={item} fromContext={category ?? "all"} />}
         contentContainerStyle={listPadding}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"

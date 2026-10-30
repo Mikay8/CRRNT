@@ -61,9 +61,16 @@ interface StoryCardProps {
   story: Story;
   /** "list" is the mobile feed; "grid" and "feature" are the desktop grid cells. */
   variant?: "list" | "grid" | "feature";
+  /**
+   * Which list the user opened this story from — a category key, "all", or
+   * "saved". Passed to the story screen as the `from` route param so its
+   * Up Next chain stays in that list. Omit for one-off entries (search,
+   * player); the story screen then defaults to the story's own category.
+   */
+  fromContext?: string;
 }
 
-export function StoryCard({ story, variant = "list" }: StoryCardProps) {
+export function StoryCard({ story, variant = "list", fromContext }: StoryCardProps) {
   const desktop = variant !== "list";
   const feature = variant === "feature";
   const { toggleSaved, isSaved } = useSavedStories();
@@ -284,13 +291,19 @@ export function StoryCard({ story, variant = "list" }: StoryCardProps) {
     }
     if (!claimNav()) return;
     playStory(story).catch(() => undefined);
-    router.push({ pathname: "/story/[id]", params: { id: story.id } });
+    router.push({
+      pathname: "/story/[id]",
+      params: { id: story.id, ...(fromContext ? { from: fromContext } : {}) },
+    });
   };
 
   const onPress = () => {
     if (!claimNav()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-    router.push({ pathname: "/story/[id]", params: { id: story.id } });
+    router.push({
+      pathname: "/story/[id]",
+      params: { id: story.id, ...(fromContext ? { from: fromContext } : {}) },
+    });
   };
 
   const cardBody = (

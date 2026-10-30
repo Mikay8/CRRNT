@@ -170,6 +170,10 @@ overrides:
   metro-symbolicate: "0.87.1"
   metro-transform-plugins: "0.87.1"
   metro-transform-worker: "0.87.1"
+  # expo-file-system 58.0.12's precompiled iOS binary needs expo-modules-core
+  # >= 58.0.27, but expo 58.0.19 resolves core 58.0.26 (dyld "Symbol not found"
+  # at launch). 58.0.11 shipped alongside core 58.0.26. Remove when upgrading expo.
+  expo-file-system: "58.0.11"
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"

@@ -148,7 +148,7 @@ function QueueRow({
             <StoryImage uri={story.media_url} category={story.category} style={styles.thumb} />
             <View style={styles.tx}>
               <Text style={styles.t1} numberOfLines={2}>
-                {story.title}
+                {story.display_title || story.title}
               </Text>
               <View style={styles.t2}>
                 <View style={[styles.dot, { backgroundColor: meta?.color ?? theme.accent }]} />
@@ -251,7 +251,7 @@ function QueueBody({
           </View>
           <View style={styles.tx}>
             <Text style={styles.t1} numberOfLines={1}>
-              {story.title}
+              {story.display_title || story.title}
             </Text>
             <View style={styles.nowProgressRow}>
               <View style={styles.nowRail}>

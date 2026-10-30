@@ -48,6 +48,8 @@ export interface Story {
   id: string;
   external_id?: string;
   title: string;
+  /** Claude-generated faithful hook headline; shown instead of title when set, title stays the original RSS headline. Hand-added: the backend serves it via SELECT *; add to the OpenAPI spec on the next client regen. */
+  display_title?: string | null;
   category: Category;
   published_at?: string;
   source_url?: string;

@@ -1,9 +1,10 @@
 """Claude- and Grok-powered enrichment for news stories.
 
 Pass 1 — Claude extracts per story:
-  storySummary, lifeImpact, walletImpact (nullable - omitted when the story
-  has no meaningful money angle), insight, stock_note, ticker, companyName,
-  category
+  displayTitle (faithful hook headline; the RSS title stays in `title` as
+  the audit copy), storySummary (the whole story in one merged plain-
+  language body with the payoff woven in - no separate life/wallet
+  sections anymore), insight, stock_note, ticker, companyName, category
 
 Pass 2 — Grok searches X directly (x_search tool) and analyzes sentiment:
   sentimentLabel, sentimentScore, peopleSay
@@ -75,37 +76,36 @@ SYSTEM_PROMPT = (
     "IMPORTANT: Use plain ASCII text only. No smart quotes, no curly quotes, "
     "no em dashes, no en dashes, no ellipsis characters, no Unicode punctuation. "
     "Use straight quotes (\"), hyphens (-), and three dots (...) instead.\n\n"
-    "Write STORYSUMMARY (3-4 sentences, max 600 characters): tell the story "
-    "like you're explaining it to a friend who just asked 'wait, what happened?' "
-    "The listener just heard the headline, so do NOT restate it - start with "
-    "the next most important detail and only add context the headline didn't "
-    "already give. Lead with the most interesting or surprising part. Give "
-    "enough context that "
-    "someone with zero background fully understands. Short sentences, active "
-    "voice, zero jargon. A little personality is welcome.\n\n"
-    "Write LIFEIMPACT (2-3 sentences, max 400 characters): how does this "
-    "directly affect the reader's actual life - rent, job, groceries, career, "
-    "relationships, mental load. Be specific - don't say 'this could affect "
-    "jobs', say which jobs and how. Start with 'You' or 'If you' when possible. "
-    "Make it hit.\n\n"
-    "Write WALLETIMPACT (2-3 sentences, max 400 characters) ONLY if this story "
-    "has a real, specific everyday money impact - a bill that changes, a price "
-    "that moves, a job category that takes a hit, a stock that reacts. Name the "
-    "specific thing. Use real words - 'groceries' not 'consumer goods', 'your "
-    "rent' not 'housing costs'. If a stock is clearly relevant, add one plain "
-    "sentence: will this likely push the stock up or down and why. No trading "
-    "language - just say 'this could push [company] stock up' or 'investors "
-    "might get nervous about [company]'. Skip the stock note if nothing is "
-    "clearly relevant.\n\n"
-    "If the story has no meaningful wallet or financial angle (e.g. pure "
-    "celebrity drama, a sports result, a cultural moment with no money "
-    "ripple), set walletImpact to null. Do not invent a stretch or generic "
-    "money angle just to fill the field - null is the correct, expected "
-    "answer for a lot of stories.\n\n"
-    "If the story involves a death (an obituary, a fatal accident, a killing, "
-    "a death toll), always set walletImpact to null, even if a stock or "
-    "financial angle technically exists. Tying someone's death to a money "
-    "angle reads as callous - skip it entirely for these stories.\n\n"
+    "Write DISPLAYTITLE (max 110 characters): a headline a regular person "
+    "cannot scroll past, built ONLY from facts in the story. If the story "
+    "honestly touches the reader's money, health, time, home, team, or "
+    "plans, lead with that stake ('Your next car could cost more - ...'). "
+    "If it does not, front-load the biggest name, number, or tension "
+    "instead. Never invent a stake the story does not support. Keep every "
+    "name, number, date, place, and qualifier exactly as the source has "
+    "them - do not turn 'considering' into 'will', do not drop 'reportedly' "
+    "or 'might', do not add claims, motives, or emotions the source does "
+    "not state. Never ask a question the story does not answer, and never "
+    "use 'why' unless the story actually explains why. No all-caps, no "
+    "emoji, no shock words the facts do not earn.\n\n"
+    "Write STORYSUMMARY (the whole story in ONE flow, 60-80 words, max 520 "
+    "characters): plain everyday language, like you're explaining it to a "
+    "friend who just asked 'wait, what happened?' The reader just saw the "
+    "display title, so do NOT restate it - start with the next most "
+    "important detail. Explain any term a non-expert would not know the "
+    "first time it appears (tariffs - taxes on imported parts; went "
+    "public - sold shares to regular investors for the first time). Short "
+    "sentences, one idea each, active voice, zero unexplained jargon. "
+    "Weave in the single most important 'why you care' point as AT MOST "
+    "ONE sentence, usually last: a specific price, bill, job, health, or "
+    "team consequence - name the thing ('groceries', 'your rent'), never "
+    "generic lines like 'this could affect jobs'. If a stock is clearly "
+    "central, that sentence may say plainly whether it likely pushes the "
+    "stock up or down and why - no trading language. If the story has no "
+    "real reader stake (pure celebrity drama, a sports result, a cultural "
+    "moment with no ripple), skip the payoff sentence entirely - a clean "
+    "summary beats a forced angle. If the story involves a death, never "
+    "add a money angle - it reads as callous.\n\n"
     "Write INSIGHT (1 sentence, under 100 characters): a punchy one-liner "
     "that makes someone stop scrolling. Urgent, real, specific.\n\n"
     "TICKER: The most relevant publicly traded US ticker if clearly central "
@@ -114,7 +114,7 @@ SYSTEM_PROMPT = (
     "'celebrity' for personal drama or 'entertainment' for movie/show/music. "
     "Omit for all others.\n\n"
     "ALWAYS reply with a single JSON object - no prose, no markdown fences - "
-    "with keys: storySummary, lifeImpact, walletImpact (string|null), insight, "
+    "with keys: displayTitle (string), storySummary, insight, "
     "ticker (string|null), companyName (string|null), category (string, optional)."
 )
 
@@ -211,11 +211,18 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
         topic = (title or "this story").strip()
         insight = f"A fresh {category} headline worth watching: {topic[:77]}..."
 
-    wallet_impact = _sanitize(parsed.get("walletImpact") or "") or None
+    # Display title: None (the app falls back to the original headline)
+    # whenever the rewrite is missing, over-long, or just the original
+    # again. `title` always keeps the RSS original as the audit copy.
+    display_title = _sanitize(parsed.get("displayTitle") or "") or None
+    if display_title is not None:
+        if len(display_title) > 130 or display_title.lower() == (title or "").strip().lower():
+            display_title = None
 
-    life_impact = _sanitize(parsed.get("lifeImpact") or "")
-    if not life_impact:
-        life_impact = "This story may have real effects on everyday life. Keep an eye on how it develops."
+    # The payoff now lives inside storySummary - no separate sections,
+    # and no generic filler when there is nothing to say.
+    wallet_impact = None
+    life_impact = None
 
     story_summary = _sanitize(parsed.get("storySummary") or "")
     if not story_summary:
@@ -228,6 +235,7 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     story.update({
         "ticker": ticker,
         "companyName": company_name,
+        "displayTitle": display_title,
         "insight": insight,
         "walletImpact": wallet_impact,
         "lifeImpact": life_impact,

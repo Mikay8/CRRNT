@@ -88,7 +88,7 @@ def strip_title_repeats(title: str, summary: str) -> str:
 def build_full_audio_text(story: dict[str, Any]) -> str:
     """Build full story audio text from the story's own fields."""
     parts: list[str] = []
-    title = (story.get("title") or "").strip()
+    title = (story.get("display_title") or story.get("title") or "").strip()
     if title:
         parts.append(title + ".")
     summary = (story.get("summary") or "").strip()

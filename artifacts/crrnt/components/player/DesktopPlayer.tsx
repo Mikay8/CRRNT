@@ -157,7 +157,7 @@ export default function DesktopPlayer() {
 
   const share = () => {
     if (!story) return;
-    Share.share({ message: [story.title, story.source_url].filter(Boolean).join("\n") }).catch(
+    Share.share({ message: [story.display_title || story.title, story.source_url].filter(Boolean).join("\n") }).catch(
       () => undefined,
     );
   };
@@ -206,7 +206,7 @@ export default function DesktopPlayer() {
           />
           <View style={styles.barTitle} pointerEvents="none">
             <Text style={styles.barTitleText} numberOfLines={1}>
-              {story?.title ?? ""}
+              {story?.display_title || story?.title || ""}
             </Text>
             <Text style={styles.barMeta} numberOfLines={1}>
               <Text style={{ color: catColor }}>{meta?.label ?? ""}</Text>
@@ -269,7 +269,7 @@ export default function DesktopPlayer() {
             </Text>
             <View>
               <Text style={styles.fullTitle} numberOfLines={4}>
-                {story?.title}
+                {story?.display_title || story?.title}
               </Text>
               <Text style={styles.fullSource}>
                 {sourceDomain(story?.source_url)}

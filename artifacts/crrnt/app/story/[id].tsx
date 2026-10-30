@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, {
+  Easing,
   Extrapolation,
   FadeInDown,
   interpolate,
@@ -17,14 +18,23 @@ import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  useAnimatedReaction,
+  withRepeat,
+  withTiming,
+  type SharedValue,
 } from "react-native-reanimated";
+import {
+  Gesture,
+  GestureDetector,
+  ScrollView as GHScrollView,
+} from "react-native-gesture-handler";
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from "react-native-svg";
 import { BlurView } from "expo-blur";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   useGetStockHistory,
   useGetStory,
@@ -46,7 +56,12 @@ import SaveButton from "@/components/SaveButton";
 import EmptyState from "@/components/EmptyState";
 import WaveBars from "@/components/player/WaveBars";
 import { DetachedTabBar } from "@/components/GlassTabBar";
-import { useChromeBottomPadding, useNavChrome } from "@/contexts/NavChromeContext";
+import {
+  NAV,
+  useChromeBottomPadding,
+  useNavChrome,
+  useTabBarBottom,
+} from "@/contexts/NavChromeContext";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
 import { formatRelativeTime, formatDateTime } from "@/utils/time";
 
@@ -124,6 +139,8 @@ function sourceDomain(url?: string | null): string {
   }
 }
 
+const AnimatedGHScrollView = Animated.createAnimatedComponent(GHScrollView);
+
 /**
  * Mobile fills the screen; desktop web floats the same story view in a
  * centred panel over the dimmed feed. `sheetTop` is how much hero shows
@@ -147,6 +164,9 @@ export default function StoryDetailScreen() {
     useAudio();
   const { isCollapsed, setCollapsed } = useNavChrome();
   const chromeBottomPad = useChromeBottomPadding();
+  // The nav sits collapsed here (one button + the mini player beside it), so
+  // the Up next peek only needs to clear that single row.
+  const peekBottomPad = useTabBarBottom() + NAV.tabH + 20;
   const isDesktop = useIsDesktop();
   const { width: winW, height: winH } = useWindowDimensions();
 
@@ -197,7 +217,17 @@ export default function StoryDetailScreen() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isDesktop]);
 
-  const localFallback = saved.find((s) => s.id === id) ?? null;
+  // Same query the unfiltered feed uses, so "Up next" is usually a cache hit.
+  const feed = useListStories(undefined, {
+    query: { staleTime: 60_000 } as any,
+  });
+
+  // Saved or feed copy shows instantly while the full story loads, which is
+  // what lets the Up next swap land without a loading flash.
+  const localFallback =
+    saved.find((s) => s.id === id) ??
+    (feed.data?.stories as Story[] | undefined)?.find((s) => s.id === id) ??
+    null;
 
   const { data, isLoading, error } = useGetStory(id ?? "", {
     query: {
@@ -207,11 +237,6 @@ export default function StoryDetailScreen() {
   });
 
   const story: Story | null = (data as Story | undefined) ?? localFallback;
-
-  // Same query the unfiltered feed uses, so "Up next" is usually a cache hit.
-  const feed = useListStories(undefined, {
-    query: { staleTime: 60_000 } as any,
-  });
   const nextStory = useMemo(() => {
     const list: Story[] = feed.data?.stories ?? [];
     if (!story || list.length < 2) return null;
@@ -219,6 +244,9 @@ export default function StoryDetailScreen() {
     if (idx === -1) return list[0];
     return list[(idx + 1) % list.length];
   }, [feed.data, story?.id]);
+  // The drag-up peek leans on native gesture handling, so it's iOS only;
+  // web and Android get the Up next card.
+  const hasPeek = Platform.OS === "ios" && !isDesktop && !!nextStory;
 
   const ticker = parseTickerFromStockNote(story?.stock_note);
   const companyName = parseCompanyFromStockNote(story?.stock_note);
@@ -237,18 +265,42 @@ export default function StoryDetailScreen() {
   // as the sheet covers it, the compact title bar fading in, and the nav
   // tucking back away if it was tapped open.
   const scrollY = useSharedValue(0);
+  // Set to the page's resting scroll offset when a pull past the bottom
+  // should carry on into the next story; the peek reacts to it.
+  const pullPast = useSharedValue(-1);
+  const scrollRef = useRef<any>(null);
+  const scrollGesture = useMemo(() => Gesture.Native(), []);
+
+  // Up next swaps the story in place: start the new one at the top.
+  useLayoutEffect(() => {
+    scrollRef.current?.scrollTo?.({ y: 0, animated: false });
+    scrollY.value = 0;
+    pullPast.value = -1;
+  }, [id, scrollY]);
   const navOpen = useSharedValue(false);
   useEffect(() => {
     navOpen.value = !isCollapsed;
   }, [isCollapsed, navOpen]);
-  const onScroll = useAnimatedScrollHandler((e) => {
-    const y = e.contentOffset.y;
-    if (!isDesktop && navOpen.value && y > scrollY.value + 6) {
-      navOpen.value = false;
-      runOnJS(setCollapsed)(true);
-    }
-    scrollY.value = y;
-  });
+  const onScroll = useAnimatedScrollHandler(
+    {
+      onScroll: (e) => {
+        const y = e.contentOffset.y;
+        if (!isDesktop && navOpen.value && y > scrollY.value + 6) {
+          navOpen.value = false;
+          runOnJS(setCollapsed)(true);
+        }
+        scrollY.value = y;
+      },
+      // iOS: letting go well past the bottom (into the bounce) moves on to
+      // the next story, same as dragging the peek up.
+      onEndDrag: (e) => {
+        if (!hasPeek) return;
+        const maxY = e.contentSize.height - e.layoutMeasurement.height;
+        if (e.contentOffset.y - maxY > PULL_TO_NEXT) pullPast.value = Math.max(0, maxY);
+      },
+    },
+    [isDesktop, hasPeek]
+  );
   const heroStyle = useAnimatedStyle(() => {
     const y = scrollY.value;
     const scale = y < 0 ? 1 + -y / heroH : 1;
@@ -378,6 +430,10 @@ export default function StoryDetailScreen() {
     else router.push(next);
   };
 
+  // The mobile peek has already animated into place; swap the story under it.
+  const openNextInPlace = () => {
+    if (nextStory) router.setParams({ id: nextStory.id });
+  };
   const activeTab = RANGE_TABS.find((t) => t.value === stockRange)!;
   const sentimentKey = story.sentiment_label as SentimentKey | null | undefined;
   const sentimentCfg =
@@ -416,327 +472,345 @@ export default function StoryDetailScreen() {
         />
       </Animated.View>
 
-      <Animated.ScrollView
-        style={styles.scrollView}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        contentContainerStyle={{ paddingBottom: L.bottomPad }}
-        showsVerticalScrollIndicator={false}
-        automaticallyAdjustsScrollIndicatorInsets={false}
-      >
-        {/* Transparent window onto the hero. The credit lives here (not on
-            the hero) so it stays tappable above the scroll view. */}
-        <View style={{ height: sheetTop }} pointerEvents="box-none">
-          {story.image_credit_name ? (
-            <PhotoCredit
-              name={story.image_credit_name}
-              profileUrl={story.image_credit_url}
-              bottom={16}
-            />
-          ) : null}
-        </View>
-
-        <Animated.View
-          entering={FadeInDown.duration(550)}
-          style={[
-            styles.sheet,
-            isDesktop && styles.sheetDesktop,
-            { paddingHorizontal: hPad, minHeight: L.height - barH },
-          ]}
+      <GestureDetector gesture={scrollGesture}>
+        <AnimatedGHScrollView
+          ref={scrollRef}
+          style={styles.scrollView}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={{ paddingBottom: hasPeek ? 0 : L.bottomPad }}
+          showsVerticalScrollIndicator={false}
+          automaticallyAdjustsScrollIndicatorInsets={false}
         >
-          {isDesktop ? null : <View style={styles.grab} />}
-
-          <View style={styles.tagsRow}>
-            <CategoryBadge category={story.category} size="lg" />
-            {days !== null ? (
-              <View style={[styles.leftPill, days <= 2 && styles.leftPillUrgent]}>
-                <Ionicons
-                  name="time-outline"
-                  size={13}
-                  color={days <= 2 ? "#EF4444" : palette.textMuted}
-                />
-                <Text
-                  style={[styles.leftPillText, days <= 2 && styles.leftPillTextUrgent]}
-                >
-                  {days === 0 ? "Expires today" : `${days}d left`}
-                </Text>
-              </View>
+          {/* Transparent window onto the hero. The credit lives here (not on
+              the hero) so it stays tappable above the scroll view. */}
+          <View style={{ height: sheetTop }} pointerEvents="box-none">
+            {story.image_credit_name ? (
+              <PhotoCredit
+                name={story.image_credit_name}
+                profileUrl={story.image_credit_url}
+                bottom={16}
+              />
             ) : null}
-            <View style={{ flex: 1 }} />
-            <Pressable
-              onPress={toggleAudio}
-              disabled={isAudioLoading && isThisStoryActive}
-              accessibilityLabel={isThisStoryPlaying ? "Pause audio" : "Play audio"}
-              style={({ pressed }) => [
-                styles.playBtn,
-                isThisStoryPlaying && styles.playBtnOn,
-                { transform: [{ scale: pressed ? 0.94 : 1 }] },
-              ]}
-            >
-              {isAudioLoading && isThisStoryActive ? (
-                <ActivityIndicator size="small" color={palette.onAccent} />
-              ) : (
-                <Ionicons
-                  name={isThisStoryPlaying ? "pause" : "play"}
-                  size={18}
-                  color={palette.onAccent}
-                  style={isThisStoryPlaying ? undefined : { marginLeft: 2 }}
-                />
-              )}
-            </Pressable>
           </View>
 
-          <Text style={[styles.title, isDesktop && styles.titleDesktop]}>{title}</Text>
+          <Animated.View
+            entering={FadeInDown.duration(550)}
+            style={[
+              styles.sheet,
+              isDesktop && styles.sheetDesktop,
+              { paddingHorizontal: hPad, minHeight: L.height - barH },
+              hasPeek && styles.sheetWithPeek,
+            ]}
+          >
+            {isDesktop ? null : <View style={styles.grab} />}
 
-          <Text style={styles.meta}>
-            <Text style={styles.metaSource}>{displaySource}</Text>
-            {story.published_at
-              ? `  ·  ${formatRelativeTime(story.published_at)}  ·  ${formatDateTime(story.published_at)}`
-              : ""}
-          </Text>
-
-          <Text style={[styles.summary, isDesktop && styles.summaryDesktop]}>{story.summary ?? story.one_liner}</Text>
-
-          {/* How does it affect me? */}
-          {(story.life_impact || story.personalized_life_impact) ? (
-            <View style={[styles.insightCard, styles.impactCard]}>
-              <View style={styles.sectionHeader}>
-                <Ionicons name="people" size={16} color="#7B68EE" />
-                <Text style={[styles.sectionLabel, { color: "#7B68EE" }]}>
-                  How does it affect me?
-                </Text>
-              </View>
-              <Text style={styles.impactText}>
-                {story.personalized_life_impact ?? story.life_impact}
-              </Text>
-              {story.personalized_life_impact ? (
-                <Text style={styles.personalizedBadge}>Personalized for you</Text>
-              ) : null}
-            </View>
-          ) : null}
-
-          {/* Wallet impact */}
-          {story.wallet_impact ? (
-            <View style={styles.insightCard}>
-              <View style={styles.sectionHeader}>
-                <Ionicons name="sparkles" size={16} color={palette.accent} />
-                <Text style={styles.sectionLabel}>Wallet impact</Text>
-              </View>
-              <Text style={styles.impactText}>{story.wallet_impact}</Text>
-            </View>
-          ) : null}
-
-          {/* Stock chart */}
-          {ticker ? (
-            <View style={styles.stockCard}>
-              <View style={styles.stockHeader}>
-                <View>
-                  <Text style={styles.tickerLabel}>${ticker}</Text>
-                  {companyName ? (
-                    <Text style={styles.company}>{companyName}</Text>
-                  ) : null}
+            <View style={styles.tagsRow}>
+              <CategoryBadge category={story.category} size="lg" />
+              {days !== null ? (
+                <View style={[styles.leftPill, days <= 2 && styles.leftPillUrgent]}>
+                  <Ionicons
+                    name="time-outline"
+                    size={13}
+                    color={days <= 2 ? "#EF4444" : palette.textMuted}
+                  />
+                  <Text
+                    style={[styles.leftPillText, days <= 2 && styles.leftPillTextUrgent]}
+                  >
+                    {days === 0 ? "Expires today" : `${days}d left`}
+                  </Text>
                 </View>
-                {stock ? (
-                  <View style={{ alignItems: "flex-end" }}>
-                    <Text style={styles.price}>
-                      ${stock.latestPrice?.toFixed(2)}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.delta,
-                        { color: priceUp ? palette.positive : palette.negative },
-                      ]}
-                    >
-                      {activeTab.label} {priceUp ? "▲" : "▼"}{" "}
-                      {pctChange(stock.points[0]?.close, stock.latestPrice)}%
-                    </Text>
-                  </View>
+              ) : null}
+              <View style={{ flex: 1 }} />
+              <Pressable
+                onPress={toggleAudio}
+                disabled={isAudioLoading && isThisStoryActive}
+                accessibilityLabel={isThisStoryPlaying ? "Pause audio" : "Play audio"}
+                style={({ pressed }) => [
+                  styles.playBtn,
+                  isThisStoryPlaying && styles.playBtnOn,
+                  { transform: [{ scale: pressed ? 0.94 : 1 }] },
+                ]}
+              >
+                {isAudioLoading && isThisStoryActive ? (
+                  <ActivityIndicator size="small" color={palette.onAccent} />
+                ) : (
+                  <Ionicons
+                    name={isThisStoryPlaying ? "pause" : "play"}
+                    size={18}
+                    color={palette.onAccent}
+                    style={isThisStoryPlaying ? undefined : { marginLeft: 2 }}
+                  />
+                )}
+              </Pressable>
+            </View>
+
+            <Text style={[styles.title, isDesktop && styles.titleDesktop]}>{title}</Text>
+
+            <Text style={styles.meta}>
+              <Text style={styles.metaSource}>{displaySource}</Text>
+              {story.published_at
+                ? `  ·  ${formatRelativeTime(story.published_at)}  ·  ${formatDateTime(story.published_at)}`
+                : ""}
+            </Text>
+
+            <Text style={[styles.summary, isDesktop && styles.summaryDesktop]}>{story.summary ?? story.one_liner}</Text>
+
+            {/* How does it affect me? */}
+            {(story.life_impact || story.personalized_life_impact) ? (
+              <View style={[styles.insightCard, styles.impactCard]}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="people" size={16} color="#7B68EE" />
+                  <Text style={[styles.sectionLabel, { color: "#7B68EE" }]}>
+                    How does it affect me?
+                  </Text>
+                </View>
+                <Text style={styles.impactText}>
+                  {story.personalized_life_impact ?? story.life_impact}
+                </Text>
+                {story.personalized_life_impact ? (
+                  <Text style={styles.personalizedBadge}>Personalized for you</Text>
                 ) : null}
               </View>
+            ) : null}
 
-              <View style={styles.rangeTabs}>
-                {RANGE_TABS.map((tab) => {
-                  const isActive = tab.value === stockRange;
-                  const tone = priceUp ? palette.positive : palette.negative;
-                  return (
-                    <Pressable
-                      key={tab.value}
-                      onPress={() => handleRangeChange(tab.value)}
-                      style={({ pressed }) => [
-                        styles.rangeTab,
+            {/* Wallet impact */}
+            {story.wallet_impact ? (
+              <View style={styles.insightCard}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="sparkles" size={16} color={palette.accent} />
+                  <Text style={styles.sectionLabel}>Wallet impact</Text>
+                </View>
+                <Text style={styles.impactText}>{story.wallet_impact}</Text>
+              </View>
+            ) : null}
+
+            {/* Stock chart */}
+            {ticker ? (
+              <View style={styles.stockCard}>
+                <View style={styles.stockHeader}>
+                  <View>
+                    <Text style={styles.tickerLabel}>${ticker}</Text>
+                    {companyName ? (
+                      <Text style={styles.company}>{companyName}</Text>
+                    ) : null}
+                  </View>
+                  {stock ? (
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={styles.price}>
+                        ${stock.latestPrice?.toFixed(2)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.delta,
+                          { color: priceUp ? palette.positive : palette.negative },
+                        ]}
+                      >
+                        {activeTab.label} {priceUp ? "▲" : "▼"}{" "}
+                        {pctChange(stock.points[0]?.close, stock.latestPrice)}%
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.rangeTabs}>
+                  {RANGE_TABS.map((tab) => {
+                    const isActive = tab.value === stockRange;
+                    const tone = priceUp ? palette.positive : palette.negative;
+                    return (
+                      <Pressable
+                        key={tab.value}
+                        onPress={() => handleRangeChange(tab.value)}
+                        style={({ pressed }) => [
+                          styles.rangeTab,
+                          {
+                            backgroundColor: isActive ? tone + "22" : "transparent",
+                            borderColor: isActive ? tone : palette.border,
+                            opacity: pressed ? 0.7 : 1,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.rangeTabLabel,
+                            { color: isActive ? tone : palette.textMuted },
+                          ]}
+                        >
+                          {tab.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {stockQuery.isLoading ? (
+                  <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
+                    <ActivityIndicator color={palette.textMuted} />
+                  </View>
+                ) : stock ? (
+                  <PriceChart
+                    points={stock.points}
+                    width={chartWidth}
+                    height={160}
+                    positive={priceUp}
+                  />
+                ) : (
+                  <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
+                    <Text style={styles.chartEmpty}>Price data unavailable</Text>
+                  </View>
+                )}
+
+                {stock && story.published_at ? (
+                  <Text style={styles.chartHint}>
+                    <Ionicons name="time-outline" size={11} color={palette.textDim} />{" "}
+                    Story posted {formatRelativeTime(story.published_at)} — showing{" "}
+                    {activeTab.hint}
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              <View style={styles.noTickerCard}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={18}
+                  color={palette.textMuted}
+                />
+                <Text style={styles.noTickerText}>
+                  No public stock is closely tied to this story.
+                </Text>
+              </View>
+            )}
+
+            {/* What are people saying? */}
+            {hasSocialData ? (
+              <View style={[styles.insightCard, styles.socialCard]}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.xLogo}>𝕏</Text>
+                  <Text style={[styles.sectionLabel, { color: "#1DA1F2" }]}>
+                    What are people saying?
+                  </Text>
+                </View>
+
+                {story.sentiment_label ? (
+                  <View style={styles.sentimentRow}>
+                    <View
+                      style={[
+                        styles.sentimentBadge,
                         {
-                          backgroundColor: isActive ? tone + "22" : "transparent",
-                          borderColor: isActive ? tone : palette.border,
-                          opacity: pressed ? 0.7 : 1,
+                          backgroundColor: sentimentCfg.color + "22",
+                          borderColor: sentimentCfg.color + "55",
                         },
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.rangeTabLabel,
-                          { color: isActive ? tone : palette.textMuted },
+                      <Ionicons
+                        name={sentimentCfg.icon as any}
+                        size={13}
+                        color={sentimentCfg.color}
+                      />
+                      <Text style={[styles.sentimentLabel, { color: sentimentCfg.color }]}>
+                        {sentimentCfg.label}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                {story.people_say ? (
+                  <Text style={styles.peopleSay}>{story.people_say}</Text>
+                ) : null}
+
+                {story.featured_posts && story.featured_posts.length > 0 ? (
+                  <View style={styles.postsList}>
+                    {story.featured_posts.map((post, i) => (
+                      <Pressable
+                        key={post.url ?? i}
+                        onPress={() => {
+                          if (post.url) {
+                            Linking.openURL(post.url).catch(() => undefined);
+                          }
+                        }}
+                        style={({ pressed }) => [
+                          styles.postCard,
+                          { opacity: pressed ? 0.7 : 1 },
                         ]}
                       >
-                        {tab.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+                        <View style={styles.postHeader}>
+                          <Text style={styles.postHandle}>@{post.handle}</Text>
+                          <Ionicons name="open-outline" size={13} color={palette.textDim} />
+                        </View>
+                        <Text style={styles.postText}>{post.text}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
               </View>
+            ) : null}
 
-              {stockQuery.isLoading ? (
-                <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
-                  <ActivityIndicator color={palette.textMuted} />
-                </View>
-              ) : stock ? (
-                <PriceChart
-                  points={stock.points}
-                  width={chartWidth}
-                  height={160}
-                  positive={priceUp}
-                />
-              ) : (
-                <View style={[styles.chartPlaceholder, { width: chartWidth }]}>
-                  <Text style={styles.chartEmpty}>Price data unavailable</Text>
-                </View>
-              )}
-
-              {stock && story.published_at ? (
-                <Text style={styles.chartHint}>
-                  <Ionicons name="time-outline" size={11} color={palette.textDim} />{" "}
-                  Story posted {formatRelativeTime(story.published_at)} — showing{" "}
-                  {activeTab.hint}
-                </Text>
-              ) : null}
-            </View>
-          ) : (
-            <View style={styles.noTickerCard}>
-              <Ionicons
-                name="information-circle-outline"
-                size={18}
-                color={palette.textMuted}
-              />
-              <Text style={styles.noTickerText}>
-                No public stock is closely tied to this story.
+            {/* Read full story */}
+            <Pressable
+              onPress={openSource}
+              style={({ pressed }) => [styles.readBtn, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Ionicons name="open-outline" size={18} color={palette.text} />
+              <Text style={styles.readBtnText} numberOfLines={1}>
+                Read full story at {displaySource}
               </Text>
-            </View>
-          )}
+            </Pressable>
 
-          {/* What are people saying? */}
-          {hasSocialData ? (
-            <View style={[styles.insightCard, styles.socialCard]}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.xLogo}>𝕏</Text>
-                <Text style={[styles.sectionLabel, { color: "#1DA1F2" }]}>
-                  What are people saying?
-                </Text>
+            {/* Up next card (iOS gets the peek below the sheet instead) */}
+            {nextStory && !hasPeek ? (
+              <View style={styles.next}>
+                <Text style={styles.nextLabel}>Up next</Text>
+                <Pressable
+                  onPress={openNext}
+                  style={({ pressed }) => [styles.nextCard, { opacity: pressed ? 0.8 : 1 }]}
+                >
+                  <StoryImage
+                    uri={nextStory.media_url}
+                    category={nextStory.category}
+                    style={styles.nextThumb}
+                  />
+                  <View style={styles.nextText}>
+                    <View style={styles.nextChip}>
+                      {nextMeta ? (
+                        <Ionicons
+                          name={CATEGORY_ICONS[nextMeta.icon]}
+                          size={13}
+                          color={nextMeta.color}
+                        />
+                      ) : null}
+                      <Text
+                        style={[styles.nextChipText, { color: nextMeta?.color ?? palette.accent }]}
+                        numberOfLines={1}
+                      >
+                        {nextMeta ? `${nextMeta.label} · ` : ""}
+                        {sourceDomain(nextStory.source_url)}
+                      </Text>
+                    </View>
+                    <Text style={styles.nextTitle} numberOfLines={3}>
+                      {nextStory.display_title || nextStory.title}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={palette.textDim} />
+                </Pressable>
               </View>
+            ) : null}
+          </Animated.View>
 
-              {story.sentiment_label ? (
-                <View style={styles.sentimentRow}>
-                  <View
-                    style={[
-                      styles.sentimentBadge,
-                      {
-                        backgroundColor: sentimentCfg.color + "22",
-                        borderColor: sentimentCfg.color + "55",
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={sentimentCfg.icon as any}
-                      size={13}
-                      color={sentimentCfg.color}
-                    />
-                    <Text style={[styles.sentimentLabel, { color: sentimentCfg.color }]}>
-                      {sentimentCfg.label}
-                    </Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {story.people_say ? (
-                <Text style={styles.peopleSay}>{story.people_say}</Text>
-              ) : null}
-
-              {story.featured_posts && story.featured_posts.length > 0 ? (
-                <View style={styles.postsList}>
-                  {story.featured_posts.map((post, i) => (
-                    <Pressable
-                      key={post.url ?? i}
-                      onPress={() => {
-                        if (post.url) {
-                          Linking.openURL(post.url).catch(() => undefined);
-                        }
-                      }}
-                      style={({ pressed }) => [
-                        styles.postCard,
-                        { opacity: pressed ? 0.7 : 1 },
-                      ]}
-                    >
-                      <View style={styles.postHeader}>
-                        <Text style={styles.postHandle}>@{post.handle}</Text>
-                        <Ionicons name="open-outline" size={13} color={palette.textDim} />
-                      </View>
-                      <Text style={styles.postText}>{post.text}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              ) : null}
-            </View>
+          {hasPeek ? (
+            <UpNextPeek
+              key={nextStory.id}
+              next={nextStory}
+              scrollY={scrollY}
+              sheetTop={sheetTop}
+              hPad={hPad}
+              bottomPad={peekBottomPad}
+              scrollGesture={scrollGesture}
+              pullPast={pullPast}
+              onOpen={openNextInPlace}
+            />
           ) : null}
-
-          {/* Read full story */}
-          <Pressable
-            onPress={openSource}
-            style={({ pressed }) => [styles.readBtn, { opacity: pressed ? 0.7 : 1 }]}
-          >
-            <Ionicons name="open-outline" size={18} color={palette.text} />
-            <Text style={styles.readBtnText} numberOfLines={1}>
-              Read full story at {displaySource}
-            </Text>
-          </Pressable>
-
-          {/* Up next */}
-          {nextStory ? (
-            <View style={styles.next}>
-              <Text style={styles.nextLabel}>Up next</Text>
-              <Pressable
-                onPress={openNext}
-                style={({ pressed }) => [styles.nextCard, { opacity: pressed ? 0.8 : 1 }]}
-              >
-                <StoryImage
-                  uri={nextStory.media_url}
-                  category={nextStory.category}
-                  style={styles.nextThumb}
-                />
-                <View style={styles.nextText}>
-                  <View style={styles.nextChip}>
-                    {nextMeta ? (
-                      <Ionicons
-                        name={CATEGORY_ICONS[nextMeta.icon]}
-                        size={13}
-                        color={nextMeta.color}
-                      />
-                    ) : null}
-                    <Text
-                      style={[styles.nextChipText, { color: nextMeta?.color ?? palette.accent }]}
-                      numberOfLines={1}
-                    >
-                      {nextMeta ? `${nextMeta.label} · ` : ""}
-                      {sourceDomain(nextStory.source_url)}
-                    </Text>
-                  </View>
-                  <Text style={styles.nextTitle} numberOfLines={3}>
-                    {nextStory.display_title || nextStory.title}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={palette.textDim} />
-              </Pressable>
-            </View>
-          ) : null}
-        </Animated.View>
-      </Animated.ScrollView>
+        </AnimatedGHScrollView>
+      </GestureDetector>
 
       {/* Compact title bar: fades in once the sheet reaches the top */}
       <Animated.View
@@ -783,6 +857,209 @@ export default function StoryDetailScreen() {
         </GlassButton>
       </View>
     </>
+  );
+}
+
+const PEEK_IMG_H = 128;
+/** How far past the bottom (pt) an iOS overscroll must be released to move on. */
+const PULL_TO_NEXT = 80;
+const PEEK_EASE = Easing.bezier(0.2, 0.9, 0.25, 1);
+
+/**
+ * Mobile "Up next": the next story's sheet peeks in below this one. Drag it
+ * up (or tap it) and it rides to the top of the screen while its image grows
+ * into a full hero, then the screen swaps to that story in place — the peek
+ * ends exactly where the next story's hero and sheet sit, so the swap is
+ * seamless. A short or slow drag springs back.
+ */
+function UpNextPeek({
+  next,
+  scrollY,
+  sheetTop,
+  hPad,
+  bottomPad,
+  scrollGesture,
+  pullPast,
+  onOpen,
+}: {
+  next: Story;
+  scrollY: SharedValue<number>;
+  sheetTop: number;
+  hPad: number;
+  bottomPad: number;
+  scrollGesture: ReturnType<typeof Gesture.Native>;
+  /** Page scroll offset to land against once a pull past the bottom commits; -1 when idle. */
+  pullPast: SharedValue<number>;
+  onOpen: () => void;
+}) {
+  const { theme: palette } = useThemeContext();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
+  const dd = useSharedValue(0);
+  const top0 = useSharedValue(600);
+  const peekY = useSharedValue(0);
+  const busy = useSharedValue(false);
+  const bob = useSharedValue(0);
+  useEffect(() => {
+    bob.value = withRepeat(
+      withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, [bob]);
+
+  // The parent re-renders often (nav collapse, audio state); route the
+  // hand-over through a ref so the gestures below can stay stable — rebuilding
+  // them mid-drag would drop the drag.
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
+
+  const { gesture, commit } = useMemo(() => {
+    const haptic = () =>
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+    const handOver = () => onOpenRef.current();
+
+    // Ride the peek up to the top of the viewport, then hand over. `restY`
+    // is where the page scroll will sit when the ride ends.
+    const commit = (restY: number) => {
+      "worklet";
+      busy.value = true;
+      top0.value = Math.max(1, peekY.value - restY);
+      runOnJS(haptic)();
+      dd.value = withTiming(
+        -(peekY.value - restY),
+        { duration: 400, easing: PEEK_EASE },
+        (finished) => {
+          if (finished) runOnJS(handOver)();
+        }
+      );
+    };
+
+    const tap = Gesture.Tap().onEnd((_e, success) => {
+      if (!success || busy.value) return;
+      commit(scrollY.value);
+    });
+
+    // Owns vertical drags that start on the peek, so the page doesn't scroll
+    // underneath; dragging down only gives a little.
+    const pan = Gesture.Pan()
+      .activeOffsetY([-6, 6])
+      .blocksExternalGesture(scrollGesture)
+      .onStart(() => {
+        top0.value = Math.max(1, peekY.value - scrollY.value);
+      })
+      .onUpdate((e) => {
+        if (busy.value) return;
+        dd.value = e.translationY < 0 ? e.translationY : e.translationY * 0.25;
+      })
+      .onEnd((e) => {
+        if (busy.value) return;
+        if (-dd.value > 110 || e.velocityY < -600) commit(scrollY.value);
+        else dd.value = withTiming(0, { duration: 450, easing: PEEK_EASE });
+      });
+
+    return { gesture: Gesture.Exclusive(pan, tap), commit };
+  }, [scrollGesture, scrollY, dd, top0, peekY, busy]);
+
+  // The page was pulled past its bottom: the bounce settles the scroll at
+  // `pullPast`, so ride against that rather than the overscrolled offset.
+  useAnimatedReaction(
+    () => pullPast.value,
+    (restY, prev) => {
+      if (restY >= 0 && restY !== prev && !busy.value) commit(restY);
+    },
+    [commit]
+  );
+
+  const wrapStyle = useAnimatedStyle(() => ({ transform: [{ translateY: dd.value }] }));
+  const labelStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, Math.min(1, 1 + dd.value / 80)),
+  }));
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: 1 - bob.value * 3 }],
+  }));
+  const imgStyle = useAnimatedStyle(() => {
+    const p = Math.max(0, Math.min(1, -dd.value / top0.value));
+    return { height: PEEK_IMG_H + (sheetTop + 28 - PEEK_IMG_H) * p };
+  });
+  const previewStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, Math.min(1, -dd.value / 160)),
+    transform: [{ translateY: Math.max(0, 24 + dd.value / 6) }],
+  }));
+
+  const days = daysRemaining(next.expires_at);
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <Animated.View
+        style={[styles.peek, wrapStyle]}
+        onLayout={(e) => {
+          peekY.value = e.nativeEvent.layout.y;
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={`Up next: ${next.display_title || next.title}`}
+      >
+        <Svg style={styles.peekFade} width="100%" height={56} pointerEvents="none">
+          <Defs>
+            <LinearGradient id="peek-fade" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="#05070B" stopOpacity={0} />
+              <Stop offset="1" stopColor="#05070B" stopOpacity={1} />
+            </LinearGradient>
+          </Defs>
+          <Rect width="100%" height="100%" fill="url(#peek-fade)" />
+        </Svg>
+
+        <Animated.View style={[styles.peekLabel, labelStyle]} pointerEvents="none">
+          <Animated.View style={chevronStyle}>
+            <Ionicons name="chevron-up" size={15} color={palette.text} />
+          </Animated.View>
+          <Text style={styles.peekLabelText}>Up next</Text>
+        </Animated.View>
+
+        <Animated.View style={[styles.peekImg, imgStyle]}>
+          <StoryImage uri={next.media_url} category={next.category} style={StyleSheet.absoluteFill} />
+        </Animated.View>
+
+        <View style={[styles.peekBody, { paddingHorizontal: hPad, paddingBottom: bottomPad }]}>
+          <View style={styles.grab} />
+          <View style={styles.peekHead}>
+            <View style={styles.tagsRow}>
+              <CategoryBadge category={next.category} size="lg" />
+              {days !== null ? (
+                <View style={styles.leftPill}>
+                  <Ionicons name="time-outline" size={13} color={palette.textMuted} />
+                  <Text style={styles.leftPillText}>
+                    {days === 0 ? "Expires today" : `${days}d left`}
+                  </Text>
+                </View>
+              ) : null}
+              <View style={{ flex: 1 }} />
+              <View style={[styles.playBtn, { backgroundColor: palette.accent + "2E" }]}>
+                <Ionicons name="play" size={18} color={palette.accent} style={{ marginLeft: 2 }} />
+              </View>
+            </View>
+            <Text style={styles.title}>{next.display_title || next.title}</Text>
+            <Text style={styles.meta}>
+              <Text style={styles.metaSource}>{sourceDomain(next.source_url)}</Text>
+              {next.published_at
+                ? `  ·  ${formatRelativeTime(next.published_at)}  ·  ${formatDateTime(next.published_at)}`
+                : ""}
+            </Text>
+
+            {/* A glimpse of the body that fades in as the peek is dragged up */}
+            <Animated.View style={[styles.peekPreview, previewStyle]} pointerEvents="none">
+              <Text style={styles.summary}>{next.summary ?? next.one_liner}</Text>
+              <View style={styles.readBtn}>
+                <Ionicons name="open-outline" size={18} color={palette.text} />
+                <Text style={styles.readBtnText} numberOfLines={1}>
+                  Read full story at {sourceDomain(next.source_url)}
+                </Text>
+              </View>
+            </Animated.View>
+          </View>
+        </View>
+      </Animated.View>
+    </GestureDetector>
   );
 }
 
@@ -1042,6 +1319,8 @@ function createStyles(palette: ThemeColors) {
       shadowRadius: 24,
     },
     sheetDesktop: { paddingTop: 30, gap: 20 },
+    // With the peek following, the sheet ends at its content plus room for the fade.
+    sheetWithPeek: { minHeight: 0, paddingBottom: 56 },
     grab: {
       width: 38,
       height: 5,
@@ -1305,6 +1584,50 @@ function createStyles(palette: ThemeColors) {
       lineHeight: 21,
       color: palette.text,
     },
+    peek: {
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: -24 },
+      shadowOpacity: 0.55,
+      shadowRadius: 24,
+    },
+    peekFade: { position: "absolute", top: -56, left: 0 },
+    peekLabel: {
+      position: "absolute",
+      top: -42,
+      alignSelf: "center",
+      zIndex: 1,
+      height: 30,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingLeft: 11,
+      paddingRight: 14,
+      borderRadius: 999,
+      backgroundColor: "rgba(22,30,46,0.8)",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.12)",
+    },
+    peekLabelText: { fontFamily: "Inter_700Bold", fontSize: 12.5, color: palette.text },
+    peekImg: {
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      overflow: "hidden",
+      borderTopWidth: 1,
+      borderColor: "rgba(255,255,255,0.14)",
+      backgroundColor: palette.surfaceHigh,
+    },
+    peekBody: {
+      marginTop: -28,
+      paddingTop: 12,
+      gap: 18,
+      backgroundColor: palette.bg,
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      borderTopWidth: 1,
+      borderColor: "rgba(255,255,255,0.08)",
+    },
+    peekHead: { gap: 18 },
+    peekPreview: { position: "absolute", left: 0, right: 0, top: "100%", marginTop: 18, gap: 18 },
     bar: {
       position: "absolute",
       top: 0,

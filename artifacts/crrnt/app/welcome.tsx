@@ -11,13 +11,15 @@
  * as the Settings toggle does.
  */
 import { useEffect, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { setNotificationsEnabled } from "@/lib/notifications";
 import { hasSeenWelcome, markWelcomeSeen } from "@/lib/welcome";
+
+const LOGO = require("@/assets/images/logo.png") as number;
 
 export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
@@ -84,7 +86,12 @@ export default function WelcomeScreen() {
       ]}
     >
       <View style={wStyles.inner}>
-        <Text style={[wStyles.wordmark, { color: theme.accent }]}>CRRNT</Text>
+        <Image
+          source={LOGO}
+          style={wStyles.logo}
+          resizeMode="contain"
+          accessibilityLabel="CRRNT"
+        />
         <Text style={[wStyles.title, { color: theme.text }]}>Welcome to CRRNT</Text>
         <Text style={[wStyles.subtitle, { color: theme.textMuted }]}>
           Bite-size news without noise — fresh stories every day, gone in 7
@@ -155,11 +162,11 @@ const wStyles = StyleSheet.create({
     width: "100%",
     alignSelf: "center",
   },
-  wordmark: {
-    fontFamily: "Outfit_700Bold",
-    fontSize: 16,
-    letterSpacing: 2,
-    marginBottom: 16,
+  logo: {
+    width: 96,
+    height: 96,
+    alignSelf: "center",
+    marginBottom: 28,
   },
   title: {
     fontFamily: "Outfit_700Bold",

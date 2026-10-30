@@ -50,6 +50,8 @@ export interface Story {
   title: string;
   /** Claude-generated faithful hook headline; shown instead of title when set, title stays the original RSS headline. Hand-added: the backend serves it via SELECT *; add to the OpenAPI spec on the next client regen. */
   display_title?: string | null;
+  /** Claude-assigned story tone for on-device feed personalization: 'informed', 'entertained', or 'both'. Hand-added: the backend serves it via SELECT *; add to the OpenAPI spec on the next client regen. */
+  vibe?: string | null;
   category: Category;
   published_at?: string;
   source_url?: string;

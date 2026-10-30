@@ -27,7 +27,7 @@ import {
 import StoryCard from "@/components/StoryCard";
 import CategoryFilter from "@/components/CategoryFilter";
 import EmptyState from "@/components/EmptyState";
-import type { Category } from "@/constants/categories";
+import type { FeedSelection } from "@/constants/categories";
 import { AUTH_ENABLED } from "@/constants/features";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -36,6 +36,11 @@ import { useChromeBottomPadding, useNavChrome } from "@/contexts/NavChromeContex
 import DesktopHeader from "@/components/DesktopHeader";
 import StoryGrid from "@/components/StoryGrid";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
+import {
+  isPersonalizationActive,
+  scoreStory,
+  usePersonalization,
+} from "@/lib/personalization";
 import { reportScroll } from "@/hooks/useFastScroll";
 
 const LOGO_DARK = require("@/assets/images/full-logo-dark.png") as number;
@@ -46,7 +51,11 @@ export default function FeedScreen() {
   const { isDark, theme: palette } = useThemeContext();
   const { user, accessToken } = useAuth();
   const isGuest = !user;
-  const [category, setCategory] = useState<Category | null>(null);
+  // Mobile defaults to the personalized Feed view; web keeps the
+  // plain All feed (no Feed pill there either).
+  const [category, setCategory] = useState<FeedSelection>(() =>
+    Platform.OS !== "web" ? "feed" : null,
+  );
 
   const styles = useMemo(() => createStyles(palette), [palette]);
   const { onFeedScroll } = useNavChrome();
@@ -57,19 +66,32 @@ export default function FeedScreen() {
   const lastY = useRef(0);
 
   const { data, isLoading, isFetching, refetch, error } = useListStories(
-    category ? { category } : undefined,
+    category && category !== "feed" ? { category } : undefined,
     { query: { staleTime: 60_000 } as any }
   );
 
   const rawStories: Story[] = data?.stories ?? [];
 
+  const { prefs: personalizationPrefs } = usePersonalization();
+
   const stories = useMemo(() => {
-    return [...rawStories].sort((a, b) => {
+    const byPublished = [...rawStories].sort((a, b) => {
       const ta = a.published_at ? new Date(a.published_at).getTime() : 0;
       const tb = b.published_at ? new Date(b.published_at).getTime() : 0;
       return tb - ta;
     });
-  }, [rawStories]);
+    // Personalized ranking lives in the Feed view: the All feed and
+    // the category tabs keep pure published order. Rank, never hide —
+    // every story still shows, best tag matches first, published order
+    // as the tie-break.
+    if (category === "feed" && isPersonalizationActive(personalizationPrefs)) {
+      return byPublished
+        .map((s, i) => ({ s, i, score: scoreStory(s, personalizationPrefs) }))
+        .sort((a, b) => b.score - a.score || a.i - b.i)
+        .map((x) => x.s);
+    }
+    return byPublished;
+  }, [rawStories, category, personalizationPrefs]);
 
   // Measured, since the header's height differs by platform (web has no inset).
   const [mobileHeadH, setMobileHeadH] = useState(0);
@@ -141,7 +163,7 @@ export default function FeedScreen() {
   }));
 
   // Switching category keeps the tabs pinned rather than jumping back to the logo.
-  const pickCategory = (next: Category | null) => {
+  const pickCategory = (next: FeedSelection) => {
     setCategory(next);
     if (scrollY.value > topRowH) listRef.current?.scrollToOffset({ offset: topRowH, animated: false });
   };
@@ -177,13 +199,13 @@ export default function FeedScreen() {
           }
           below={
             <View style={styles.desktopPills}>
-              <CategoryFilter active={category} onChange={setCategory} inset={0} variant="glass" />
+              <CategoryFilter active={category} onChange={setCategory} inset={0} variant="glass" showForYou={Platform.OS !== "web"} />
             </View>
           }
         />
         <StoryGrid
           stories={stories}
-          feature={!category}
+          feature={!category || category === "feed"}
           fromContext={category ?? "all"}
           onScroll={(e) => onDesktopScroll(e.nativeEvent.contentOffset.y)}
           contentContainerStyle={{ paddingTop: desktopHeadH + 24, paddingHorizontal: 36, paddingBottom: 160 }}
@@ -248,7 +270,7 @@ export default function FeedScreen() {
             style={StyleSheet.absoluteFill}
           />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.bg + "EB" }]} />
-          <CategoryFilter active={category} onChange={pickCategory} inset={12} variant="glass" />
+          <CategoryFilter active={category} onChange={pickCategory} inset={12} variant="glass" showForYou={Platform.OS !== "web"} />
         </View>
       </Animated.View>
       {/* Opaque strip over the status-bar area for the logo row to slide under. */}

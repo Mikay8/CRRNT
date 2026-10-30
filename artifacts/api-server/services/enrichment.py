@@ -118,9 +118,17 @@ SYSTEM_PROMPT = (
     "CATEGORY REFINEMENT: When input category is 'celebrity', set to "
     "'celebrity' for personal drama or 'entertainment' for movie/show/music. "
     "Omit for all others.\n\n"
+    "VIBE: Classify the story's tone for readers choosing between staying "
+    "informed and being entertained. Return 'informed' for hard news a "
+    "person reads to know what is happening (politics, economy, health, "
+    "science, world events, serious business), 'entertained' for stories "
+    "read for enjoyment (celebrity, entertainment, sports fandom, human "
+    "interest, odd news), or 'both' when it genuinely serves both. Judge "
+    "the story itself, not its category label.\n\n"
     "ALWAYS reply with a single JSON object - no prose, no markdown fences - "
     "with keys: displayTitle (string), storySummary, insight, "
-    "ticker (string|null), companyName (string|null), category (string, optional)."
+    "ticker (string|null), companyName (string|null), category (string, optional), "
+    "vibe (string: 'informed', 'entertained', or 'both')."
 )
 
 SENTIMENT_SYSTEM_PROMPT = (
@@ -244,10 +252,19 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     if refined_cat in ("celebrity", "entertainment") and story.get("category") == "celebrity":
         story["category"] = refined_cat
 
+    # Vibe: a closed 3-value set for on-device feed personalization.
+    # Anything off-list (missing, mistyped, invented) stores NULL — the
+    # app treats NULL as matching neither preference.
+    vibe_raw = parsed.get("vibe")
+    vibe = vibe_raw.strip().lower() if isinstance(vibe_raw, str) else ""
+    if vibe not in ("informed", "entertained", "both"):
+        vibe = None
+
     story.update({
         "ticker": ticker,
         "companyName": company_name,
         "displayTitle": display_title,
+        "vibe": vibe,
         "insight": insight,
         "walletImpact": wallet_impact,
         "lifeImpact": life_impact,

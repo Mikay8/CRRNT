@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { router } from "expo-router";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
@@ -60,6 +60,9 @@ function MobilePlayer() {
     isPlaying,
     isBarVisible,
     queue,
+    canPrevious,
+    playNext,
+    playPrevious,
     togglePlayPause,
     seekTo,
     dismiss,
@@ -188,11 +191,6 @@ function MobilePlayer() {
   const meta = getCategoryMeta(story?.category ?? null);
   const catColor = meta?.color ?? theme.accent;
   const progress = durationMs > 0 ? Math.min(positionMs / durationMs, 1) : 0;
-
-  const skip = (deltaMs: number) => {
-    if (durationMs <= 0) return;
-    seekTo(Math.max(0, Math.min(durationMs, positionMs + deltaMs))).catch(() => undefined);
-  };
 
   const openStory = () => {
     if (!story) return;
@@ -324,8 +322,14 @@ function MobilePlayer() {
               />
 
               <View style={styles.controls}>
-                <Pressable onPress={() => skip(-15000)} hitSlop={10} accessibilityLabel="Back 15 seconds">
-                  <MaterialCommunityIcons name="rewind-15" size={32} color={theme.text} />
+                <Pressable
+                  onPress={() => playPrevious().catch(() => undefined)}
+                  disabled={!canPrevious}
+                  hitSlop={10}
+                  style={{ opacity: canPrevious ? 1 : 0.3 }}
+                  accessibilityLabel="Previous story"
+                >
+                  <Ionicons name="play-skip-back" size={30} color={theme.text} />
                 </Pressable>
                 <Pressable
                   onPress={togglePlayPause}
@@ -339,8 +343,14 @@ function MobilePlayer() {
                     style={isPlaying ? undefined : { marginLeft: 3 }}
                   />
                 </Pressable>
-                <Pressable onPress={() => skip(15000)} hitSlop={10} accessibilityLabel="Forward 15 seconds">
-                  <MaterialCommunityIcons name="fast-forward-15" size={32} color={theme.text} />
+                <Pressable
+                  onPress={() => playNext().catch(() => undefined)}
+                  disabled={queue.length === 0}
+                  hitSlop={10}
+                  style={{ opacity: queue.length > 0 ? 1 : 0.3 }}
+                  accessibilityLabel="Next story"
+                >
+                  <Ionicons name="play-skip-forward" size={30} color={theme.text} />
                 </Pressable>
               </View>
 

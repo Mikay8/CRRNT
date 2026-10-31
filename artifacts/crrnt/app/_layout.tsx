@@ -8,6 +8,7 @@ import {
 import {
   Outfit_600SemiBold,
   Outfit_700Bold,
+  Outfit_800ExtraBold,
 } from "@expo-google-fonts/outfit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Constants from "expo-constants";
@@ -211,6 +212,45 @@ function WelcomeGate() {
 }
 
 /**
+ * Routes first-run users to the personalization quiz. Native only, and
+ * only when no prefs are stored on this device (lib/personalization.ts).
+ * Runs after the welcome screen: while the notification permission is
+ * still undecided the welcome gate goes first, and this gate defers —
+ * when welcome is dismissed the segment change re-runs it. Skipping the
+ * quiz stores a skipped record, so it also never reappears; Settings →
+ * Your feed reopens it in edit mode.
+ */
+function PersonalizationGate() {
+  const segments = useSegments();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (Platform.OS === "web") return;
+        if (segments[0] === "personalize" || segments[0] === "welcome") return;
+        const { hasSeenWelcome } = await import("../lib/welcome");
+        if (!(await hasSeenWelcome())) {
+          const { status } = await Notifications.getPermissionsAsync();
+          if (status === "undetermined") return; // welcome goes first
+        }
+        const { loadPersonalization } = await import("../lib/personalization");
+        const prefs = await loadPersonalization();
+        if (cancelled) return;
+        if (prefs === null) {
+          router.replace("/personalize" as any);
+        }
+      } catch {
+        // Personalization is non-critical; the feed stays reachable.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [segments]);
+  return null;
+}
+
+/**
  * Routes notification taps. Both CRRNT push types land on the feed for now:
  * the Morning Edition IS the feed, and breaking cards render at the top of
  * it. (Breaking items link external articles today, not CRRNT stories, so
@@ -301,6 +341,7 @@ function ThemedApp() {
                 <AuthTokenWirer />
                 <AuthGate />
                 <WelcomeGate />
+                <PersonalizationGate />
                 <NotificationTapRouter />
                 <SavedStoriesProvider>
                   <AudioProvider>
@@ -365,6 +406,10 @@ function ThemedApp() {
                               options={{ headerShown: false, gestureEnabled: false }}
                             />
                             <Stack.Screen
+                              name="personalize"
+                              options={{ headerShown: false, gestureEnabled: false }}
+                            />
+                            <Stack.Screen
                               name="support"
                               options={{ headerShown: false, presentation: "card" }}
                             />
@@ -397,6 +442,7 @@ export default function RootLayout() {
     Inter_700Bold,
     Outfit_600SemiBold,
     Outfit_700Bold,
+    Outfit_800ExtraBold,
   });
 
   useEffect(() => {

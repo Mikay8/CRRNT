@@ -3,33 +3,52 @@ import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useThemeContext } from "@/contexts/ThemeContext";
-import { CATEGORIES, CATEGORY_ICONS, type Category } from "@/constants/categories";
+import { CATEGORIES, CATEGORY_ICONS, type FeedSelection } from "@/constants/categories";
 
 interface CategoryFilterProps {
-  active: Category | null;
-  onChange: (next: Category | null) => void;
+  active: FeedSelection;
+  onChange: (next: FeedSelection) => void;
   /** Horizontal inset of the scrolling row (desktop header aligns it flush). */
   inset?: number;
   /** "glass" renders each category as its own frosted pill (feed header). */
   variant?: "chips" | "glass";
+  /** Show the personalized "Feed" pill ahead of All (native feed). */
+  showForYou?: boolean;
 }
 
-export function CategoryFilter({ active, onChange, inset = 16, variant = "chips" }: CategoryFilterProps) {
+export function CategoryFilter({ active, onChange, inset = 16, variant = "chips", showForYou = false }: CategoryFilterProps) {
   const { theme: palette, isDark } = useThemeContext();
 
-  const handle = (next: Category | null) => {
+  const handle = (next: FeedSelection) => {
     Haptics.selectionAsync().catch(() => undefined);
     onChange(next);
   };
 
   if (variant === "glass") {
+    const items: {
+      key: FeedSelection;
+      label: string;
+      color: string;
+      iconName: keyof typeof Ionicons.glyphMap | null;
+    }[] = [
+      ...(showForYou
+        ? [{ key: "feed" as FeedSelection, label: "Feed", color: palette.accent, iconName: "sparkles" as const }]
+        : []),
+      { key: null, label: "All", color: palette.text, iconName: null },
+      ...CATEGORIES.map((c) => ({
+        key: c.key as FeedSelection,
+        label: c.label,
+        color: c.color,
+        iconName: CATEGORY_ICONS[c.icon] as keyof typeof Ionicons.glyphMap,
+      })),
+    ];
     return (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={[styles.glassRow, { paddingHorizontal: inset }]}
       >
-        {[{ key: null, label: "All", color: palette.text, icon: null }, ...CATEGORIES].map((cat) => {
+        {items.map((cat) => {
           const on = active === cat.key;
           // Labels stay in text colours for AA contrast (several category
           // colours fall under 4.5:1 in light mode); the icon carries the colour.
@@ -43,7 +62,7 @@ export function CategoryFilter({ active, onChange, inset = 16, variant = "chips"
               accessibilityState={{ selected: on }}
               style={({ pressed }) => [
                 styles.glassTab,
-                cat.icon ? null : styles.glassTabNoIcon,
+                cat.iconName ? null : styles.glassTabNoIcon,
                 { borderColor: on ? palette.text + "33" : palette.borderStrong + "AA", opacity: pressed ? 0.7 : 1 },
               ]}
             >
@@ -63,7 +82,7 @@ export function CategoryFilter({ active, onChange, inset = 16, variant = "chips"
               {/* Near-opaque fill so labels keep their contrast over any photo. */}
               <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.bgElevated + "F0" }]} />
               {on ? <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.text + "1F" }]} /> : null}
-              {cat.icon ? <Ionicons name={CATEGORY_ICONS[cat.icon]} size={14} color={iconColor} /> : null}
+              {cat.iconName ? <Ionicons name={cat.iconName} size={14} color={iconColor} /> : null}
               <Text style={[styles.label, { color: labelColor }]}>{cat.label}</Text>
             </Pressable>
           );
@@ -78,6 +97,16 @@ export function CategoryFilter({ active, onChange, inset = 16, variant = "chips"
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={[styles.row, { paddingHorizontal: inset }]}
     >
+      {showForYou ? (
+        <Chip
+          label="Feed"
+          color={palette.accent}
+          icon="sparkles"
+          active={active === "feed"}
+          onPress={() => handle("feed")}
+          palette={palette}
+        />
+      ) : null}
       <Chip
         label="All"
         color={palette.text}

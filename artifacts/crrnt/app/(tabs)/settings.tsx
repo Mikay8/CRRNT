@@ -28,6 +28,12 @@ import { useGetOnboardingQuiz } from "@workspace/api-client-react";
 import type { ThemeColors } from "@/constants/theme";
 import { AUTH_ENABLED } from "@/constants/features";
 import { AlertDialog, type AlertButton } from "@/components/AlertDialog";
+import {
+  isPersonalizationActive,
+  savePersonalization,
+  usePersonalization,
+} from "@/lib/personalization";
+import { CATEGORIES } from "@/constants/categories";
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -191,6 +197,74 @@ function NotificationsSection({ theme }: { theme: ThemeColors }) {
       {note ? (
         <Text style={[feedbackStyles.status, { color: theme.textDim }]}>{note}</Text>
       ) : null}
+    </>
+  );
+}
+
+// ── Your feed (on-device personalization) ────────────────────────────────────
+// The quiz picks live only on this phone (lib/personalization.ts). This
+// section shows the current state and reopens the quiz in edit mode.
+// Native only, like Notifications — the parent renders it only when
+// Platform.OS !== "web".
+function YourFeedSection({ theme }: { theme: ThemeColors }) {
+  const { prefs } = usePersonalization();
+  const active = isPersonalizationActive(prefs);
+
+  const summary = (() => {
+    if (!prefs) return "Not set up yet — answer 3 quick questions.";
+    if (prefs.skipped) return "Off — your feed shows everything in story order.";
+    const parts: string[] = [];
+    if (prefs.follows.length > 0)
+      parts.push(
+        `never-miss: ${prefs.follows.slice(0, 2).join(", ")}${prefs.follows.length > 2 ? "…" : ""}`,
+      );
+    const interestLabels = CATEGORIES.filter((c) =>
+      prefs.interests.includes(c.key),
+    ).map((c) => c.label);
+    if (interestLabels.length > 0) parts.push(interestLabels.join(", "));
+    if (prefs.vibe.length === 2) parts.push("informed + entertained");
+    else if (prefs.vibe.length === 1)
+      parts.push(prefs.vibe[0] === "informed" ? "staying informed" : "being entertained");
+    return parts.length > 0 ? `Leading with ${parts.join(" · ")}.` : "On — no picks yet.";
+  })();
+
+  const handleTurnOff = async () => {
+    if (!prefs) return;
+    await savePersonalization({
+      ...prefs,
+      skipped: true,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  return (
+    <>
+      <SectionHeader label="Your feed" theme={theme} />
+      <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <Row
+          icon="sparkles-outline"
+          label="Personalized feed"
+          value={active ? "On" : "Off"}
+          theme={theme}
+        />
+        <Row
+          icon="options-outline"
+          label={prefs ? "Edit preferences" : "Set up personalization"}
+          onPress={() => router.push("/personalize?edit=1" as any)}
+          theme={theme}
+          last={!active}
+        />
+        {active ? (
+          <Row
+            icon="close-circle-outline"
+            label="Turn off"
+            onPress={handleTurnOff}
+            theme={theme}
+            last
+          />
+        ) : null}
+      </View>
+      <Text style={[feedbackStyles.status, { color: theme.textDim }]}>{summary}</Text>
     </>
   );
 }
@@ -449,6 +523,8 @@ export default function SettingsScreen() {
           </View>
 
           {Platform.OS !== "web" && <NotificationsSection theme={theme} />}
+
+          {Platform.OS !== "web" && <YourFeedSection theme={theme} />}
 
           <BetaFeedback theme={theme} />
 

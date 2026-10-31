@@ -45,6 +45,11 @@ import { CATEGORY_ICONS, getCategoryMeta } from "@/constants/categories";
 import StoryImage from "@/components/StoryImage";
 import { useAudio, useAudioProgress } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
+import {
+  isPersonalizationActive,
+  scoreStory,
+  usePersonalization,
+} from "@/lib/personalization";
 import { useAuth } from "@/contexts/AuthContext";
 import { canSaveStories } from "@/constants/features";
 import { useThemeContext } from "@/contexts/ThemeContext";
@@ -159,6 +164,7 @@ export default function StoryDetailScreen() {
   const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
   const { user } = useAuth();
   const { saved } = useSavedStories();
+  const { prefs: personalizationPrefs } = usePersonalization();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
   const { story: audioStory, isPlaying, isAudioLoading, playStory, togglePlayPause } =
     useAudio();
@@ -241,9 +247,10 @@ export default function StoryDetailScreen() {
   // Up Next follows the list the user opened this story from, carried in
   // the `from` route param: a category tab chains through that category
   // in tab order and ends there (no wrap), "all" loops the whole feed
-  // continuously, and "saved" chains through the saved stories. Entries
-  // with no list context (search, the player, shared links) fall back to
-  // the story's own category.
+  // continuously, "feed" loops the personalized ranking, and "saved"
+  // chains through the saved stories. Entries with no list context
+  // (search, the player, shared links) fall back to the story's own
+  // category.
   const upNextContext = useMemo(() => {
     const byPublishedDesc = (a: Story, b: Story) => {
       const ta = a.published_at ? new Date(a.published_at).getTime() : 0;
@@ -256,6 +263,16 @@ export default function StoryDetailScreen() {
     if (from === "saved")
       return { list: saved, loop: false, label: "your saved stories" as string | null };
     if (from === "all") return { list: feedList, loop: true, label: null as string | null };
+    if (from === "feed") {
+      // The Feed chaining order is the feed's personalized ranking.
+      const ranked = isPersonalizationActive(personalizationPrefs)
+        ? feedList
+            .map((s, i) => ({ s, i, score: scoreStory(s, personalizationPrefs) }))
+            .sort((a, b) => b.score - a.score || a.i - b.i)
+            .map((x) => x.s)
+        : feedList;
+      return { list: ranked, loop: true, label: null as string | null };
+    }
     const catKey = from && getCategoryMeta(from) ? from : (story?.category ?? null);
     if (catKey) {
       return {
@@ -265,7 +282,7 @@ export default function StoryDetailScreen() {
       };
     }
     return { list: feedList, loop: true, label: null as string | null };
-  }, [from, feed.data, saved, story?.category]);
+  }, [from, feed.data, saved, story?.category, personalizationPrefs]);
 
   const nextStory = useMemo(() => {
     const list = upNextContext.list;

@@ -12,6 +12,13 @@ export type Category =
   | "world"
   | "health";
 
+/**
+ * What the feed screen can be showing: a story category, the
+ * personalized "Feed" view (all stories, ranked by the on-device
+ * personalization tags), or null for the plain chronological All feed.
+ */
+export type FeedSelection = Category | "feed" | null;
+
 export interface CategoryMeta {
   key: Category;
   label: string;

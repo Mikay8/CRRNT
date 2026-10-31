@@ -159,6 +159,7 @@ async def _to_story_row(raw: dict[str, Any]) -> dict[str, Any]:
         "external_id": raw.get("articleId") or raw.get("external_id"),
         "title": raw.get("title"),
         "display_title": raw.get("displayTitle") or raw.get("display_title"),
+        "vibe": raw.get("vibe"),
         "category": raw.get("category"),
         "published_at": pub,
         "source_url": raw.get("link") or raw.get("source_url"),

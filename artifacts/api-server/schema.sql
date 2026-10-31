@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS stories (
   external_id TEXT UNIQUE,
   title TEXT,
   display_title TEXT,
+  vibe TEXT,
   category TEXT,
   published_at TIMESTAMPTZ,
   source_url TEXT,

@@ -4,10 +4,11 @@
  * The quiz answers live ONLY in AsyncStorage on this phone — they are
  * never sent to the server (Mikayla's call, 2026-10-30: the Morning
  * Edition push stays the same global pick for everyone rather than
- * storing tags server-side). The feed ranks stories locally against
- * these tags: ingestion gives each story a `vibe` (informed /
- * entertained / both) and its category; the user's tags are their
- * picked categories, vibe, and free-text never-miss follow terms.
+ * storing tags server-side). The Feed view shows the day's five
+ * best-matching stories, scored locally against these tags: ingestion
+ * gives each story a `vibe` (informed / entertained / both) and its
+ * category; the user's tags are their picked categories, vibe, and
+ * free-text never-miss follow terms.
  *
  * State is a tiny external store so the first-run gate, the quiz
  * screen, Settings, and the feed all read the same snapshot.
@@ -163,4 +164,28 @@ export function scoreStory(
     if (prefs.vibe.includes(vibe)) score += 1;
   }
   return score;
+}
+
+/** How many stories the personalized Feed view shows per day. */
+export const FEED_STORY_LIMIT = 5;
+
+/**
+ * The personalized Feed list: the day's best-matching stories, best
+ * first, capped at FEED_STORY_LIMIT. Any match counts — a follow
+ * mention, a picked category, or a vibe match — and low scores still
+ * rank: on a thin day the best available stories fill the five slots
+ * (published order breaks ties), so the Feed is never empty while the
+ * day has stories. Input must be sorted newest-first; the feed screen
+ * and the story screen's Up Next chain both build the list through
+ * here so they always agree.
+ */
+export function personalizedFeed(
+  stories: Story[],
+  prefs: PersonalizationPrefs,
+): Story[] {
+  return stories
+    .map((s, i) => ({ s, i, score: scoreStory(s, prefs) }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .slice(0, FEED_STORY_LIMIT)
+    .map((x) => x.s);
 }

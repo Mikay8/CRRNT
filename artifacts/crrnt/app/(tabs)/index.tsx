@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -38,9 +38,16 @@ import StoryGrid from "@/components/StoryGrid";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
 import {
   isPersonalizationActive,
-  scoreStory,
+  personalizedFeed,
   usePersonalization,
 } from "@/lib/personalization";
+import {
+  finishedOn,
+  isDayComplete,
+  recordFeedCompletion,
+  todayStr,
+  useStreaks,
+} from "@/lib/streaks";
 import { reportScroll } from "@/hooks/useFastScroll";
 
 const LOGO_DARK = require("@/assets/images/full-logo-dark.png") as number;
@@ -52,7 +59,8 @@ export default function FeedScreen() {
   const { user, accessToken } = useAuth();
   const isGuest = !user;
   // Mobile defaults to the personalized Feed view; web keeps the
-  // plain All feed (no Feed pill there either).
+  // plain All feed (no Feed pill there either). Users without active
+  // personalization fall back to All below — they never see Feed.
   const [category, setCategory] = useState<FeedSelection>(() =>
     Platform.OS !== "web" ? "feed" : null,
   );
@@ -72,26 +80,94 @@ export default function FeedScreen() {
 
   const rawStories: Story[] = data?.stories ?? [];
 
-  const { prefs: personalizationPrefs } = usePersonalization();
+  const { prefs: personalizationPrefs, loaded: personalizationLoaded } =
+    usePersonalization();
+  const personalizationActive = isPersonalizationActive(personalizationPrefs);
+  // The Feed tab exists only for users who answered the quiz: skipped
+  // or turned-off users never see it. If personalization goes away
+  // while Feed is selected (turned off in Settings), fall back to All.
+  const showFeedTab = Platform.OS !== "web" && personalizationActive;
+  useEffect(() => {
+    if (
+      personalizationLoaded &&
+      !personalizationActive &&
+      category === "feed"
+    ) {
+      setCategory(null);
+    }
+  }, [personalizationLoaded, personalizationActive, category]);
+
+  const { state: streakState, loaded: streakLoaded } = useStreaks();
+
+  // Launch state, resolved once when the on-device stores have
+  // loaded: a user who already finished today's Feed before reopening
+  // the app lands on All instead of the (empty) Feed view, and the
+  // Feed pill moves to the end of the row until tomorrow. Mid-session
+  // finishing changes nothing — this only applies at reopen.
+  const [launchCaughtUp, setLaunchCaughtUp] = useState(false);
+  const launchResolvedRef = useRef(false);
+  useEffect(() => {
+    if (launchResolvedRef.current) return;
+    if (!personalizationLoaded || !streakLoaded) return;
+    launchResolvedRef.current = true;
+    if (personalizationActive && isDayComplete(streakState, todayStr())) {
+      setLaunchCaughtUp(true);
+      if (category === "feed") setCategory(null);
+    }
+  }, [
+    personalizationLoaded,
+    streakLoaded,
+    personalizationActive,
+    streakState,
+    category,
+  ]);
+
+  const byPublished = useMemo(
+    () =>
+      [...rawStories].sort((a, b) => {
+        const ta = a.published_at ? new Date(a.published_at).getTime() : 0;
+        const tb = b.published_at ? new Date(b.published_at).getTime() : 0;
+        return tb - ta;
+      }),
+    [rawStories],
+  );
+
+  const finishedTodayIds = useMemo(
+    () => new Set(finishedOn(streakState, todayStr())),
+    [streakState],
+  );
+
+  // Latch the streak day whenever the day's Feed is fully finished.
+  // Finishing can happen from the story screen or the player without
+  // returning here, so the check runs on any input change rather than
+  // on a button; recordFeedCompletion is idempotent.
+  useEffect(() => {
+    if (!personalizationActive || !personalizationPrefs) return;
+    recordFeedCompletion(
+      personalizedFeed(byPublished, personalizationPrefs).map((s) => s.id),
+    );
+  }, [byPublished, personalizationActive, personalizationPrefs, streakState]);
 
   const stories = useMemo(() => {
-    const byPublished = [...rawStories].sort((a, b) => {
-      const ta = a.published_at ? new Date(a.published_at).getTime() : 0;
-      const tb = b.published_at ? new Date(b.published_at).getTime() : 0;
-      return tb - ta;
-    });
-    // Personalized ranking lives in the Feed view: the All feed and
-    // the category tabs keep pure published order. Rank, never hide —
-    // every story still shows, best tag matches first, published order
-    // as the tie-break.
+    // The personalized Feed view shows the day's five best-matching
+    // stories (see personalizedFeed in lib/personalization), minus the
+    // ones already finished today — finished stories hide from Feed,
+    // so the shrinking list is the day's progress. The All feed and
+    // the category tabs keep pure published order, finished or not.
     if (category === "feed" && isPersonalizationActive(personalizationPrefs)) {
-      return byPublished
-        .map((s, i) => ({ s, i, score: scoreStory(s, personalizationPrefs) }))
-        .sort((a, b) => b.score - a.score || a.i - b.i)
-        .map((x) => x.s);
+      return personalizedFeed(byPublished, personalizationPrefs).filter(
+        (s) => !finishedTodayIds.has(s.id),
+      );
     }
     return byPublished;
-  }, [rawStories, category, personalizationPrefs]);
+  }, [byPublished, category, personalizationPrefs, finishedTodayIds]);
+
+  // Feed view, day's stories exist, and every one is finished.
+  const feedCaughtUp =
+    category === "feed" &&
+    personalizationActive &&
+    rawStories.length > 0 &&
+    stories.length === 0;
 
   // Measured, since the header's height differs by platform (web has no inset).
   const [mobileHeadH, setMobileHeadH] = useState(0);
@@ -130,6 +206,14 @@ export default function FeedScreen() {
           Loading today's stories…
         </Text>
       </View>
+    ) : feedCaughtUp ? (
+      <EmptyState
+          icon="checkmark-circle-outline"
+          title="You're all caught up"
+          message="You finished today's Feed — your streak is safe. New stories land tomorrow morning."
+          actionLabel="Browse all stories"
+          onAction={() => setCategory(null)}
+        />
     ) : showEmpty ? (
       <EmptyState
           icon="newspaper-outline"
@@ -199,7 +283,7 @@ export default function FeedScreen() {
           }
           below={
             <View style={styles.desktopPills}>
-              <CategoryFilter active={category} onChange={setCategory} inset={0} variant="glass" showForYou={Platform.OS !== "web"} />
+              <CategoryFilter active={category} onChange={setCategory} inset={0} variant="glass" showForYou={showFeedTab} forYouLast={launchCaughtUp} />
             </View>
           }
         />
@@ -270,7 +354,7 @@ export default function FeedScreen() {
             style={StyleSheet.absoluteFill}
           />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.bg + "EB" }]} />
-          <CategoryFilter active={category} onChange={pickCategory} inset={12} variant="glass" showForYou={Platform.OS !== "web"} />
+          <CategoryFilter active={category} onChange={pickCategory} inset={12} variant="glass" showForYou={showFeedTab} forYouLast={launchCaughtUp} />
         </View>
       </Animated.View>
       {/* Opaque strip over the status-bar area for the logo row to slide under. */}

@@ -47,9 +47,10 @@ import { useAudio, useAudioProgress } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import {
   isPersonalizationActive,
-  scoreStory,
+  personalizedFeed,
   usePersonalization,
 } from "@/lib/personalization";
+import { markStoryFinished, recordFeedCompletion } from "@/lib/streaks";
 import { useAuth } from "@/contexts/AuthContext";
 import { canSaveStories } from "@/constants/features";
 import { useThemeContext } from "@/contexts/ThemeContext";
@@ -244,10 +245,28 @@ export default function StoryDetailScreen() {
 
   const story: Story | null = (data as Story | undefined) ?? localFallback;
 
+  // Reading a story marks it finished for today (streaks, lib/streaks):
+  // it hides from the Feed view, and when it was the last unfinished
+  // story in today's Feed the day completes. The completion check uses
+  // the same top-five list the feed screen builds.
+  useEffect(() => {
+    if (!story) return;
+    markStoryFinished(story.id);
+    if (isPersonalizationActive(personalizationPrefs) && feed.data?.stories) {
+      const sorted = [...(feed.data.stories as Story[])].sort((a, b) => {
+        const ta = a.published_at ? new Date(a.published_at).getTime() : 0;
+        const tb = b.published_at ? new Date(b.published_at).getTime() : 0;
+        return tb - ta;
+      });
+      recordFeedCompletion(personalizedFeed(sorted, personalizationPrefs).map((s) => s.id));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story?.id]);
+
   // Up Next follows the list the user opened this story from, carried in
   // the `from` route param: a category tab chains through that category
   // in tab order and ends there (no wrap), "all" loops the whole feed
-  // continuously, "feed" loops the personalized ranking, and "saved"
+  // continuously, "feed" loops the personalized top five, and "saved"
   // chains through the saved stories. Entries with no list context
   // (search, the player, shared links) fall back to the story's own
   // category.
@@ -264,12 +283,9 @@ export default function StoryDetailScreen() {
       return { list: saved, loop: false, label: "your saved stories" as string | null };
     if (from === "all") return { list: feedList, loop: true, label: null as string | null };
     if (from === "feed") {
-      // The Feed chaining order is the feed's personalized ranking.
+      // The Feed chaining order is the feed's personalized top five.
       const ranked = isPersonalizationActive(personalizationPrefs)
-        ? feedList
-            .map((s, i) => ({ s, i, score: scoreStory(s, personalizationPrefs) }))
-            .sort((a, b) => b.score - a.score || a.i - b.i)
-            .map((x) => x.s)
+        ? personalizedFeed(feedList, personalizationPrefs)
         : feedList;
       return { list: ranked, loop: true, label: null as string | null };
     }

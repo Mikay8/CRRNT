@@ -31,6 +31,7 @@ import {
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AUTH_ENABLED } from "@/constants/features";
 import { reportDeviceMetrics } from "@/lib/deviceMetrics";
+import { syncStreakReminder } from "@/lib/streak-reminder";
 import NowPlaying from "@/components/player/NowPlaying";
 import RecedingScreens from "@/components/player/RecedingScreens";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
@@ -456,6 +457,9 @@ export default function RootLayout() {
     // Anonymous usage metrics: one install ping ever + a daily device
     // heartbeat. Best-effort; failures retry on the next launch.
     reportDeviceMetrics();
+    // Streak reminder: re-evaluate tonight's local notification
+    // against the current streak state (lib/streak-reminder).
+    void syncStreakReminder();
   }, []);
 
   if (!fontsLoaded && !fontError) {

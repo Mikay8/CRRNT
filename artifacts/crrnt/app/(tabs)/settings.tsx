@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -22,17 +23,39 @@ import { useChromeBottomPadding } from "@/contexts/NavChromeContext";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
 import { Ionicons } from "@expo/vector-icons";
 import { Redirect, router } from "expo-router";
+import { KeyboardDismissBar } from "@/components/KeyboardDismissBar";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { useGetOnboardingQuiz } from "@workspace/api-client-react";
+import {
+  useGetOnboardingQuiz,
+  useListStories,
+  type Story,
+} from "@workspace/api-client-react";
 import type { ThemeColors } from "@/constants/theme";
 import { AUTH_ENABLED } from "@/constants/features";
 import { AlertDialog, type AlertButton } from "@/components/AlertDialog";
 import {
   isPersonalizationActive,
+  personalizedFeed,
   savePersonalization,
   usePersonalization,
 } from "@/lib/personalization";
+import {
+  addDays,
+  currentStreak,
+  finishedOn,
+  isDayComplete,
+  monthStats,
+  recordFeedCompletion,
+  todayStr,
+  useStreaks,
+} from "@/lib/streaks";
+import {
+  isStreakReminderEnabled,
+  setStreakReminderEnabled,
+  syncStreakReminder,
+} from "@/lib/streak-reminder";
+import { useAudio } from "@/contexts/AudioContext";
 import { CATEGORIES } from "@/constants/categories";
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -142,11 +165,15 @@ function NotificationsSection({ theme }: { theme: ThemeColors }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [reminderOn, setReminderOn] = useState<boolean | null>(null);
 
   useEffect(() => {
     let live = true;
     isNotificationsEnabled().then((v) => {
       if (live) setEnabled(v);
+    });
+    isStreakReminderEnabled().then((v) => {
+      if (live) setReminderOn(v);
     });
     return () => {
       live = false;
@@ -161,6 +188,9 @@ function NotificationsSection({ theme }: { theme: ThemeColors }) {
     setBusy(false);
     if (res.ok) {
       setEnabled(value);
+      // The streak reminder is a local notification riding on the same
+      // permission; re-evaluate it whenever the master switch moves.
+      void syncStreakReminder();
     } else if (res.reason === "permission_denied") {
       setEnabled(false);
       setNote(
@@ -174,6 +204,11 @@ function NotificationsSection({ theme }: { theme: ThemeColors }) {
     }
   };
 
+  const onReminderToggle = async (value: boolean) => {
+    setReminderOn(value);
+    await setStreakReminderEnabled(value);
+  };
+
   return (
     <>
       <SectionHeader label="Notifications" theme={theme} />
@@ -182,7 +217,6 @@ function NotificationsSection({ theme }: { theme: ThemeColors }) {
           icon="notifications-outline"
           label={busy ? "Updating…" : "Notifications"}
           theme={theme}
-          last
           right={
             <Switch
               value={enabled ?? false}
@@ -190,6 +224,22 @@ function NotificationsSection({ theme }: { theme: ThemeColors }) {
               onValueChange={onToggle}
               trackColor={{ false: theme.border, true: theme.accentDim }}
               thumbColor={enabled ? theme.accent : theme.textDim}
+            />
+          }
+        />
+        <Row
+          icon="flame-outline"
+          label="Streak reminder"
+          value="8 PM nudge if today's Feed isn't finished"
+          theme={theme}
+          last
+          right={
+            <Switch
+              value={reminderOn ?? false}
+              disabled={enabled !== true || reminderOn === null}
+              onValueChange={onReminderToggle}
+              trackColor={{ false: theme.border, true: theme.accentDim }}
+              thumbColor={reminderOn ? theme.accent : theme.textDim}
             />
           }
         />
@@ -235,6 +285,8 @@ function YourFeedSection({ theme }: { theme: ThemeColors }) {
       skipped: true,
       updatedAt: new Date().toISOString(),
     });
+    // No Feed, no streak: make sure no reminder stays scheduled.
+    void syncStreakReminder();
   };
 
   return (
@@ -269,6 +321,298 @@ function YourFeedSection({ theme }: { theme: ThemeColors }) {
   );
 }
 
+// ── Your streak (on-device, Feed-only) ───────────────────────────────────────
+// A day counts when the user finishes that day's personalized Feed
+// (lib/streaks). Native only, like the other personal sections — the
+// parent renders it only when Platform.OS !== "web". Users without
+// personalization have no Feed to finish, so for them the card is an
+// invitation to set one up.
+const LOGO_MARK = require("@/assets/images/logo.png") as number;
+
+function formatListened(totalSec: number): string {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function StreakSection({ theme }: { theme: ThemeColors }) {
+  const { prefs } = usePersonalization();
+  const active = isPersonalizationActive(prefs);
+  const { state: streakState } = useStreaks();
+  const { data } = useListStories(undefined, {
+    query: { staleTime: 60_000 } as any,
+  });
+  const { playStory } = useAudio();
+
+  const today = todayStr();
+  const streak = currentStreak(streakState);
+  const complete = isDayComplete(streakState, today);
+  const stats = monthStats(streakState);
+
+  const todaysFeed = useMemo(() => {
+    if (!active || !prefs || !data?.stories) return [] as Story[];
+    const sorted = [...(data.stories as Story[])].sort((a, b) => {
+      const ta = a.published_at ? new Date(a.published_at).getTime() : 0;
+      const tb = b.published_at ? new Date(b.published_at).getTime() : 0;
+      return tb - ta;
+    });
+    return personalizedFeed(sorted, prefs);
+  }, [active, prefs, data]);
+
+  const finishedIds = new Set(finishedOn(streakState, today));
+  const remaining = todaysFeed.filter((s) => !finishedIds.has(s.id));
+
+  useEffect(() => {
+    recordFeedCompletion(todaysFeed.map((s) => s.id));
+  }, [todaysFeed]);
+
+  if (!active) {
+    return (
+      <>
+        <SectionHeader label="Your streak" theme={theme} />
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Row
+            icon="flame-outline"
+            label="Start a streak"
+            value="Set up your personalized Feed, finish it each day, and watch the streak grow."
+            theme={theme}
+          />
+          <Row
+            icon="sparkles-outline"
+            label="Set up my Feed"
+            onPress={() => router.push("/personalize?edit=1" as any)}
+            theme={theme}
+            last
+          />
+        </View>
+      </>
+    );
+  }
+
+  // Monday-first week containing today.
+  const monday = addDays(today, -((new Date().getDay() + 6) % 7));
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const date = addDays(monday, i);
+    return {
+      date,
+      letter: "MTWTFSS"[i],
+      done: isDayComplete(streakState, date),
+      isToday: date === today,
+      future: date > today,
+    };
+  });
+
+  return (
+    <>
+      <SectionHeader label="Your streak" theme={theme} />
+      <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={streakStyles.topRow}>
+          <View style={[streakStyles.logoWrap, { backgroundColor: theme.surfaceHigh }]}>
+            <Image source={LOGO_MARK} style={streakStyles.logo} resizeMode="contain" />
+          </View>
+          <View style={streakStyles.topMid}>
+            <Text>
+              <Text style={[streakStyles.streakNum, { color: theme.text }]}>{streak}</Text>
+              <Text style={[streakStyles.streakUnit, { color: theme.textMuted }]}> day streak</Text>
+            </Text>
+            <Text style={[streakStyles.sub, { color: theme.textMuted }]}>
+              {complete
+                ? "Today's Feed is done — streak safe."
+                : streak === 0
+                  ? "Finish today's Feed to start your streak."
+                  : remaining.length > 0
+                    ? `Finish today's Feed to keep it going — ${remaining.length} ${remaining.length === 1 ? "story" : "stories"} left.`
+                    : "Finish today's Feed to keep it going."}
+            </Text>
+          </View>
+          <View style={streakStyles.bestCol}>
+            <Text style={[streakStyles.bestLabel, { color: theme.textDim }]}>BEST</Text>
+            <Text style={[streakStyles.bestNum, { color: theme.text }]}>{streakState?.best ?? 0}</Text>
+          </View>
+        </View>
+
+        <View style={streakStyles.weekRow}>
+          {week.map((d) => (
+            <View key={d.date} style={streakStyles.dayCol}>
+              <View
+                style={[
+                  streakStyles.dot,
+                  d.done
+                    ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                    : d.isToday
+                      ? { borderColor: theme.accent }
+                      : { borderColor: theme.border, borderStyle: d.future ? ("dashed" as const) : ("solid" as const) },
+                ]}
+              >
+                {d.done ? (
+                  <Ionicons name="checkmark" size={16} color={theme.onAccent} />
+                ) : d.isToday ? (
+                  <View style={[streakStyles.todayDot, { backgroundColor: theme.accent }]} />
+                ) : null}
+              </View>
+              <Text style={[streakStyles.dayLetter, { color: theme.textDim }]}>{d.letter}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={[streakStyles.divider, { backgroundColor: theme.border }]} />
+        {complete ? (
+          <View style={streakStyles.endsRow}>
+            <Ionicons name="checkmark-circle-outline" size={20} color={theme.accent} />
+            <Text style={[streakStyles.endsText, { color: theme.text }]}>
+              Today's Feed finished. Nice work.
+            </Text>
+          </View>
+        ) : (
+          <View style={streakStyles.endsRow}>
+            <Ionicons name="notifications-outline" size={20} color={theme.accent} />
+            <View style={streakStyles.endsMid}>
+              <Text style={[streakStyles.endsBold, { color: theme.text }]}>
+                Ends tonight at midnight.
+              </Text>
+              <Text style={[streakStyles.endsText, { color: theme.textMuted }]}>
+                Your morning brief takes about 4 minutes.
+              </Text>
+            </View>
+            {remaining.length > 0 ? (
+              <Pressable
+                onPress={() => void playStory(remaining[0])}
+                style={[streakStyles.playBtn, { backgroundColor: theme.accent }]}
+              >
+                <Text style={[streakStyles.playText, { color: theme.onAccent }]}>Play</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        )}
+
+        <View style={[streakStyles.divider, { backgroundColor: theme.border }]} />
+        <View style={streakStyles.statsRow}>
+          <View style={streakStyles.statCol}>
+            <Text style={[streakStyles.statNum, { color: theme.text }]}>{stats.storiesThisMonth}</Text>
+            <Text style={[streakStyles.statLabel, { color: theme.textMuted }]}>
+              Stories this{"\n"}month
+            </Text>
+          </View>
+          <View style={[streakStyles.statDivider, { backgroundColor: theme.border }]} />
+          <View style={streakStyles.statCol}>
+            <Text style={[streakStyles.statNum, { color: theme.accent }]}>
+              {formatListened(streakState?.listenedSec ?? 0)}
+            </Text>
+            <Text style={[streakStyles.statLabel, { color: theme.textMuted }]}>Listened</Text>
+          </View>
+          <View style={[streakStyles.statDivider, { backgroundColor: theme.border }]} />
+          <View style={streakStyles.statCol}>
+            <Text style={[streakStyles.statNum, { color: theme.text }]}>{stats.daysActiveThisMonth}</Text>
+            <Text style={[streakStyles.statLabel, { color: theme.textMuted }]}>Days active</Text>
+          </View>
+        </View>
+      </View>
+    </>
+  );
+}
+
+const streakStyles = StyleSheet.create({
+  topRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: 16,
+    gap: 14,
+  },
+  logoWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logo: { width: 40, height: 40 },
+  topMid: { flex: 1 },
+  streakNum: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 32,
+  },
+  streakUnit: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 17,
+  },
+  sub: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13.5,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  bestCol: { alignItems: "flex-end" },
+  bestLabel: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 11,
+    letterSpacing: 1,
+  },
+  bestNum: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 22,
+    marginTop: 2,
+  },
+  weekRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  dayCol: { alignItems: "center", gap: 6 },
+  dot: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  todayDot: { width: 8, height: 8, borderRadius: 4 },
+  dayLetter: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
+  },
+  divider: { height: 1, marginHorizontal: 16, opacity: 0.6 },
+  endsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 16,
+  },
+  endsMid: { flex: 1 },
+  endsBold: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+  },
+  endsText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  playBtn: {
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+  playText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+  },
+  statsRow: { flexDirection: "row", paddingVertical: 14 },
+  statCol: { flex: 1, alignItems: "center", gap: 2 },
+  statDivider: { width: 1 },
+  statNum: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 19,
+  },
+  statLabel: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: "center",
+  },
+});
+
 // ── Beta feedback ─────────────────────────────────────────────────────────────
 // Suggestion box for beta testers. Posts to POST /api/feedback, which stores
 // the message for the morning digest batch and the admin portal Feedback
@@ -287,14 +631,16 @@ function getApiBase(): string {
   return "";
 }
 
+const FEEDBACK_KEYBOARD_BAR_ID = "crrnt-feedback-keyboard";
+
 function BetaFeedback({ theme }: { theme: ThemeColors }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Tracks whether the box is focused so a Done button can close the
-  // keyboard: a multiline input has no return-to-dismiss, and the screen
-  // previously offered no way to close it at all.
+  // Tracks whether the box is focused so the non-iOS Done button can
+  // close the keyboard: a multiline input has no return-to-dismiss.
+  // (iOS gets the KeyboardDismissBar pinned above the keyboard.)
   const [focused, setFocused] = useState(false);
 
   const handleSend = async () => {
@@ -345,6 +691,9 @@ function BetaFeedback({ theme }: { theme: ThemeColors }) {
           multiline
           numberOfLines={4}
           maxLength={2000}
+          inputAccessoryViewID={
+            Platform.OS === "ios" ? FEEDBACK_KEYBOARD_BAR_ID : undefined
+          }
           style={[
             feedbackStyles.input,
             {
@@ -354,7 +703,10 @@ function BetaFeedback({ theme }: { theme: ThemeColors }) {
             },
           ]}
         />
-        {focused ? (
+        <KeyboardDismissBar nativeID={FEEDBACK_KEYBOARD_BAR_ID} theme={theme} />
+        {/* In-card Done is the non-iOS fallback; iOS gets the ✕ bar
+            pinned above the keyboard instead. */}
+        {focused && Platform.OS !== "ios" ? (
           <Pressable
             onPress={() => Keyboard.dismiss()}
             hitSlop={8}
@@ -482,7 +834,9 @@ export default function SettingsScreen() {
   if (isGuest || !user) {
     return (
       <View style={[styles.container, { backgroundColor: theme.bg, paddingTop: insets.top }, desktopFrame]}>
-        <Text style={[styles.screenTitle, { color: theme.text }, desktopColumn]}>Settings</Text>
+        <Text style={[styles.screenTitle, { color: theme.text }, desktopColumn]}>
+          {Platform.OS === "web" ? "Settings" : "You"}
+        </Text>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -503,6 +857,8 @@ export default function SettingsScreen() {
               </Text>
             </View>
           </View>
+
+          {Platform.OS !== "web" && <StreakSection theme={theme} />}
 
           <SectionHeader label="Appearance" theme={theme} />
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>

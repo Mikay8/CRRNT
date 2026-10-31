@@ -14,9 +14,12 @@ interface CategoryFilterProps {
   variant?: "chips" | "glass";
   /** Show the personalized "Feed" pill ahead of All (native feed). */
   showForYou?: boolean;
+  /** Move the Feed pill to the end of the row — the user already
+   * finished today's Feed, so it yields home position to All. */
+  forYouLast?: boolean;
 }
 
-export function CategoryFilter({ active, onChange, inset = 16, variant = "chips", showForYou = false }: CategoryFilterProps) {
+export function CategoryFilter({ active, onChange, inset = 16, variant = "chips", showForYou = false, forYouLast = false }: CategoryFilterProps) {
   const { theme: palette, isDark } = useThemeContext();
 
   const handle = (next: FeedSelection) => {
@@ -25,15 +28,19 @@ export function CategoryFilter({ active, onChange, inset = 16, variant = "chips"
   };
 
   if (variant === "glass") {
+    const feedItem = {
+      key: "feed" as FeedSelection,
+      label: "Feed",
+      color: palette.accent,
+      iconName: "sparkles" as const,
+    };
     const items: {
       key: FeedSelection;
       label: string;
       color: string;
       iconName: keyof typeof Ionicons.glyphMap | null;
     }[] = [
-      ...(showForYou
-        ? [{ key: "feed" as FeedSelection, label: "Feed", color: palette.accent, iconName: "sparkles" as const }]
-        : []),
+      ...(showForYou && !forYouLast ? [feedItem] : []),
       { key: null, label: "All", color: palette.text, iconName: null },
       ...CATEGORIES.map((c) => ({
         key: c.key as FeedSelection,
@@ -41,6 +48,7 @@ export function CategoryFilter({ active, onChange, inset = 16, variant = "chips"
         color: c.color,
         iconName: CATEGORY_ICONS[c.icon] as keyof typeof Ionicons.glyphMap,
       })),
+      ...(showForYou && forYouLast ? [feedItem] : []),
     ];
     return (
       <ScrollView
@@ -97,7 +105,7 @@ export function CategoryFilter({ active, onChange, inset = 16, variant = "chips"
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={[styles.row, { paddingHorizontal: inset }]}
     >
-      {showForYou ? (
+      {showForYou && !forYouLast ? (
         <Chip
           label="Feed"
           color={palette.accent}
@@ -125,6 +133,16 @@ export function CategoryFilter({ active, onChange, inset = 16, variant = "chips"
           palette={palette}
         />
       ))}
+      {showForYou && forYouLast ? (
+        <Chip
+          label="Feed"
+          color={palette.accent}
+          icon="sparkles"
+          active={active === "feed"}
+          onPress={() => handle("feed")}
+          palette={palette}
+        />
+      ) : null}
     </ScrollView>
   );
 }

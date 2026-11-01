@@ -21,6 +21,9 @@ import { reportScroll } from "@/hooks/useFastScroll";
 import DesktopHeader from "@/components/DesktopHeader";
 import StoryGrid from "@/components/StoryGrid";
 import { useIsDesktop } from "@/hooks/useLayoutMode";
+import { KeyboardDismissBar } from "@/components/KeyboardDismissBar";
+
+const SEARCH_KEYBOARD_BAR_ID = "crrnt-search-keyboard";
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
@@ -74,6 +77,7 @@ export default function SearchScreen() {
   );
 
   const input = (
+    <>
     <View style={[styles.inputWrap, isDesktop ? styles.inputDesktop : { marginHorizontal: hPad }]}>
       <Ionicons name="search-outline" size={20} color={palette.textMuted} />
       <TextInput
@@ -86,6 +90,9 @@ export default function SearchScreen() {
         autoCapitalize="none"
         autoCorrect={false}
         autoFocus={isDesktop}
+        inputAccessoryViewID={
+          Platform.OS === "ios" ? SEARCH_KEYBOARD_BAR_ID : undefined
+        }
       />
       {query ? (
         <Pressable onPress={clear} hitSlop={8} accessibilityLabel="Clear search">
@@ -93,6 +100,8 @@ export default function SearchScreen() {
         </Pressable>
       ) : null}
     </View>
+    <KeyboardDismissBar nativeID={SEARCH_KEYBOARD_BAR_ID} theme={palette} />
+    </>
   );
 
   const resultCount =

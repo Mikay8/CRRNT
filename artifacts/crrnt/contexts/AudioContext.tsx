@@ -16,6 +16,7 @@ import React, {
   useState,
 } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { addListenedSeconds, markStoryFinished } from "@/lib/streaks";
 
 interface AudioContextType {
   story: Story | null;
@@ -322,6 +323,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const positionMs = isAudioMode ? audioPositionMs : speechPositionMs;
   const durationMs = isAudioMode ? audioDurationMs : speechDurationMs;
   const isPlaying = isAudioMode ? audioIsPlaying : speechPlaying;
+
+  // Streaks (lib/streaks): a story that is actually playing counts as
+  // finished for today — this covers card taps, queue auto-advance,
+  // and lock-screen skips, which all land on `story` + isPlaying —
+  // and playback time feeds the You tab's "Listened" stat.
+  useEffect(() => {
+    if (story && isPlaying) markStoryFinished(story.id);
+  }, [story, isPlaying]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const t = setInterval(() => addListenedSeconds(1), 1000);
+    return () => clearInterval(t);
+  }, [isPlaying]);
 
   const _stopSpeech = useCallback(() => {
     speechGenRef.current += 1;

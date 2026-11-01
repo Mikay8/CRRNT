@@ -4,10 +4,11 @@
  * The quiz answers live ONLY in AsyncStorage on this phone — they are
  * never sent to the server (Mikayla's call, 2026-10-30: the Morning
  * Edition push stays the same global pick for everyone rather than
- * storing tags server-side). The feed ranks stories locally against
- * these tags: ingestion gives each story a `vibe` (informed /
- * entertained / both) and its category; the user's tags are their
- * picked categories, vibe, and free-text never-miss follow terms.
+ * storing tags server-side). The Feed view shows the day's five
+ * best-matching stories, scored locally against these tags: ingestion
+ * gives each story a `vibe` (informed / entertained / both) and its
+ * category; the user's tags are their picked categories, vibe, and
+ * free-text never-miss follow terms.
  *
  * State is a tiny external store so the first-run gate, the quiz
  * screen, Settings, and the feed all read the same snapshot.
@@ -163,4 +164,63 @@ export function scoreStory(
     if (prefs.vibe.includes(vibe)) score += 1;
   }
   return score;
+}
+
+/** How many stories the personalized Feed view shows per day. */
+export const FEED_STORY_LIMIT = 5;
+
+/** Local calendar day (YYYY-MM-DD) for a Date, matching the streak
+ * store's day boundary. */
+function localDayKey(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** The local day a story belongs to: the day it entered the feed
+ * (created_at), falling back to its published day. */
+function storyDayKey(story: Story): string | null {
+  const raw = story.created_at ?? story.published_at;
+  if (!raw) return null;
+  const t = new Date(raw);
+  return Number.isNaN(t.getTime()) ? null : localDayKey(t);
+}
+
+/**
+ * The personalized Feed list: today's five best-matching stories,
+ * best first, capped at FEED_STORY_LIMIT.
+ *
+ * Only today's stories compete (Mikayla's call, 2026-11-01): a story
+ * that arrived today always makes the cut ahead of an older story,
+ * even one that would score higher — yesterday's leftovers never
+ * re-deal themselves into today's Feed. Ranking happens within the
+ * day: any match counts — a follow mention, a picked category, or a
+ * vibe match — and low scores still rank, so the best available of
+ * today's stories fill the five slots (published order breaks ties).
+ *
+ * Before today's ingestion lands (or on an ingestion-free day) the
+ * pool falls back to the newest day present, so the Feed is never
+ * blank while stories exist. Input must be sorted newest-first; the
+ * feed screen and the story screen's Up Next chain both build the
+ * list through here so they always agree.
+ */
+export function personalizedFeed(
+  stories: Story[],
+  prefs: PersonalizationPrefs,
+): Story[] {
+  const today = localDayKey(new Date());
+  let pool = stories.filter((s) => storyDayKey(s) === today);
+  if (pool.length === 0) {
+    let newest: string | null = null;
+    for (const s of stories) {
+      const k = storyDayKey(s);
+      if (k && (!newest || k > newest)) newest = k;
+    }
+    pool = newest ? stories.filter((s) => storyDayKey(s) === newest) : stories;
+  }
+  return pool
+    .map((s, i) => ({ s, i, score: scoreStory(s, prefs) }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .slice(0, FEED_STORY_LIMIT)
+    .map((x) => x.s);
 }

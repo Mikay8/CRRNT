@@ -41,6 +41,7 @@ import {
   suggestionsFor,
   type VibeTag,
 } from "@/lib/personalization";
+import { syncStreakReminder } from "@/lib/streak-reminder";
 
 type Step = "intro" | "categories" | "vibe" | "must" | "done";
 const STEP_PROGRESS: Record<Step, number> = {
@@ -249,6 +250,8 @@ export default function PersonalizeScreen() {
       updatedAt: new Date().toISOString(),
       ...prefs,
     });
+    // Streaks (and their reminder) follow personalization state.
+    void syncStreakReminder();
     next();
   };
 

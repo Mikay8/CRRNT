@@ -29,16 +29,11 @@ export function KeyboardDismissBar({
 }) {
   if (Platform.OS !== "ios") return null;
   return (
-    <InputAccessoryView nativeID={nativeID}>
-      <View
-        style={[
-          styles.bar,
-          {
-            backgroundColor: theme.bgElevated,
-            borderTopColor: theme.border,
-          },
-        ]}
-      >
+    <InputAccessoryView nativeID={nativeID} backgroundColor="transparent">
+      {/* No bar behind the button (Mikayla, 2026-11-01): the strip is
+          fully transparent and the round ✕ floats on its own, like
+          the close button in Apple's search UI. */}
+      <View style={styles.bar}>
         <Pressable
           onPress={() => Keyboard.dismiss()}
           hitSlop={8}
@@ -66,8 +61,8 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     alignItems: "center",
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 6,
+    backgroundColor: "transparent",
   },
   button: {
     width: 36,

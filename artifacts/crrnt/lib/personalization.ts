@@ -169,21 +169,56 @@ export function scoreStory(
 /** How many stories the personalized Feed view shows per day. */
 export const FEED_STORY_LIMIT = 5;
 
+/** Local calendar day (YYYY-MM-DD) for a Date, matching the streak
+ * store's day boundary. */
+function localDayKey(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** The local day a story belongs to: the day it entered the feed
+ * (created_at), falling back to its published day. */
+function storyDayKey(story: Story): string | null {
+  const raw = story.created_at ?? story.published_at;
+  if (!raw) return null;
+  const t = new Date(raw);
+  return Number.isNaN(t.getTime()) ? null : localDayKey(t);
+}
+
 /**
- * The personalized Feed list: the day's best-matching stories, best
- * first, capped at FEED_STORY_LIMIT. Any match counts — a follow
- * mention, a picked category, or a vibe match — and low scores still
- * rank: on a thin day the best available stories fill the five slots
- * (published order breaks ties), so the Feed is never empty while the
- * day has stories. Input must be sorted newest-first; the feed screen
- * and the story screen's Up Next chain both build the list through
- * here so they always agree.
+ * The personalized Feed list: today's five best-matching stories,
+ * best first, capped at FEED_STORY_LIMIT.
+ *
+ * Only today's stories compete (Mikayla's call, 2026-11-01): a story
+ * that arrived today always makes the cut ahead of an older story,
+ * even one that would score higher — yesterday's leftovers never
+ * re-deal themselves into today's Feed. Ranking happens within the
+ * day: any match counts — a follow mention, a picked category, or a
+ * vibe match — and low scores still rank, so the best available of
+ * today's stories fill the five slots (published order breaks ties).
+ *
+ * Before today's ingestion lands (or on an ingestion-free day) the
+ * pool falls back to the newest day present, so the Feed is never
+ * blank while stories exist. Input must be sorted newest-first; the
+ * feed screen and the story screen's Up Next chain both build the
+ * list through here so they always agree.
  */
 export function personalizedFeed(
   stories: Story[],
   prefs: PersonalizationPrefs,
 ): Story[] {
-  return stories
+  const today = localDayKey(new Date());
+  let pool = stories.filter((s) => storyDayKey(s) === today);
+  if (pool.length === 0) {
+    let newest: string | null = null;
+    for (const s of stories) {
+      const k = storyDayKey(s);
+      if (k && (!newest || k > newest)) newest = k;
+    }
+    pool = newest ? stories.filter((s) => storyDayKey(s) === newest) : stories;
+  }
+  return pool
     .map((s, i) => ({ s, i, score: scoreStory(s, prefs) }))
     .sort((a, b) => b.score - a.score || a.i - b.i)
     .slice(0, FEED_STORY_LIMIT)

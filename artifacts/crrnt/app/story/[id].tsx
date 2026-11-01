@@ -50,7 +50,13 @@ import {
   personalizedFeed,
   usePersonalization,
 } from "@/lib/personalization";
-import { markStoryFinished, recordFeedCompletion } from "@/lib/streaks";
+import {
+  finishedOn,
+  markStoryFinished,
+  recordFeedCompletion,
+  todayStr,
+  useStreaks,
+} from "@/lib/streaks";
 import { useAuth } from "@/contexts/AuthContext";
 import { canSaveStories } from "@/constants/features";
 import { useThemeContext } from "@/contexts/ThemeContext";
@@ -166,6 +172,7 @@ export default function StoryDetailScreen() {
   const { user } = useAuth();
   const { saved } = useSavedStories();
   const { prefs: personalizationPrefs } = usePersonalization();
+  const { state: streakState } = useStreaks();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
   const { story: audioStory, isPlaying, isAudioLoading, playStory, togglePlayPause } =
     useAudio();
@@ -266,7 +273,8 @@ export default function StoryDetailScreen() {
   // Up Next follows the list the user opened this story from, carried in
   // the `from` route param: a category tab chains through that category
   // in tab order and ends there (no wrap), "all" loops the whole feed
-  // continuously, "feed" loops the personalized top five, and "saved"
+  // continuously, "feed" chains today's top five and ends when they
+  // are all finished, and "saved"
   // chains through the saved stories. Entries with no list context
   // (search, the player, shared links) fall back to the story's own
   // category.
@@ -283,11 +291,25 @@ export default function StoryDetailScreen() {
       return { list: saved, loop: false, label: "your saved stories" as string | null };
     if (from === "all") return { list: feedList, loop: true, label: null as string | null };
     if (from === "feed") {
-      // The Feed chaining order is the feed's personalized top five.
+      // The chain mirrors the Feed list itself: today's top five in
+      // ranked order, finished stories dropped, and NO wrap — when
+      // the last unfinished story ends, the Up Next slot shows the
+      // all-caught-up card (Mikayla, 2026-11-01: Up Next must end
+      // once the Feed is complete). The story being read stays in
+      // the list so its position, and the end state, resolves; it is
+      // marked finished on open, and only the end check needs it.
       const ranked = isPersonalizationActive(personalizationPrefs)
         ? personalizedFeed(feedList, personalizationPrefs)
         : feedList;
-      return { list: ranked, loop: true, label: null as string | null };
+      const finished = new Set(finishedOn(streakState, todayStr()));
+      const remaining = ranked.filter(
+        (s) => s.id === story?.id || !finished.has(s.id),
+      );
+      return {
+        list: remaining,
+        loop: false,
+        label: "your Feed" as string | null,
+      };
     }
     const catKey = from && getCategoryMeta(from) ? from : (story?.category ?? null);
     if (catKey) {
@@ -298,7 +320,7 @@ export default function StoryDetailScreen() {
       };
     }
     return { list: feedList, loop: true, label: null as string | null };
-  }, [from, feed.data, saved, story?.category, personalizationPrefs]);
+  }, [from, feed.data, saved, story?.category, personalizationPrefs, streakState]);
 
   const nextStory = useMemo(() => {
     const list = upNextContext.list;

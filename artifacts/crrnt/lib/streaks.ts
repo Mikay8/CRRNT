@@ -106,7 +106,6 @@ export async function loadStreaks(): Promise<StreakState> {
 
 async function persist(): Promise<void> {
   if (!cache) return;
-  unflushedListenSec = 0;
   try {
     await AsyncStorage.setItem(STREAKS_KEY, JSON.stringify(cache));
   } catch {
@@ -194,8 +193,16 @@ export function markStoryFinished(storyId: string): void {
   const today = todayStr();
   const list = cache.finishedByDate[today] ?? [];
   if (list.includes(storyId)) return;
-  cache.finishedByDate[today] = [...list, storyId];
-  prune(cache);
+  // Replace the state object, never mutate it in place:
+  // useSyncExternalStore compares snapshots by identity, so an
+  // in-place mutation is invisible to subscribers (this is why
+  // finished stories once stayed on the Feed until a reload).
+  const next: StreakState = {
+    ...cache,
+    finishedByDate: { ...cache.finishedByDate, [today]: [...list, storyId] },
+  };
+  prune(next);
+  cache = next;
   emit();
   void persist();
 }
@@ -215,9 +222,13 @@ export function recordFeedCompletion(feedStoryIds: string[]): void {
   if (cache.completedDates.includes(today)) return;
   const finished = new Set(cache.finishedByDate[today] ?? []);
   if (!feedStoryIds.every((id) => finished.has(id))) return;
-  cache.completedDates = [...cache.completedDates, today].sort();
-  cache.best = Math.max(cache.best, runEndingAt(cache, today));
-  prune(cache);
+  const next: StreakState = {
+    ...cache,
+    completedDates: [...cache.completedDates, today].sort(),
+  };
+  next.best = Math.max(cache.best, runEndingAt(next, today));
+  prune(next);
+  cache = next;
   emit();
   void persist();
   void import("./streak-reminder")
@@ -225,13 +236,14 @@ export function recordFeedCompletion(feedStoryIds: string[]): void {
     .catch(() => undefined);
 }
 
-/** Accumulate playback time. Persists at most every ~15 seconds. */
+/** Accumulate playback time. Folds into state (and persists) every ~15s. */
 export function addListenedSeconds(n: number): void {
   ensureStreaksLoaded();
   if (!cache) cache = emptyState();
-  cache.listenedSec += n;
   unflushedListenSec += n;
   if (unflushedListenSec >= 15) {
+    cache = { ...cache, listenedSec: cache.listenedSec + unflushedListenSec };
+    unflushedListenSec = 0;
     emit();
     void persist();
   }

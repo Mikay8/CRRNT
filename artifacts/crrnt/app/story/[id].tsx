@@ -130,7 +130,11 @@ const FALLBACK_SENTIMENT: (typeof SENTIMENT_CONFIG)[SentimentKey] = {
 function parseTickerFromStockNote(stockNote?: string | null): string | null {
   if (!stockNote) return null;
   const match = stockNote.match(/^([A-Z]{1,5})\b/);
-  return match ? match[1] : null;
+  if (!match) return null;
+  // Sentinel values stored by older enrichment runs ("NULL" when a story
+  // had no ticker) are not symbols — never render them as a $NULL pill.
+  if (match[1] === "NULL" || match[1] === "NONE") return null;
+  return match[1];
 }
 
 /** Extract company name from stock_note like "AAPL (Apple Inc.)" */

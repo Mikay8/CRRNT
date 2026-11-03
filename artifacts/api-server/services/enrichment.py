@@ -210,6 +210,12 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
         ticker = ticker.strip().upper() or None
         if ticker and not re.fullmatch(r"[A-Z.\-]{1,6}", ticker):
             ticker = None
+        if ticker in ("NULL", "NONE", "N/A"):
+            # Claude sometimes answers with the *string* "NULL" (or a
+            # sibling sentinel) instead of a JSON null. Those pass the
+            # shape check above and would otherwise be stored, built into
+            # stock_note, and rendered by the app as a $NULL ticker pill.
+            ticker = None
     else:
         ticker = None
 

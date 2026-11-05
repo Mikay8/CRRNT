@@ -47,7 +47,7 @@ function uuidv4(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-async function getDeviceId(): Promise<string> {
+export async function getDeviceId(): Promise<string> {
   const stored = await AsyncStorage.getItem(DEVICE_ID_KEY);
   if (stored) return stored;
   const id = uuidv4();

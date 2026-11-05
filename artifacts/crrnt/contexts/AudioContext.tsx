@@ -17,6 +17,7 @@ import React, {
 } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { addListenedSeconds, markStoryFinished } from "@/lib/streaks";
+import { capture } from "@/lib/analytics";
 
 interface AudioContextType {
   story: Story | null;
@@ -332,6 +333,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (story && isPlaying) markStoryFinished(story.id);
   }, [story, isPlaying]);
 
+  // Analytics (lib/analytics): one story_played per story per session,
+  // from the same signal the streaks use, so card taps, queue advance,
+  // and lock-screen playback all count exactly once.
+  const playedIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!story || !isPlaying || playedIdsRef.current.has(story.id)) return;
+    playedIdsRef.current.add(story.id);
+    capture("story_played", { story_id: story.id, category: story.category });
+  }, [story, isPlaying]);
+
   useEffect(() => {
     if (!isPlaying) return;
     const t = setInterval(() => addListenedSeconds(1), 1000);
@@ -409,6 +420,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Natural end — tear down cleanly then advance if a story follows.
+        // Analytics: the speech track genuinely finished (the Chrome
+        // restart branch above returns before this point).
+        const speechStory = storyRef.current;
+        if (speechStory) {
+          capture("story_completed", {
+            story_id: speechStory.id,
+            category: speechStory.category,
+            via: "audio",
+          });
+        }
         _setSpeechPlaying(false);
         if (speechTimerRef.current) {
           clearInterval(speechTimerRef.current);
@@ -587,7 +608,22 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, [playlist]);
 
   useEffect(() => {
-    if (playlistStatus.didJustFinish) _handleWindowEnd();
+    if (playlistStatus.didJustFinish) {
+      // Analytics: didJustFinish only fires on a natural end (a user
+      // skip never sets it), so the current story was listened through.
+      // storyRef still points at the finishing story here; on a rare
+      // race with native auto-advance the completion can land on the
+      // successor — acceptable for aggregate completion rates.
+      const finishedStory = storyRef.current;
+      if (finishedStory) {
+        capture("story_completed", {
+          story_id: finishedStory.id,
+          category: finishedStory.category,
+          via: "audio",
+        });
+      }
+      _handleWindowEnd();
+    }
   }, [playlistStatus.didJustFinish, _handleWindowEnd]);
 
   // Poll position / playing for the UI (expo-audio's periodic observer is

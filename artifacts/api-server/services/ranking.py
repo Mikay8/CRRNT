@@ -236,10 +236,13 @@ async def rank_category(
     )
     try:
         client = _get_client()
+        # No temperature argument: the deployed Anthropic SDK rejects
+        # it, and the TypeError landed in the fallback below — ranking
+        # silently degraded to newest-first on every run (found in the
+        # production logs, 2026-11-05). Do not re-add it.
         msg = await client.messages.create(
             model=MODEL,
             max_tokens=800,
-            temperature=0,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
         )

@@ -91,7 +91,7 @@ export default function PrivacyPolicyScreen() {
             CRRNT Privacy Policy
           </Text>
           <Text style={[pStyles.meta, { color: theme.textDim }]}>
-            Effective date: 28 October 2026
+            Effective date: 5 November 2026
           </Text>
           <Text style={[pStyles.meta, { color: theme.textDim }]}>
             Contact for privacy questions: mikayla@crrnt-news.com
@@ -165,8 +165,18 @@ export default function PrivacyPolicyScreen() {
             account, because CRRNT does not require an account in this
             version. It is linked to a device only, through first-seen and
             last-seen dates, so we can tell a returning device from a new
-            one. It is not shared with advertisers or other third parties,
-            and it is not an advertising identifier.
+            one. It is not an advertising identifier, and it is not shared
+            with advertisers.
+          </Body>
+          <Body theme={theme}>
+            The same anonymous device identifier is also sent with
+            product-analytics events to PostHog, our analytics provider
+            (hosted in the United States): stories opened, played, and
+            read or listened to completion; feed-filter taps; stories
+            saved, unsaved, and shared; and screen views. These events
+            carry only the story, category, and action — no name, email,
+            account, or location. Session recording and automatic capture
+            are off, and no advertising identifier is sent.
           </Body>
           <Body theme={theme}>
             Retention: We delete records for devices that have been
@@ -244,9 +254,17 @@ export default function PrivacyPolicyScreen() {
             anonymous push token is shared with the Expo push service so a
             notification can be delivered to your device.
           </Bullet>
+          <Bullet theme={theme}>
+            PostHog — product analytics. Your anonymous device identifier
+            and the product events listed in section 3 are sent to PostHog
+            so we can see which stories are read to completion and how
+            many people return. PostHog processes this information only
+            for that purpose, under its own policy.
+          </Bullet>
           <Body theme={theme}>
-            We do not use an analytics SDK or an advertising SDK in this
-            version.
+            We do not use an advertising SDK in this version. Product
+            analytics is sent with plain network requests, not an
+            analytics SDK.
           </Body>
           <Body theme={theme}>
             Stories in CRRNT link out to publisher websites. Those publishers

@@ -605,10 +605,12 @@ async def analyze_social_sentiment(
     )
     try:
         client = _get_client()
+        # No temperature argument: the deployed Anthropic SDK rejects
+        # it (same silent-fallback bug that disabled ranking — the
+        # TypeError was swallowed into "not enough data", 2026-11-05).
         msg = await client.messages.create(
             model=MODEL,
             max_tokens=1000,
-            temperature=0,
             system=SOCIAL_SENTIMENT_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
         )

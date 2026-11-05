@@ -4,6 +4,7 @@ import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { CATEGORIES, CATEGORY_ICONS, type FeedSelection } from "@/constants/categories";
+import { capture } from "@/lib/analytics";
 
 interface CategoryFilterProps {
   active: FeedSelection;
@@ -24,6 +25,8 @@ export function CategoryFilter({ active, onChange, inset = 16, variant = "chips"
 
   const handle = (next: FeedSelection) => {
     Haptics.selectionAsync().catch(() => undefined);
+    // Analytics (lib/analytics): every feed filter tap funnels through here.
+    capture("feed_filter_selected", { selection: next ?? "all" });
     onChange(next);
   };
 

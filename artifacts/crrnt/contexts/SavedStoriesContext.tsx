@@ -16,6 +16,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Story } from "@workspace/api-client-react";
 import { useAuth } from "./AuthContext";
+import { capture } from "@/lib/analytics";
 
 const GUEST_SAVED_KEY = "@crrnt/saved/guest/v1";
 
@@ -102,6 +103,11 @@ export function SavedStoriesProvider({
   const toggleSaved = useCallback(
     async (story: Story) => {
       const alreadySaved = savedIds.has(story.id);
+      // Analytics (lib/analytics): every save/unsave funnels through here.
+      capture(alreadySaved ? "story_unsaved" : "story_saved", {
+        story_id: story.id,
+        category: story.category,
+      });
       if (!authHeaders) {
         setSaved((prev) => {
           const next = alreadySaved

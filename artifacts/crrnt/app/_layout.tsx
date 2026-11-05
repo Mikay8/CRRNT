@@ -15,7 +15,7 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Image } from "expo-image";
-import { Stack, router, useSegments } from "expo-router";
+import { Stack, router, usePathname, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
@@ -31,6 +31,7 @@ import {
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AUTH_ENABLED } from "@/constants/features";
 import { reportDeviceMetrics } from "@/lib/deviceMetrics";
+import { captureScreen } from "@/lib/analytics";
 import { syncStreakReminder } from "@/lib/streak-reminder";
 import NowPlaying from "@/components/player/NowPlaying";
 import RecedingScreens from "@/components/player/RecedingScreens";
@@ -451,6 +452,13 @@ export default function RootLayout() {
       SplashScreen.hideAsync().catch(() => undefined);
     }
   }, [fontsLoaded, fontError]);
+
+  // PostHog screen views (lib/analytics): one per route change. No-op
+  // until EXPO_PUBLIC_POSTHOG_KEY is configured at build time.
+  const pathname = usePathname();
+  useEffect(() => {
+    if (pathname) captureScreen(pathname);
+  }, [pathname]);
 
   useEffect(() => {
     registerPushToken();

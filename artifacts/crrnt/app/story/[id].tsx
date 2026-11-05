@@ -58,6 +58,7 @@ import {
   useStreaks,
 } from "@/lib/streaks";
 import { useAuth } from "@/contexts/AuthContext";
+import { capture } from "@/lib/analytics";
 import { canSaveStories } from "@/constants/features";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -252,6 +253,48 @@ export default function StoryDetailScreen() {
 
   const story: Story | null = (data as Story | undefined) ?? localFallback;
 
+  // Analytics (lib/analytics): one story_opened per story view, and one
+  // story_completed when the reader actually reaches the end — either
+  // by scrolling to the bottom region of the sheet, or (for stories
+  // short enough to fit on one screen) by staying on the story. Audio
+  // completion is reported separately from AudioContext.
+  const completedStoryRef = useRef<string | null>(null);
+  const fitsScreenStoryRef = useRef<string | null>(null);
+  // The scroll handler is a worklet whose closures can outlive a story
+  // change (the Up Next chain reuses this screen), so the callbacks read
+  // the current story from a ref, never from a captured render.
+  const storyForAnalyticsRef = useRef<Story | null>(null);
+  const reportReadComplete = () => {
+    const s = storyForAnalyticsRef.current;
+    if (!s || completedStoryRef.current === s.id) return;
+    completedStoryRef.current = s.id;
+    capture("story_completed", {
+      story_id: s.id,
+      category: s.category,
+      via: "read",
+    });
+  };
+  const noteFitsScreen = () => {
+    const s = storyForAnalyticsRef.current;
+    if (s) fitsScreenStoryRef.current = s.id;
+  };
+  useEffect(() => {
+    completedStoryRef.current = null;
+    fitsScreenStoryRef.current = null;
+    storyForAnalyticsRef.current = story;
+    if (!story) return;
+    capture("story_opened", {
+      story_id: story.id,
+      category: story.category,
+      source: from ?? "direct",
+    });
+    const t = setTimeout(() => {
+      if (fitsScreenStoryRef.current === story.id) reportReadComplete();
+    }, 8000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story?.id]);
+
   // Reading a story marks it finished for today (streaks, lib/streaks):
   // it hides from the Feed view, and when it was the last unfinished
   // story in today's Feed the day completes. The completion check uses
@@ -384,6 +427,15 @@ export default function StoryDetailScreen() {
           runOnJS(setCollapsed)(true);
         }
         scrollY.value = y;
+        // Analytics read-completion: bottom region reached, or the
+        // story fits on one screen (the dwell timer in the effect above
+        // turns the fits-screen note into a completion).
+        const maxScroll = e.contentSize.height - e.layoutMeasurement.height;
+        if (maxScroll <= 0) {
+          runOnJS(noteFitsScreen)();
+        } else if (y / maxScroll >= 0.85) {
+          runOnJS(reportReadComplete)();
+        }
       },
       // iOS: letting go well past the bottom (into the bounce) moves on to
       // the next story, same as dragging the peek up.
@@ -494,6 +546,7 @@ export default function StoryDetailScreen() {
 
   const share = () => {
     Haptics.selectionAsync().catch(() => undefined);
+    capture("story_shared", { story_id: story.id, category: story.category });
     Share.share({
       message: [title, story.source_url].filter(Boolean).join("\n"),
     }).catch(() => undefined);

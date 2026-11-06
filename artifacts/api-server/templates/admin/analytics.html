@@ -54,19 +54,28 @@
         {% endfor %}
       </div>
     </div>
-    <div class="p-5 space-y-1.5">
+    <div class="p-5">
       {% if series %}
+      {% set step = 3 if range == 'hour' else (5 if range == 'day' else 1) %}
+      <div class="flex items-end gap-1 h-44">
         {% for row in series %}
-        <div class="flex items-center gap-3 text-sm">
-          <div class="w-20 shrink-0 text-gray-400 text-xs">{{ row.label }}</div>
-          <div class="flex-1 bg-gray-700/50 rounded h-5 overflow-hidden">
-            <div class="bg-cyan-500 h-full rounded" style="width: {{ row.bar_pct }}%"></div>
-          </div>
-          <div class="w-24 shrink-0 text-right text-xs text-gray-300">
-            {{ row.active_users }} users
-          </div>
+        <div class="flex-1 min-w-0 h-full flex flex-col items-center justify-end"
+             title="{{ row.label }} — {{ row.active_users }} active user{{ 's' if row.active_users != 1 }}">
+          {% if row.active_users %}
+          <div class="text-[10px] leading-none text-gray-300 mb-1">{{ row.active_users }}</div>
+          <div class="w-full bg-cyan-500 rounded-t" style="height: {{ row.bar_pct }}%"></div>
+          {% else %}
+          <div class="w-full bg-gray-700/50 rounded-t" style="height: 2%"></div>
+          {% endif %}
         </div>
         {% endfor %}
+      </div>
+      <div class="flex gap-1 mt-2 border-t border-gray-700/60 pt-2">
+        {% for row in series %}
+        <div class="flex-1 min-w-0 overflow-visible whitespace-nowrap text-center text-[10px] text-gray-500">{% if loop.index0 % step == 0 %}{{ row.label }}{% endif %}</div>
+        {% endfor %}
+      </div>
+      <p class="text-[11px] text-gray-600 mt-3">Each column is one {{ range }}; hover any column for its exact count. Devices marked internal are excluded.</p>
       {% else %}
         <p class="text-gray-500 text-sm">No data yet — events appear here as the app reports them.</p>
       {% endif %}

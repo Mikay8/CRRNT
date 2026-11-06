@@ -754,7 +754,7 @@ async def analytics_series(granularity: str) -> list[dict]:
 
 
 async def story_view_counts() -> dict[str, dict[str, int]]:
-    """Per-story view and completion counts for the admin Stories list —
+    """Per-story view, play and completion counts for the admin Stories list —
     the owner wants the numbers next to the stories she manages rather
     than only in a chart. Same internal-device exclusion as the headline
     analytics. Keyed by story_id (TEXT, matching analytics_events)."""
@@ -762,13 +762,18 @@ async def story_view_counts() -> dict[str, dict[str, int]]:
         rows = await conn.fetch(
             f"""SELECT e.story_id,
                        COUNT(*) FILTER (WHERE e.event = 'story_opened') AS views,
+                       COUNT(*) FILTER (WHERE e.event = 'story_played') AS plays,
                        COUNT(*) FILTER (WHERE e.event = 'story_completed') AS completions
                 FROM analytics_events e
                 WHERE e.story_id IS NOT NULL AND {_INTERNAL_FILTER}
                 GROUP BY e.story_id"""
         )
     return {
-        r["story_id"]: {"views": r["views"], "completions": r["completions"]}
+        r["story_id"]: {
+            "views": r["views"],
+            "plays": r["plays"],
+            "completions": r["completions"],
+        }
         for r in rows
     }
 

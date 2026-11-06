@@ -185,6 +185,11 @@ async def admin_stories(
         [],
     )
     total = await _safe_db(db.count_stories(), 0)
+    view_counts = await _safe_db(db.story_view_counts(), {})
+    for s in stories:
+        c = view_counts.get(str(s.get("id")), {})
+        s["views"] = c.get("views", 0)
+        s["completions"] = c.get("completions", 0)
     return templates.TemplateResponse(
         request,
         "admin/stories.html",
@@ -717,9 +722,11 @@ async def admin_analytics(
         },
     )
     series = await _safe_db(db.analytics_series(range), [])
-    max_views = max((r["story_views"] for r in series), default=0)
+    # The series chart shows active users only — per-story view counts
+    # live on the Stories page (owner's call, 2026-11-06).
+    max_users = max((r["active_users"] for r in series), default=0)
     for r in series:
-        r["bar_pct"] = round(r["story_views"] / max_views * 100) if max_views else 0
+        r["bar_pct"] = round(r["active_users"] / max_users * 100) if max_users else 0
     top_stories = await _safe_db(db.analytics_top_stories(days=7, limit=15), [])
     devices = await _safe_db(db.analytics_devices(limit=50), [])
     for d in devices:

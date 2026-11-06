@@ -44,7 +44,7 @@
   <!-- Time series -->
   <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
     <div class="px-5 py-3 border-b border-gray-700 flex flex-wrap items-center justify-between gap-3">
-      <h2 class="text-sm font-semibold text-white">Story views &amp; active users</h2>
+      <h2 class="text-sm font-semibold text-white">Active users</h2>
       <div class="flex gap-1">
         {% for r in ['hour', 'day', 'week', 'month', 'year'] %}
         <a href="/admin/analytics?range={{ r }}"
@@ -62,8 +62,8 @@
           <div class="flex-1 bg-gray-700/50 rounded h-5 overflow-hidden">
             <div class="bg-cyan-500 h-full rounded" style="width: {{ row.bar_pct }}%"></div>
           </div>
-          <div class="w-36 shrink-0 text-right text-xs text-gray-300">
-            {{ row.story_views }} views · {{ row.active_users }} users
+          <div class="w-24 shrink-0 text-right text-xs text-gray-300">
+            {{ row.active_users }} users
           </div>
         </div>
         {% endfor %}

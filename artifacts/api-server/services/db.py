@@ -753,6 +753,26 @@ async def analytics_series(granularity: str) -> list[dict]:
     ]
 
 
+async def story_view_counts() -> dict[str, dict[str, int]]:
+    """Per-story view and completion counts for the admin Stories list —
+    the owner wants the numbers next to the stories she manages rather
+    than only in a chart. Same internal-device exclusion as the headline
+    analytics. Keyed by story_id (TEXT, matching analytics_events)."""
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            f"""SELECT e.story_id,
+                       COUNT(*) FILTER (WHERE e.event = 'story_opened') AS views,
+                       COUNT(*) FILTER (WHERE e.event = 'story_completed') AS completions
+                FROM analytics_events e
+                WHERE e.story_id IS NOT NULL AND {_INTERNAL_FILTER}
+                GROUP BY e.story_id"""
+        )
+    return {
+        r["story_id"]: {"views": r["views"], "completions": r["completions"]}
+        for r in rows
+    }
+
+
 async def analytics_top_stories(days: int = 7, limit: int = 15) -> list[dict]:
     """Most-viewed stories in the window: views, completions, unique
     readers. Internal devices excluded. Stories that have expired out of

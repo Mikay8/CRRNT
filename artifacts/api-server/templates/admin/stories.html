@@ -46,6 +46,7 @@
             <th class="px-5 py-3 text-left">TTS</th>
             <th class="px-5 py-3 text-left">Published</th>
             <th class="px-5 py-3 text-left">Expires</th>
+            <th class="px-5 py-3 text-left">Views</th>
             <th class="px-5 py-3 text-left">Actions</th>
           </tr>
         </thead>
@@ -112,6 +113,10 @@
             <td class="px-5 py-3 text-gray-400 text-xs font-mono">{{ s.published_at[:10] if s.published_at else '—' }}</td>
             <td class="px-5 py-3 text-gray-400 text-xs font-mono">{{ s.expires_at[:10] if s.expires_at else '—' }}</td>
             <td class="px-5 py-3">
+              <div class="text-white font-medium">{{ s.views or 0 }} <span class="text-gray-500 text-[11px] font-normal">views</span></div>
+              {% if s.completions %}<div class="text-gray-500 text-[11px]">{{ s.completions }} read to end</div>{% endif %}
+            </td>
+            <td class="px-5 py-3">
               <form method="POST" action="/admin/stories/{{ s.id }}/delete"
                     onsubmit="return confirm('Delete this story?')">
                 <button type="submit" class="text-xs text-red-500 hover:text-red-400 transition-colors">Delete</button>
@@ -176,6 +181,7 @@
             <span class="text-gray-300">{{ s.sentiment_label }}{% if s.sentiment_score is not none %} ({{ "%.2f"|format(s.sentiment_score) }}){% endif %}</span>
           {% endif %}
           <span>TTS {% if s.tts_url %}<span class="text-green-400">✓</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</span>
+          <span>👁 {{ s.views or 0 }} views{% if s.completions %} · {{ s.completions }} read to end{% endif %}</span>
           <span>{{ s.published_at[:10] if s.published_at else '—' }} → {{ s.expires_at[:10] if s.expires_at else '—' }}</span>
         </div>
         <form method="POST" action="/admin/stories/{{ s.id }}/delete"

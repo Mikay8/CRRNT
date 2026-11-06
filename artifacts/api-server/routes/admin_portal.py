@@ -189,6 +189,7 @@ async def admin_stories(
     for s in stories:
         c = view_counts.get(str(s.get("id")), {})
         s["views"] = c.get("views", 0)
+        s["plays"] = c.get("plays", 0)
         s["completions"] = c.get("completions", 0)
     return templates.TemplateResponse(
         request,

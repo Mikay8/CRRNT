@@ -112,6 +112,25 @@ async def update_story_category(story_id: str, category: str) -> None:
         )
 
 
+async def update_story_image(
+    story_id: str,
+    media_url: str | None,
+    credit_name: str | None,
+    credit_url: str | None,
+    image_source: str | None,
+) -> None:
+    # The story image is a CRRNT-side asset (Unsplash pool or an admin-set
+    # URL), never publisher content, so swapping or clearing it needs no
+    # re-enrichment. A NULL media_url is a designed state: the app falls
+    # back to its bundled category art (same as a pool miss at ingestion).
+    async with get_pool().acquire() as conn:
+        await conn.execute(
+            "UPDATE stories SET media_url = $2, image_credit_name = $3, "
+            "image_credit_url = $4, image_source = $5 WHERE id = $1",
+            story_id, media_url, credit_name, credit_url, image_source,
+        )
+
+
 async def get_stories(
     *,
     category: Optional[str] = None,

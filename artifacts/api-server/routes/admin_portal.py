@@ -36,7 +36,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from services import app_settings, db, ingestion, ingest_config, log_buffer, metrics, rate_limit, rss, scheduler
+from services import app_settings, db, ingestion, ingest_config, log_buffer, metrics, rate_limit, rss, scheduler, unsplash_pool
 
 log = logging.getLogger("crrnt.admin")
 
@@ -214,6 +214,66 @@ async def update_story_category(
     # leaves the story unchanged rather than storing a bad value.
     if category in CATEGORIES:
         await _safe_db(db.update_story_category(story_id, category), None)
+    return RedirectResponse(url="/admin/stories", status_code=302)
+
+
+@router.post("/stories/{story_id}/image")
+async def update_story_image(
+    story_id: str,
+    media_url: str = Form(""),
+    image_credit_name: str = Form(""),
+    image_credit_url: str = Form(""),
+    _: None = Depends(_verify_admin),
+):
+    # Admin-set image: only http(s) URLs are stored (a tampered or
+    # mistyped value leaves the story unchanged, same guard style as the
+    # category route). Marked image_source='manual' so pool images stay
+    # distinguishable from hand-set ones.
+    url = media_url.strip()
+    if url.startswith("https://") or url.startswith("http://"):
+        await _safe_db(
+            db.update_story_image(
+                story_id,
+                url,
+                image_credit_name.strip() or None,
+                image_credit_url.strip() or None,
+                "manual",
+            ),
+            None,
+        )
+    return RedirectResponse(url="/admin/stories", status_code=302)
+
+
+@router.post("/stories/{story_id}/image/remove")
+async def remove_story_image(story_id: str, _: None = Depends(_verify_admin)):
+    # Clearing the image is a designed state: with media_url NULL the app
+    # falls back to its bundled category art, exactly as when the pool
+    # has no photo at ingestion time.
+    await _safe_db(db.update_story_image(story_id, None, None, None, None), None)
+    return RedirectResponse(url="/admin/stories", status_code=302)
+
+
+@router.post("/stories/{story_id}/image/swap")
+async def swap_story_image(story_id: str, _: None = Depends(_verify_admin)):
+    # One-click replacement with the story category's least-recently-used
+    # Unsplash pool photo — the same pick + mark-used + download-trigger
+    # sequence ingestion runs. An empty pool leaves the story unchanged.
+    story = await _safe_db(db.get_story(story_id), None)
+    if story:
+        pool_img = await unsplash_pool.pick_for_story(story.get("category"))
+        if pool_img:
+            await _safe_db(
+                db.update_story_image(
+                    story_id,
+                    pool_img["image_url"],
+                    pool_img["photographer_name"],
+                    pool_img["photographer_url"],
+                    "unsplash",
+                ),
+                None,
+            )
+            await unsplash_pool.mark_used(pool_img["id"])
+            await unsplash_pool.trigger_download(pool_img["download_location"])
     return RedirectResponse(url="/admin/stories", status_code=302)
 
 

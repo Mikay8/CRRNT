@@ -39,6 +39,7 @@
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-gray-700 text-gray-400 text-xs uppercase tracking-wider">
+            <th class="px-5 py-3 text-left">Image</th>
             <th class="px-5 py-3 text-left">Title</th>
             <th class="px-5 py-3 text-left">Category</th>
             <th class="px-5 py-3 text-left">Sentiment</th>
@@ -51,6 +52,36 @@
         <tbody class="divide-y divide-gray-700/50">
           {% for s in stories %}
           <tr class="hover:bg-gray-700/30 transition-colors group">
+            <td class="px-5 py-3 align-top">
+              {% if s.media_url %}
+              <img src="{{ s.media_url }}" alt="" loading="lazy" class="w-28 h-[4.5rem] object-cover rounded-lg border border-gray-700">
+              <div class="text-gray-500 text-[11px] mt-1 w-28 truncate" title="{{ s.image_credit_name or '' }}">
+                {% if s.image_credit_name %}Photo by {{ s.image_credit_name }}{% endif %}
+                {% if s.image_source == 'manual' %}<span class="text-amber-400">· manual</span>{% endif %}
+              </div>
+              {% else %}
+              <div class="w-28 h-[4.5rem] rounded-lg border border-dashed border-gray-700 flex items-center justify-center text-gray-600 text-[11px]">No image</div>
+              {% endif %}
+              <details class="mt-1.5">
+                <summary class="text-xs text-cyan-400 hover:text-cyan-300 cursor-pointer">Edit image</summary>
+                <div class="mt-2 space-y-1.5 w-64">
+                  <form method="POST" action="/admin/stories/{{ s.id }}/image" class="space-y-1.5">
+                    <input name="media_url" value="{{ s.media_url or '' }}" placeholder="https://… image URL" class="w-full bg-gray-900 border border-gray-700 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-500">
+                    <input name="image_credit_name" value="{{ s.image_credit_name or '' }}" placeholder="Photographer name" class="w-full bg-gray-900 border border-gray-700 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-500">
+                    <input name="image_credit_url" value="{{ s.image_credit_url or '' }}" placeholder="Photographer URL" class="w-full bg-gray-900 border border-gray-700 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-500">
+                    <button type="submit" class="w-full px-2 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded-lg transition-colors">Save image</button>
+                  </form>
+                  <form method="POST" action="/admin/stories/{{ s.id }}/image/swap">
+                    <button type="submit" class="w-full px-2 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs font-medium rounded-lg transition-colors">↻ Swap for a pool photo</button>
+                  </form>
+                  {% if s.media_url %}
+                  <form method="POST" action="/admin/stories/{{ s.id }}/image/remove" onsubmit="return confirm('Remove this story image? The app will show category art instead.')">
+                    <button type="submit" class="w-full px-2 py-1.5 bg-red-900/50 hover:bg-red-800 text-red-300 text-xs font-medium rounded-lg transition-colors">Remove image</button>
+                  </form>
+                  {% endif %}
+                </div>
+              </details>
+            </td>
             <td class="px-5 py-3 max-w-xs">
               <div class="text-white font-medium truncate max-w-xs" title="{{ s.title }}">{{ s.title or '—' }}</div>
               {% if s.stock_note %}<div class="text-cyan-400 text-xs mt-0.5">{{ s.stock_note }}</div>{% endif %}
@@ -100,10 +131,38 @@
       {% if stories %}
       {% for s in stories %}
       <div class="p-4 space-y-3">
+        {% if s.media_url %}
+        <img src="{{ s.media_url }}" alt="" loading="lazy" class="w-full aspect-video object-cover rounded-lg border border-gray-700">
+        <div class="text-gray-500 text-[11px] -mt-1.5">
+          {% if s.image_credit_name %}Photo by {{ s.image_credit_name }}{% endif %}
+          {% if s.image_source == 'manual' %}<span class="text-amber-400">· manual</span>{% endif %}
+        </div>
+        {% else %}
+        <div class="w-full aspect-video rounded-lg border border-dashed border-gray-700 flex items-center justify-center text-gray-600 text-xs">No image — app shows category art</div>
+        {% endif %}
         <div>
           <div class="text-white font-medium">{{ s.title or '—' }}</div>
           {% if s.stock_note %}<div class="text-cyan-400 text-xs mt-0.5">{{ s.stock_note }}</div>{% endif %}
         </div>
+        <details>
+          <summary class="text-sm text-cyan-400 cursor-pointer">Edit image</summary>
+          <div class="mt-2 space-y-1.5">
+            <form method="POST" action="/admin/stories/{{ s.id }}/image" class="space-y-1.5">
+              <input name="media_url" value="{{ s.media_url or '' }}" placeholder="https://… image URL" class="w-full bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-cyan-500">
+              <input name="image_credit_name" value="{{ s.image_credit_name or '' }}" placeholder="Photographer name" class="w-full bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-cyan-500">
+              <input name="image_credit_url" value="{{ s.image_credit_url or '' }}" placeholder="Photographer URL" class="w-full bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-cyan-500">
+              <button type="submit" class="w-full px-3 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg transition-colors">Save image</button>
+            </form>
+            <form method="POST" action="/admin/stories/{{ s.id }}/image/swap">
+              <button type="submit" class="w-full px-3 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm font-medium rounded-lg transition-colors">↻ Swap for a pool photo</button>
+            </form>
+            {% if s.media_url %}
+            <form method="POST" action="/admin/stories/{{ s.id }}/image/remove" onsubmit="return confirm('Remove this story image? The app will show category art instead.')">
+              <button type="submit" class="w-full px-3 py-2.5 bg-red-900/50 hover:bg-red-800 text-red-300 text-sm font-medium rounded-lg transition-colors">Remove image</button>
+            </form>
+            {% endif %}
+          </div>
+        </details>
         <form method="POST" action="/admin/stories/{{ s.id }}/category" class="flex gap-2 items-center">
           <select name="category" class="flex-1 bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-cyan-500">
             {% for cat in categories %}

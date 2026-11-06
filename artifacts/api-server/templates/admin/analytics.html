@@ -1,0 +1,161 @@
+{% extends "admin/base.html" %}
+{% block title %} — Analytics{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Analytics</h1>
+      <p class="text-gray-500 text-sm mt-0.5">
+        Product analytics from CRRNT's own database — no third-party analytics service.
+        Counts exclude devices marked <span class="text-amber-400">internal</span> (your test devices).
+      </p>
+    </div>
+    <a href="/admin/analytics?range={{ range }}" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors self-start">
+      ↺ Refresh
+    </a>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Story Views</div>
+      <div class="text-3xl font-bold text-white mt-1">{{ summary.views_total }}</div>
+      <div class="text-gray-500 text-xs mt-1">{{ summary.views_today }} today</div>
+    </div>
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Stories Completed</div>
+      <div class="text-3xl font-bold text-white mt-1">{{ summary.completions_total }}</div>
+      <div class="text-gray-500 text-xs mt-1">{{ summary.completion_rate }}% of views read or listened to the end</div>
+    </div>
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Active Users</div>
+      <div class="text-3xl font-bold text-white mt-1">{{ summary.users_today }}</div>
+      <div class="text-gray-500 text-xs mt-1">today · {{ summary.users_7d }} last 7 days · {{ summary.users_30d }} last 30 days</div>
+    </div>
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 text-xs font-medium uppercase tracking-wider">Internal Devices</div>
+      <div class="text-3xl font-bold {% if summary.internal_devices > 0 %}text-amber-400{% else %}text-white{% endif %} mt-1">{{ summary.internal_devices }}</div>
+      <div class="text-gray-500 text-xs mt-1">excluded from every count on this page · {{ summary.events_total }} events total</div>
+    </div>
+  </div>
+
+  <!-- Time series -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-700 flex flex-wrap items-center justify-between gap-3">
+      <h2 class="text-sm font-semibold text-white">Story views &amp; active users</h2>
+      <div class="flex gap-1">
+        {% for r in ['hour', 'day', 'week', 'month', 'year'] %}
+        <a href="/admin/analytics?range={{ r }}"
+           class="px-2.5 py-1 rounded-md text-xs font-medium {% if range == r %}bg-cyan-600 text-white{% else %}bg-gray-700 text-gray-300 hover:bg-gray-600{% endif %}">
+          {{ r|capitalize }}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="p-5 space-y-1.5">
+      {% if series %}
+        {% for row in series %}
+        <div class="flex items-center gap-3 text-sm">
+          <div class="w-20 shrink-0 text-gray-400 text-xs">{{ row.label }}</div>
+          <div class="flex-1 bg-gray-700/50 rounded h-5 overflow-hidden">
+            <div class="bg-cyan-500 h-full rounded" style="width: {{ row.bar_pct }}%"></div>
+          </div>
+          <div class="w-36 shrink-0 text-right text-xs text-gray-300">
+            {{ row.story_views }} views · {{ row.active_users }} users
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-gray-500 text-sm">No data yet — events appear here as the app reports them.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Top stories -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-700">
+      <h2 class="text-sm font-semibold text-white">Top stories — last 7 days</h2>
+    </div>
+    {% if top_stories %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-700 text-gray-400 text-xs uppercase tracking-wider">
+            <th class="px-5 py-3 text-left">Story</th>
+            <th class="px-5 py-3 text-left">Category</th>
+            <th class="px-5 py-3 text-right">Views</th>
+            <th class="px-5 py-3 text-right">Completed</th>
+            <th class="px-5 py-3 text-right">Readers</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in top_stories %}
+          <tr class="border-b border-gray-700/50">
+            <td class="px-5 py-3 text-gray-200">{{ s.title or ('Story ' + s.story_id[:8]) }}</td>
+            <td class="px-5 py-3 text-gray-400">{{ s.story_category or '—' }}</td>
+            <td class="px-5 py-3 text-right text-white font-medium">{{ s.views }}</td>
+            <td class="px-5 py-3 text-right text-gray-300">{{ s.completions }}</td>
+            <td class="px-5 py-3 text-right text-gray-300">{{ s.readers }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="px-5 py-4 text-gray-500 text-sm">No story views recorded in the last 7 days yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- Devices -->
+  <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-700">
+      <h2 class="text-sm font-semibold text-white">Devices</h2>
+      <p class="text-gray-500 text-xs mt-0.5">Every device that has used the app, most recent first. Recognize one of your own test devices? Mark it internal and it stops counting toward the numbers above.</p>
+    </div>
+    {% if devices %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-700 text-gray-400 text-xs uppercase tracking-wider">
+            <th class="px-5 py-3 text-left">Device</th>
+            <th class="px-5 py-3 text-left">Platform</th>
+            <th class="px-5 py-3 text-left">First seen</th>
+            <th class="px-5 py-3 text-left">Last seen</th>
+            <th class="px-5 py-3 text-right">Story views</th>
+            <th class="px-5 py-3 text-right">Events</th>
+            <th class="px-5 py-3 text-right">Internal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in devices %}
+          <tr class="border-b border-gray-700/50">
+            <td class="px-5 py-3 font-mono text-xs text-gray-300">{{ d.short_id }}…</td>
+            <td class="px-5 py-3 text-gray-300">{{ d.platform }} <span class="text-gray-500">{{ d.app_version }}</span></td>
+            <td class="px-5 py-3 text-gray-400">{{ d.first_seen.strftime('%b %d') if d.first_seen else '—' }}</td>
+            <td class="px-5 py-3 text-gray-400">{{ d.last_seen.strftime('%b %d, %H:%M') if d.last_seen else '—' }}</td>
+            <td class="px-5 py-3 text-right text-gray-200">{{ d.story_views }}</td>
+            <td class="px-5 py-3 text-right text-gray-400">{{ d.events }}</td>
+            <td class="px-5 py-3 text-right">
+              <form method="POST" action="/admin/analytics/devices/{{ d.device_id }}/internal">
+                <input type="hidden" name="internal" value="{{ '0' if d.is_internal else '1' }}">
+                {% if d.is_internal %}
+                <button type="submit" class="px-2 py-1 bg-amber-900 hover:bg-amber-800 text-amber-300 text-xs font-medium rounded-md">Internal — unmark</button>
+                {% else %}
+                <button type="submit" class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-medium rounded-md">Mark internal</button>
+                {% endif %}
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="px-5 py-4 text-gray-500 text-sm">No devices recorded yet.</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

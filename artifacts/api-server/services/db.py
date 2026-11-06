@@ -504,19 +504,40 @@ async def record_install(platform: str) -> None:
         await conn.execute(sql, platform)
 
 
-async def record_device(device_id: str, platform: str, app_version: str) -> None:
-    sql = """INSERT INTO devices (device_id, platform, app_version)
-             VALUES ($1, $2, $3)
+async def record_device(
+    device_id: str, platform: str, app_version: str, internal: bool = False
+) -> None:
+    # is_internal is sticky-true: a device that has ever self-marked as the
+    # owner's test device (or been marked in the admin portal) stays marked
+    # until an admin unmarks it — a plain heartbeat must not clear the flag.
+    sql = """INSERT INTO devices (device_id, platform, app_version, is_internal)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (device_id) DO UPDATE
                SET last_seen = NOW(),
                    platform = EXCLUDED.platform,
-                   app_version = EXCLUDED.app_version"""
+                   app_version = EXCLUDED.app_version,
+                   is_internal = devices.is_internal OR EXCLUDED.is_internal"""
     async with get_pool().acquire() as conn:
-        await conn.execute(sql, device_id, platform, app_version)
+        await conn.execute(sql, device_id, platform, app_version, internal)
         # Self-enforcing retention: drop devices silent for 90 days.
         await conn.execute(
             "DELETE FROM devices WHERE last_seen < NOW() - INTERVAL '90 days'"
         )
+        # Analytics events age out with their devices and on their own
+        # after 90 days. Guarded: until migration 005 has run on this
+        # database the table does not exist, and a heartbeat must not
+        # fail over a cleanup step — the failure is logged, not hidden.
+        try:
+            await conn.execute(
+                "DELETE FROM analytics_events WHERE device_id NOT IN "
+                "(SELECT device_id FROM devices)"
+            )
+            await conn.execute(
+                "DELETE FROM analytics_events "
+                "WHERE created_at < NOW() - INTERVAL '90 days'"
+            )
+        except Exception as exc:
+            log.warning("Analytics events purge skipped: %s", exc)
 
 
 async def install_totals() -> dict:
@@ -575,6 +596,200 @@ async def device_stats() -> dict:
             or 0
         )
     return {"total": total, "active7": active7, "active30": active30}
+
+
+# ── Internal product analytics ────────────────────────────────────────────────
+# Product events (story views, completions, saves, screen views…) stored in
+# CRRNT's own database — the PostHog replacement. Rows are keyed only by the
+# anonymous device UUID. Headline aggregates EXCLUDE devices marked
+# is_internal (the owner's test devices, which previously inflated every
+# count); the device list shows every device so they can be spotted and
+# marked. All bucketing is in America/New_York, the app's home timezone.
+
+_INTERNAL_FILTER = (
+    "NOT EXISTS (SELECT 1 FROM devices d "
+    "WHERE d.device_id = e.device_id AND d.is_internal)"
+)
+
+
+async def record_event(
+    device_id: str,
+    event: str,
+    story_id: str | None,
+    category: str | None,
+    platform: str,
+    app_version: str,
+    internal: bool = False,
+) -> None:
+    """Store one product event and keep the device row fresh (last_seen,
+    plus the sticky is_internal flag when the device self-marks)."""
+    async with get_pool().acquire() as conn:
+        await conn.execute(
+            """INSERT INTO devices (device_id, platform, app_version, is_internal)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (device_id) DO UPDATE
+                 SET last_seen = NOW(),
+                     platform = EXCLUDED.platform,
+                     app_version = EXCLUDED.app_version,
+                     is_internal = devices.is_internal OR EXCLUDED.is_internal""",
+            device_id, platform, app_version, internal,
+        )
+        await conn.execute(
+            """INSERT INTO analytics_events
+                 (device_id, event, story_id, category, platform, app_version)
+               VALUES ($1, $2, $3, $4, $5, $6)""",
+            device_id, event, story_id, category, platform, app_version,
+        )
+
+
+async def analytics_summary() -> dict:
+    """Headline numbers for the admin Analytics page, internal devices
+    excluded: story views and completions (all time + today), unique
+    active devices (today / 7d / 30d, from events), total events."""
+    async with get_pool().acquire() as conn:
+        row = await conn.fetchrow(
+            f"""SELECT
+                  COUNT(*) FILTER (WHERE e.event = 'story_opened') AS views_total,
+                  COUNT(*) FILTER (WHERE e.event = 'story_opened'
+                    AND (e.created_at AT TIME ZONE 'America/New_York')::date
+                      = (NOW() AT TIME ZONE 'America/New_York')::date) AS views_today,
+                  COUNT(*) FILTER (WHERE e.event = 'story_completed') AS completions_total,
+                  COUNT(*) AS events_total,
+                  COUNT(DISTINCT e.device_id) FILTER (WHERE
+                    (e.created_at AT TIME ZONE 'America/New_York')::date
+                      = (NOW() AT TIME ZONE 'America/New_York')::date) AS users_today,
+                  COUNT(DISTINCT e.device_id) FILTER (WHERE
+                    e.created_at >= NOW() - INTERVAL '7 days') AS users_7d,
+                  COUNT(DISTINCT e.device_id) FILTER (WHERE
+                    e.created_at >= NOW() - INTERVAL '30 days') AS users_30d
+                FROM analytics_events e
+                WHERE {_INTERNAL_FILTER}"""
+        )
+        internal_devices = (
+            await conn.fetchval("SELECT COUNT(*) FROM devices WHERE is_internal") or 0
+        )
+    views_total = row["views_total"] or 0
+    completions_total = row["completions_total"] or 0
+    return {
+        "views_total": views_total,
+        "views_today": row["views_today"] or 0,
+        "completions_total": completions_total,
+        "completion_rate": (
+            round(completions_total / views_total * 100, 1) if views_total else 0
+        ),
+        "events_total": row["events_total"] or 0,
+        "users_today": row["users_today"] or 0,
+        "users_7d": row["users_7d"] or 0,
+        "users_30d": row["users_30d"] or 0,
+        "internal_devices": internal_devices,
+    }
+
+
+# granularity → (date_trunc unit, spine span, bucket count, label format)
+_SERIES_SPECS = {
+    "hour": ("hour", "23 hours", 24, "HH24:00"),
+    "day": ("day", "29 days", 30, "Mon DD"),
+    "week": ("week", "11 weeks", 12, "Mon DD"),
+    "month": ("month", "11 months", 12, "Mon YYYY"),
+    "year": ("year", "4 years", 5, "YYYY"),
+}
+
+
+async def analytics_series(granularity: str) -> list[dict]:
+    """Story views + active devices per time bucket, oldest first, with
+    empty buckets zero-filled. Internal devices excluded."""
+    unit, span, _count, label_fmt = _SERIES_SPECS[granularity]
+    sql = f"""
+        WITH spine AS (
+          SELECT generate_series(
+            date_trunc('{unit}', NOW() AT TIME ZONE 'America/New_York')
+              - INTERVAL '{span}',
+            date_trunc('{unit}', NOW() AT TIME ZONE 'America/New_York'),
+            INTERVAL '1 {unit}'
+          ) AS bucket
+        )
+        SELECT
+          to_char(s.bucket, '{label_fmt}') AS label,
+          COUNT(e.id) FILTER (WHERE e.event = 'story_opened') AS story_views,
+          COUNT(DISTINCT e.device_id) AS active_users,
+          COUNT(e.id) AS events
+        FROM spine s
+        LEFT JOIN analytics_events e
+          ON date_trunc('{unit}', e.created_at AT TIME ZONE 'America/New_York')
+             = s.bucket
+         AND {_INTERNAL_FILTER}
+        GROUP BY s.bucket
+        ORDER BY s.bucket
+    """
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(sql)
+    return [
+        {
+            "label": r["label"],
+            "story_views": r["story_views"] or 0,
+            "active_users": r["active_users"] or 0,
+            "events": r["events"] or 0,
+        }
+        for r in rows
+    ]
+
+
+async def analytics_top_stories(days: int = 7, limit: int = 15) -> list[dict]:
+    """Most-viewed stories in the window: views, completions, unique
+    readers. Internal devices excluded. Stories that have expired out of
+    the 7-day feed still appear (title resolved when the row still
+    exists; otherwise the story id stands alone)."""
+    sql = f"""
+        SELECT
+          e.story_id,
+          COALESCE(s.display_title, s.title) AS title,
+          s.category AS story_category,
+          COUNT(*) FILTER (WHERE e.event = 'story_opened') AS views,
+          COUNT(*) FILTER (WHERE e.event = 'story_completed') AS completions,
+          COUNT(DISTINCT e.device_id) FILTER
+            (WHERE e.event = 'story_opened') AS readers
+        FROM analytics_events e
+        LEFT JOIN stories s ON s.id::text = e.story_id
+        WHERE e.story_id IS NOT NULL
+          AND e.created_at >= NOW() - INTERVAL '{int(days)} days'
+          AND {_INTERNAL_FILTER}
+        GROUP BY e.story_id, s.display_title, s.title, s.category
+        HAVING COUNT(*) FILTER (WHERE e.event = 'story_opened') > 0
+        ORDER BY views DESC
+        LIMIT {int(limit)}
+    """
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(sql)
+    return [dict(r) for r in rows]
+
+
+async def analytics_devices(limit: int = 50) -> list[dict]:
+    """Every known device with its activity, newest activity first —
+    internal devices included and flagged, so the owner can spot their
+    own test devices and mark any that are unmarked."""
+    sql = """
+        SELECT
+          d.device_id, d.platform, d.app_version, d.is_internal,
+          d.first_seen, d.last_seen,
+          COUNT(e.id) AS events,
+          COUNT(e.id) FILTER (WHERE e.event = 'story_opened') AS story_views
+        FROM devices d
+        LEFT JOIN analytics_events e ON e.device_id = d.device_id
+        GROUP BY d.device_id
+        ORDER BY d.last_seen DESC
+        LIMIT $1
+    """
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(sql, limit)
+    return [dict(r) for r in rows]
+
+
+async def set_device_internal(device_id: str, internal: bool) -> None:
+    async with get_pool().acquire() as conn:
+        await conn.execute(
+            "UPDATE devices SET is_internal = $2 WHERE device_id = $1",
+            device_id, internal,
+        )
 
 
 # ── Password reset tokens ──────────────────────────────────────────────────────

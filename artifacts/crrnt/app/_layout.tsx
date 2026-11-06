@@ -453,8 +453,8 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
-  // PostHog screen views (lib/analytics): one per route change. No-op
-  // until EXPO_PUBLIC_POSTHOG_KEY is configured at build time.
+  // Internal analytics screen views (lib/analytics): one per route
+  // change, sent to CRRNT's own backend.
   const pathname = usePathname();
   useEffect(() => {
     if (pathname) captureScreen(pathname);

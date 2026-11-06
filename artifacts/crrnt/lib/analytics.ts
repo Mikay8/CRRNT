@@ -1,33 +1,36 @@
 /**
- * PostHog product analytics — privacy-clean by design.
+ * Internal product analytics — events go to CRRNT's own backend.
  *
- * Why a hand-rolled client instead of the PostHog SDK: everything CRRNT
- * needs is custom events (story opened / played / completed, filter and
- * save taps) plus screen views and retention. PostHog ingests those over
- * a plain HTTPS POST, so no SDK, no native module, and no new EAS build
- * requirement beyond the JS bundle. There is deliberately NO autocapture,
- * NO session recording, and NO identify() — events are keyed only by the
- * same random on-device UUID the usage metrics already use
- * (lib/deviceMetrics), never joined to a name, email, or account.
+ * This replaces the short-lived PostHog integration: events are POSTed to
+ * the backend's /api/metrics/event endpoint and stored in CRRNT's own
+ * database, where the admin portal's Analytics page reads them. Nothing
+ * is sent to a third-party analytics service.
  *
- * Configuration comes from the environment at build/export time:
- *   EXPO_PUBLIC_POSTHOG_KEY   the project's public phc_ key
- *   EXPO_PUBLIC_POSTHOG_HOST  ingest host (default US cloud)
- * With no key set, every call is a no-op, so dev builds and any build
- * made before the key is provisioned stay completely silent.
+ * Events are keyed only by the same random on-device UUID the usage
+ * metrics already use (lib/deviceMetrics), never joined to a name,
+ * email, or account. Devices marked internal (the owner's test devices)
+ * are flagged on every event so the dashboard can exclude them from
+ * headline counts.
  *
  * Like the metrics pings, capture is best-effort and must never break
- * the app: failures are swallowed.
+ * the app: failures are swallowed and the event is simply lost.
  */
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
-import { getDeviceId } from "./deviceMetrics";
+import { getApiBase, getDeviceId, isInternalDevice } from "./deviceMetrics";
 
-const POSTHOG_KEY = process.env.EXPO_PUBLIC_POSTHOG_KEY ?? "";
-const POSTHOG_HOST = (
-  process.env.EXPO_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com"
-).replace(/\/+$/, "");
+// The event names the backend whitelists (see /api/metrics/event in the
+// API server). Anything else is ignored server-side.
+const KNOWN_EVENTS = new Set([
+  "story_opened",
+  "story_completed",
+  "story_played",
+  "story_saved",
+  "story_unsaved",
+  "story_shared",
+  "feed_filter_selected",
+]);
 
 function platform(): string {
   return Platform.OS === "ios" || Platform.OS === "android"
@@ -39,48 +42,61 @@ function appVersion(): string {
   return Constants.expoConfig?.version ?? "unknown";
 }
 
-let distinctIdPromise: Promise<string> | null = null;
-function distinctId(): Promise<string> {
-  if (!distinctIdPromise) distinctIdPromise = getDeviceId();
-  return distinctIdPromise;
+let deviceIdPromise: Promise<string> | null = null;
+function deviceId(): Promise<string> {
+  if (!deviceIdPromise) deviceIdPromise = getDeviceId();
+  return deviceIdPromise;
+}
+
+async function postEvent(
+  event: string,
+  properties?: Record<string, unknown>,
+): Promise<void> {
+  const base = getApiBase();
+  if (!base) return;
+  await fetch(`${base}/api/metrics/event`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      device_id: await deviceId(),
+      event,
+      story_id:
+        typeof properties?.story_id === "string" ? properties.story_id : null,
+      category:
+        typeof properties?.category === "string" ? properties.category : null,
+      platform: platform(),
+      app_version: appVersion(),
+      internal: await isInternalDevice(),
+    }),
+  });
 }
 
 /**
- * Send one event to PostHog. Fire-and-forget: returns immediately, never
- * throws, and silently does nothing when no key is configured.
+ * Send one event to CRRNT's backend. Fire-and-forget: returns
+ * immediately and never throws. Only the fields the backend stores are
+ * sent (story_id / category are pulled out of properties).
  */
-export function capture(event: string, properties?: Record<string, unknown>): void {
-  if (!POSTHOG_KEY) return;
+export function capture(
+  event: string,
+  properties?: Record<string, unknown>,
+): void {
+  if (!KNOWN_EVENTS.has(event)) return;
   void (async () => {
     try {
-      const deviceId = await distinctId();
-      await fetch(`${POSTHOG_HOST}/capture/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          api_key: POSTHOG_KEY,
-          event,
-          distinct_id: deviceId,
-          properties: {
-            platform: platform(),
-            app_version: appVersion(),
-            $lib: "crrnt-fetch",
-            ...properties,
-          },
-          timestamp: new Date().toISOString(),
-        }),
-      });
+      await postEvent(event, properties);
     } catch {
       // Analytics must never break the app.
     }
   })();
 }
 
-/** Screen view: $pageview on web, $screen on native (PostHog convention). */
-export function captureScreen(pathname: string): void {
-  if (Platform.OS === "web") {
-    capture("$pageview", { $current_url: pathname });
-  } else {
-    capture("$screen", { $screen_name: pathname });
-  }
+/** Screen view: one per route change, stored as event "screen_view". */
+export function captureScreen(_pathname: string): void {
+  void (async () => {
+    try {
+      await postEvent("screen_view");
+    } catch {
+      // Analytics must never break the app.
+    }
+  })();
 }

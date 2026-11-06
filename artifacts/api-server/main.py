@@ -207,6 +207,7 @@ class MetricsDeviceBody(BaseModel):
     device_id: str
     platform: str
     app_version: str | None = None
+    internal: bool = False
 
 
 @app.post("/api/metrics/install", tags=["metrics"])
@@ -237,10 +238,71 @@ async def record_device_metric(body: MetricsDeviceBody) -> dict:
     try:
         from services import db
 
-        await db.record_device(device_id, body.platform, (body.app_version or "unknown")[:32])
+        await db.record_device(
+            device_id,
+            body.platform,
+            (body.app_version or "unknown")[:32],
+            internal=body.internal,
+        )
     except Exception as exc:
         log.warning("Metrics device store failed: %s", exc)
         raise HTTPException(status_code=503, detail="Could not record device")
+    return {"status": "ok"}
+
+
+# ── Internal product analytics ────────────────────────────────────────────────
+# The PostHog replacement: product events (story views, completions, saves,
+# screen views) are stored in CRRNT's own database and read back only
+# through the admin portal's Analytics page. Same contract as the metrics
+# endpoints above: unauthenticated (guests), strict whitelist validation,
+# unknown shapes are ignored, DB failure returns 503 so the app can retry.
+
+_EVENT_TYPES = (
+    "screen_view",
+    "story_opened",
+    "story_completed",
+    "story_played",
+    "story_saved",
+    "story_unsaved",
+    "story_shared",
+    "feed_filter_selected",
+)
+
+
+class MetricsEventBody(BaseModel):
+    device_id: str
+    event: str
+    story_id: str | None = None
+    category: str | None = None
+    platform: str
+    app_version: str | None = None
+    internal: bool = False
+
+
+@app.post("/api/metrics/event", tags=["metrics"])
+async def record_event_metric(body: MetricsEventBody) -> dict:
+    from fastapi import HTTPException
+
+    if body.platform not in _METRIC_PLATFORMS or body.event not in _EVENT_TYPES:
+        return {"status": "ignored"}
+    device_id = (body.device_id or "").lower()
+    if not _UUID_RE.fullmatch(device_id):
+        return {"status": "ignored"}
+    try:
+        from services import db
+
+        await db.record_event(
+            device_id,
+            body.event,
+            (body.story_id or "")[:64] or None,
+            (body.category or "")[:32] or None,
+            body.platform,
+            (body.app_version or "unknown")[:32],
+            internal=body.internal,
+        )
+    except Exception as exc:
+        log.warning("Metrics event store failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Could not record event")
     return {"status": "ok"}
 
 

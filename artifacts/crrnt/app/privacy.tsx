@@ -91,7 +91,7 @@ export default function PrivacyPolicyScreen() {
             CRRNT Privacy Policy
           </Text>
           <Text style={[pStyles.meta, { color: theme.textDim }]}>
-            Effective date: 5 November 2026
+            Effective date: 6 November 2026
           </Text>
           <Text style={[pStyles.meta, { color: theme.textDim }]}>
             Contact for privacy questions: mikayla@crrnt-news.com
@@ -166,17 +166,17 @@ export default function PrivacyPolicyScreen() {
             version. It is linked to a device only, through first-seen and
             last-seen dates, so we can tell a returning device from a new
             one. It is not an advertising identifier, and it is not shared
-            with advertisers.
+            with advertisers or other third parties.
           </Body>
           <Body theme={theme}>
-            The same anonymous device identifier is also sent with
-            product-analytics events to PostHog, our analytics provider
-            (hosted in the United States): stories opened, played, and
-            read or listened to completion; feed-filter taps; stories
-            saved, unsaved, and shared; and screen views. These events
-            carry only the story, category, and action — no name, email,
-            account, or location. Session recording and automatic capture
-            are off, and no advertising identifier is sent.
+            The same anonymous device identifier is also stored with
+            product-analytics events on our own server: stories opened,
+            played, and read or listened to completion; feed-filter taps;
+            stories saved, unsaved, and shared; and screen views. These
+            events carry only the story, category, and action — no name,
+            email, account, or location — and they are never sent to an
+            analytics provider or any other third party. We use them only
+            to see which stories people read and how many people return.
           </Body>
           <Body theme={theme}>
             Retention: We delete records for devices that have been
@@ -254,17 +254,11 @@ export default function PrivacyPolicyScreen() {
             anonymous push token is shared with the Expo push service so a
             notification can be delivered to your device.
           </Bullet>
-          <Bullet theme={theme}>
-            PostHog — product analytics. Your anonymous device identifier
-            and the product events listed in section 3 are sent to PostHog
-            so we can see which stories are read to completion and how
-            many people return. PostHog processes this information only
-            for that purpose, under its own policy.
-          </Bullet>
           <Body theme={theme}>
-            We do not use an advertising SDK in this version. Product
-            analytics is sent with plain network requests, not an
-            analytics SDK.
+            We do not use an advertising SDK or an analytics SDK in this
+            version, and product analytics is not sent to any third-party
+            analytics service — it is collected by the app itself and
+            stored on our own servers, as described in section 3.
           </Body>
           <Body theme={theme}>
             Stories in CRRNT link out to publisher websites. Those publishers

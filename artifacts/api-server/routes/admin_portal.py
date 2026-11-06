@@ -637,6 +637,59 @@ async def reset_usage(_: None = Depends(_verify_admin)):
     return RedirectResponse(url="/admin/usage", status_code=302)
 
 
+# ── Analytics (internal product analytics) ────────────────────────────────────
+
+
+@router.get("/analytics", response_class=HTMLResponse)
+async def admin_analytics(
+    request: Request,
+    range: str = "day",
+    _: None = Depends(_verify_admin),
+):
+    if range not in ("hour", "day", "week", "month", "year"):
+        range = "day"
+    summary = await _safe_db(
+        db.analytics_summary(),
+        {
+            "views_total": 0, "views_today": 0, "completions_total": 0,
+            "completion_rate": 0, "events_total": 0, "users_today": 0,
+            "users_7d": 0, "users_30d": 0, "internal_devices": 0,
+        },
+    )
+    series = await _safe_db(db.analytics_series(range), [])
+    max_views = max((r["story_views"] for r in series), default=0)
+    for r in series:
+        r["bar_pct"] = round(r["story_views"] / max_views * 100) if max_views else 0
+    top_stories = await _safe_db(db.analytics_top_stories(days=7, limit=15), [])
+    devices = await _safe_db(db.analytics_devices(limit=50), [])
+    for d in devices:
+        d["short_id"] = (d["device_id"] or "")[:8]
+    return templates.TemplateResponse(
+        request,
+        "admin/analytics.html",
+        {
+            "page": "analytics",
+            "range": range,
+            "summary": summary,
+            "series": series,
+            "top_stories": top_stories,
+            "devices": devices,
+        },
+    )
+
+
+@router.post("/analytics/devices/{device_id}/internal")
+async def set_device_internal(
+    device_id: str,
+    request: Request,
+    _: None = Depends(_verify_admin),
+):
+    form = await request.form()
+    internal = (form.get("internal") or "") == "1"
+    await _safe_db(db.set_device_internal(device_id, internal), None)
+    return RedirectResponse(url="/admin/analytics", status_code=302)
+
+
 # ── Ingestion actions ─────────────────────────────────────────────────────────
 
 

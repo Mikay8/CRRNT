@@ -19,8 +19,10 @@ import { Platform } from "react-native";
 const DEVICE_ID_KEY = "@crrnt/device-id/v1";
 const INSTALL_COUNTED_KEY = "@crrnt/install-counted/v1";
 const LAST_DEVICE_PING_KEY = "@crrnt/last-device-ping/v1";
+const INTERNAL_KEY = "@crrnt/internal/v1";
+const DEVICE_ID_COOKIE = "crrnt_device_id";
 
-function getApiBase(): string {
+export function getApiBase(): string {
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
   if (domain) return `https://${domain}`;
   const base = process.env.EXPO_PUBLIC_API_BASE;
@@ -47,12 +49,69 @@ function uuidv4(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+// On web the UUID also lives in a first-party cookie. AsyncStorage on web
+// is localStorage, and clearing site data (or testing in a fresh profile)
+// used to mint a brand-new "user" every time, inflating the counts and
+// making the owner's own testing indistinguishable from real readers.
+// The cookie survives a localStorage-only clear, so the same browser
+// keeps the same identity. It is a random UUID, not a fingerprint.
+function readDeviceIdCookie(): string | null {
+  if (Platform.OS !== "web" || typeof document === "undefined") return null;
+  const match = document.cookie.match(
+    new RegExp(`(?:^|; )${DEVICE_ID_COOKIE}=([0-9a-f-]{36})`),
+  );
+  return match ? match[1] : null;
+}
+
+function writeDeviceIdCookie(id: string): void {
+  if (Platform.OS !== "web" || typeof document === "undefined") return;
+  // 400 days is the practical cookie lifetime cap in modern browsers.
+  document.cookie = `${DEVICE_ID_COOKIE}=${id}; path=/; max-age=34560000; SameSite=Lax`;
+}
+
 export async function getDeviceId(): Promise<string> {
   const stored = await AsyncStorage.getItem(DEVICE_ID_KEY);
-  if (stored) return stored;
+  if (stored) {
+    writeDeviceIdCookie(stored);
+    return stored;
+  }
+  const fromCookie = readDeviceIdCookie();
+  if (fromCookie) {
+    await AsyncStorage.setItem(DEVICE_ID_KEY, fromCookie);
+    return fromCookie;
+  }
   const id = uuidv4();
   await AsyncStorage.setItem(DEVICE_ID_KEY, id);
+  writeDeviceIdCookie(id);
   return id;
+}
+
+let internalPromise: Promise<boolean> | null = null;
+
+/**
+ * Whether this device is the owner's own test device. Internal devices
+ * are excluded from the admin analytics headline counts — before this,
+ * the owner's testing was counted as readers, repeatedly. On web, visit
+ * the site once with ?internal=1 to mark this browser (and ?internal=0
+ * to unmark); the flag then sticks. Native devices are marked from the
+ * admin portal's Analytics device list instead.
+ */
+export function isInternalDevice(): Promise<boolean> {
+  if (!internalPromise) {
+    internalPromise = (async () => {
+      try {
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          const param = new URLSearchParams(window.location.search).get("internal");
+          if (param === "1") await AsyncStorage.setItem(INTERNAL_KEY, "1");
+          if (param === "0") await AsyncStorage.removeItem(INTERNAL_KEY);
+        }
+        return (await AsyncStorage.getItem(INTERNAL_KEY)) === "1";
+      } catch {
+        return false;
+      }
+    })();
+  }
+  return internalPromise;
 }
 
 function platform(): string {
@@ -101,6 +160,7 @@ export async function reportDeviceMetrics(): Promise<void> {
         device_id: deviceId,
         platform: platform(),
         app_version: appVersion(),
+        internal: await isInternalDevice(),
       });
       if (ok) await AsyncStorage.setItem(LAST_DEVICE_PING_KEY, today);
     }

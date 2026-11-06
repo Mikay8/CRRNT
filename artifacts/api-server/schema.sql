@@ -226,3 +226,31 @@ CREATE TABLE IF NOT EXISTS devices (
 
 CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen);
 CREATE INDEX IF NOT EXISTS idx_devices_first_seen ON devices(first_seen);
+
+-- Migration 005 — internal product analytics (also in migrations/005_internal_analytics.sql).
+-- Product events stored in CRRNT's own database (PostHog removed): keyed only
+-- by the anonymous device UUID, never joined to accounts, names, emails, or
+-- IPs. devices.is_internal marks the owner's test devices so the admin
+-- Analytics page can exclude them from headline counts. Events are purged
+-- after 90 days together with the device purge.
+CREATE TABLE IF NOT EXISTS analytics_events (
+  id BIGSERIAL PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  event TEXT NOT NULL,
+  story_id TEXT,
+  category TEXT,
+  platform TEXT NOT NULL,
+  app_version TEXT NOT NULL DEFAULT 'unknown',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_events_created
+  ON analytics_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_event
+  ON analytics_events(event, created_at);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_story
+  ON analytics_events(story_id) WHERE story_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_analytics_events_device
+  ON analytics_events(device_id);
+
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS is_internal BOOLEAN NOT NULL DEFAULT FALSE;

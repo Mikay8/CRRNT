@@ -93,7 +93,7 @@ SYSTEM_PROMPT = (
     "use 'why' unless the story actually explains why. No all-caps, no "
     "emoji, no shock words the facts do not earn.\n\n"
     "Write BODYBULLETS: the whole story as an array of exactly 3 "
-    "strings, each EXACTLY ONE sentence of at most 20 words - 60 "
+    "strings, each EXACTLY ONE sentence of at most 25 words - 75 "
     "words across all three at most, and shorter is better. Readers "
     "skim these. Plain everyday language, like you're explaining it "
     "to a friend who just asked 'wait, what happened?' Make every "
@@ -104,7 +104,9 @@ SYSTEM_PROMPT = (
     "move that', and any sentence that could run under any story. "
     "The reader just saw the display title, so bullet 1 does NOT "
     "restate it - open with the single most interesting concrete "
-    "detail: what happened, with the key names and numbers. Bullet "
+    "detail: what happened, with the key names and numbers. Saying "
+    "the same thing as the title in different words still counts as "
+    "restating: bullet 1 must contain a fact the title does not. Bullet "
     "2 is the context: who is involved, why it is happening now, "
     "what led here - still told through specifics, not trends. "
     "Bullet 3 is the payoff when the "
@@ -274,6 +276,153 @@ def _clean_bullets(raw: Any) -> Optional[list[str]]:
     return out
 
 
+# The owner's hard cap per bullet (2026-11-07). The prompt asks for
+# it; this is what guarantees it - see _repair_bullets.
+_BULLET_WORD_CAP = 25
+
+# Function words and reporting verbs carry no story facts; overlap is
+# measured on the tokens that remain.
+_OVERLAP_STOPWORDS = frozenset(
+    "the a an and or but of to in on for with at by from as is are was "
+    "were be been being it its this that these those will would could "
+    "should shall has have had not no after before over under about "
+    "into than then so such said says say told per via amid among "
+    "between during against through out up down off again also just "
+    "now still yet more most other others one two new".split()
+)
+
+
+def _content_tokens(text: str) -> list[str]:
+    """Content-bearing tokens of a text, lightly normalized (quotes
+    and possessives removed, crude suffix stem) so the title and a
+    bullet can be compared for overlap."""
+    out: list[str] = []
+    for raw in (text or "").lower().replace("'", "").split():
+        tok = "".join(ch for ch in raw if ch.isalnum())
+        if len(tok) > 3:
+            for suffix in ("ing", "ed", "es", "s", "d"):
+                if tok.endswith(suffix) and len(tok) - len(suffix) >= 3:
+                    tok = tok[: -len(suffix)]
+                    break
+        if tok and tok not in _OVERLAP_STOPWORDS:
+            out.append(tok)
+    return out
+
+
+def _restates_title(bullet: str, headline: str) -> bool:
+    """True when bullet 1 adds essentially nothing to the headline.
+
+    Either most of the bullet's content words already appear in the
+    headline (a synonym-swapped repeat reads the same, and in audio
+    it IS the same - the listener just heard the title), or the
+    bullet contributes almost no new content words at all.
+    """
+    bt = _content_tokens(bullet)
+    tt = set(_content_tokens(headline))
+    if not bt or not tt:
+        return False
+    shared = sum(1 for t in bt if t in tt)
+    fresh = {t for t in bt if t not in tt}
+    return shared / len(bt) >= 0.55 or len(fresh) <= 2
+
+
+async def _rewrite_bullet(
+    bullet: str,
+    headline: str,
+    context: str,
+    *,
+    fix_restate: bool,
+) -> Optional[str]:
+    """One Claude attempt at repairing a single bullet: <=
+    _BULLET_WORD_CAP words, one sentence, facts only from the bullet
+    and the story context. Returns None on any failure - a repair
+    must never make things worse, and an unrepaired grammatical
+    bullet beats a mutilated one."""
+    rules = (
+        "Rewrite ONE bullet point from a short news story.\n"
+        f"Headline: {headline}\n"
+        f"Bullet to rewrite: {bullet}\n"
+        f"Story context: {context[:700]}\n\n"
+        "Rules: exactly one sentence, at most 25 words, plain "
+        "everyday language, active voice. Use ONLY facts from the "
+        "bullet or the context - invent nothing, drop no names, "
+        "numbers or qualifiers."
+    )
+    if fix_restate:
+        rules += (
+            " The bullet merely restates the headline, so open "
+            "instead with the most concrete detail the context gives "
+            "that the headline does NOT contain - a person, a number, "
+            "a quote, a moment."
+        )
+    else:
+        rules += " Keep every fact in the bullet; cut words, not facts."
+    rules += "\nReply with the rewritten sentence only."
+    try:
+        client = _get_client()
+        msg = await client.messages.create(
+            model=MODEL,
+            max_tokens=120,
+            messages=[{"role": "user", "content": rules}],
+        )
+        text = "".join(
+            b.text for b in msg.content if getattr(b, "type", "") == "text"
+        )
+    except Exception as exc:
+        log.warning("Bullet repair call failed: %s", exc)
+        return None
+    cand = _first_sentence(_sanitize(text).strip().strip('"').strip())
+    if not cand or "{" in cand or "}" in cand:
+        return None
+    words = len(cand.split())
+    if words > _BULLET_WORD_CAP or words < 5:
+        log.info("Bullet repair missed the cap (%d words): %s", words, cand[:60])
+        return None
+    return cand
+
+
+async def _repair_bullets(
+    bullets: list[str],
+    display_title: Optional[str],
+    title: str,
+    description: str,
+) -> list[str]:
+    """Guarantee the two rules a prompt alone kept missing (owner,
+    2026-11-07): no bullet over _BULLET_WORD_CAP words, and bullet 1
+    never a restatement of the title. Each offending bullet gets ONE
+    rewrite attempt; a failed attempt keeps the original and logs.
+    Clean bullets cost no extra calls."""
+    headline = display_title or title or ""
+    fixed = list(bullets)
+    for i, bullet in enumerate(fixed):
+        over = len(bullet.split()) > _BULLET_WORD_CAP
+        restates = i == 0 and _restates_title(bullet, headline)
+        if not over and not restates:
+            continue
+        rewrite = await _rewrite_bullet(
+            bullet, headline, description, fix_restate=restates
+        )
+        if rewrite is None:
+            log.warning(
+                "Bullets: bullet %d kept unrepaired (%s): %s",
+                i + 1,
+                "restates title" if restates else "over cap",
+                bullet[:60],
+            )
+            continue
+        if restates and _restates_title(rewrite, headline):
+            log.warning("Bullets: repair still restates the title; keeping original")
+            continue
+        log.info(
+            "Bullets: repaired bullet %d (%s): %d -> %d words",
+            i + 1,
+            "restate" if restates else "over cap",
+            len(bullet.split()), len(rewrite.split()),
+        )
+        fixed[i] = rewrite
+    return fixed
+
+
 def _clean_explainers(
     raw: Any,
     bullets: list[str],
@@ -438,6 +587,10 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     )
     if bullets and explainers:
         bullets = _strip_inline_definitions(bullets, explainers)
+    if bullets:
+        bullets = await _repair_bullets(
+            bullets, display_title, title, description
+        )
     if bullets:
         story_summary = " ".join(bullets)
     else:

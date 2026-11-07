@@ -23,7 +23,7 @@ import { DESKTOP, desktopBarFrame } from "@/hooks/useLayoutMode";
 import { usePlayerDock } from "@/hooks/usePlayerDock";
 import { formatTime } from "@/utils/formatTime";
 import { formatRelativeTime } from "@/utils/time";
-import { sourceDomain } from "@/utils/url";
+import { sourceDomain, storyShareMessage } from "@/utils/url";
 
 const clamp01 = (x: number) => {
   "worklet";
@@ -152,7 +152,7 @@ export default function DesktopPlayer() {
 
   const share = () => {
     if (!story) return;
-    Share.share({ message: [story.display_title || story.title, story.source_url].filter(Boolean).join("\n") }).catch(
+    Share.share({ message: storyShareMessage(story.display_title || story.title, story.id) }).catch(
       () => undefined,
     );
   };
@@ -267,7 +267,7 @@ export default function DesktopPlayer() {
                 {story?.display_title || story?.title}
               </Text>
               <Text style={styles.fullSource}>
-                {sourceDomain(story?.source_url)}
+                Source: {sourceDomain(story?.source_url)}
                 {story?.published_at ? ` · ${formatRelativeTime(story.published_at)}` : ""}
               </Text>
             </View>

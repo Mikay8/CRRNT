@@ -46,6 +46,7 @@ import {
 import { CATEGORY_ICONS, getCategoryMeta } from "@/constants/categories";
 import StoryImage from "@/components/StoryImage";
 import { useAudio, useAudioProgress } from "@/contexts/AudioContext";
+import { storyShareMessage } from "@/utils/url";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
 import {
   isPersonalizationActive,
@@ -653,7 +654,7 @@ export default function StoryDetailScreen() {
     Haptics.selectionAsync().catch(() => undefined);
     capture("story_shared", { story_id: story.id, category: story.category });
     Share.share({
-      message: [title, story.source_url].filter(Boolean).join("\n"),
+      message: storyShareMessage(title, story.id),
     }).catch(() => undefined);
   };
 
@@ -805,7 +806,7 @@ export default function StoryDetailScreen() {
             <Text style={[styles.title, isDesktop && styles.titleDesktop]}>{title}</Text>
 
             <Text style={styles.meta}>
-              <Text style={styles.metaSource}>{displaySource}</Text>
+              <Text style={styles.metaSource}>Source: {displaySource}</Text>
               {story.published_at
                 ? `  ·  ${formatRelativeTime(story.published_at)}  ·  ${formatDateTime(story.published_at)}`
                 : ""}
@@ -1045,7 +1046,7 @@ export default function StoryDetailScreen() {
                         numberOfLines={1}
                       >
                         {nextMeta ? `${nextMeta.label} · ` : ""}
-                        {sourceDomain(nextStory.source_url)}
+                        Source: {sourceDomain(nextStory.source_url)}
                       </Text>
                     </View>
                     <Text style={styles.nextTitle} numberOfLines={3}>

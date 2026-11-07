@@ -396,7 +396,7 @@ export function StoryCard({ story, variant = "list", fromContext }: StoryCardPro
 
           <View style={[styles.footer, grid && styles.footerPinned]}>
             <Text style={styles.source} numberOfLines={1}>
-              {displaySource}
+              Source: {displaySource}
             </Text>
             <View style={styles.footerRight}>
               {isToday(timestamp) ? (

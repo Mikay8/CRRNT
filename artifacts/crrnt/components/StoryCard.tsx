@@ -78,7 +78,7 @@ export function StoryCard({ story, variant = "list", fromContext }: StoryCardPro
   const desktop = variant !== "list";
   const feature = variant === "feature";
   const grid = variant === "grid";
-  const { toggleSaved, isSaved } = useSavedStories();
+  const { toggleSaved, isSaved, saveLimit } = useSavedStories();
   const { user } = useAuth();
   const canSave = canSaveStories(!!user);
   const { story: current, isPlaying, playStory, togglePlayPause, isBarVisible, addToQueue, removeFromQueue, queue } =
@@ -145,9 +145,16 @@ export function StoryCard({ story, variant = "list", fromContext }: StoryCardPro
     },
   );
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!canSave) return;
-    toggleSaved(story).catch(() => undefined);
+    const result = await toggleSaved(story).catch(() => undefined);
+    if (result === "limit") {
+      showToast({
+        text: `Save limit reached — ${saveLimit} max`,
+        color: "#F59E0B",
+      });
+      return;
+    }
     showToast(
       saved
         ? { text: "Removed from Saved", color: "#64748B" }

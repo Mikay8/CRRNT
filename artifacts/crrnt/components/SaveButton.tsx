@@ -6,6 +6,7 @@ import { useThemeContext } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { canSaveStories } from "@/constants/features";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
+import { useShowToast } from "@/contexts/ToastContext";
 import type { Story } from "@workspace/api-client-react";
 
 interface SaveButtonProps {
@@ -16,12 +17,13 @@ interface SaveButtonProps {
 }
 
 export function SaveButton({ story, size = 22, color }: SaveButtonProps) {
-  const { isSaved, toggleSaved } = useSavedStories();
+  const { isSaved, toggleSaved, saveLimit } = useSavedStories();
+  const showToast = useShowToast();
   const { user } = useAuth();
   const { theme: palette } = useThemeContext();
   const saved = isSaved(story.id);
 
-  const handlePress = () => {
+  const handlePress = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
     if (!canSaveStories(!!user)) {
       Alert.alert(
@@ -35,7 +37,16 @@ export function SaveButton({ story, size = 22, color }: SaveButtonProps) {
       );
       return;
     }
-    toggleSaved(story).catch(() => undefined);
+    const result = await toggleSaved(story).catch(() => undefined);
+    if (result === "limit") {
+      // Toast, not Alert: Alert.alert renders nothing on web, and the
+      // limit is only useful if the user actually sees it. Same
+      // wording as the card swipe's limit toast.
+      showToast({
+        text: `Save limit reached — ${saveLimit} max`,
+        color: "#F59E0B",
+      });
+    }
   };
 
   return (

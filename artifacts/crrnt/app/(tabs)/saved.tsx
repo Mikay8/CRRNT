@@ -15,7 +15,7 @@ import { reportScroll } from "@/hooks/useFastScroll";
 
 export default function SavedScreen() {
   const insets = useSafeAreaInsets();
-  const { saved } = useSavedStories();
+  const { saved, saveLimit } = useSavedStories();
   const { theme: palette } = useThemeContext();
   const styles = useMemo(() => createStyles(palette), [palette]);
   const bottomPad = useChromeBottomPadding();
@@ -39,7 +39,7 @@ export default function SavedScreen() {
   );
 
   if (isDesktop) {
-    const countLabel = `${saved.length} ${saved.length === 1 ? "story" : "stories"}`;
+    const countLabel = `${saved.length} of ${saveLimit} ${saveLimit === 1 ? "story" : "stories"}`;
     return (
       <View style={styles.container}>
         <DesktopHeader
@@ -81,7 +81,7 @@ export default function SavedScreen() {
       >
         <Text style={[styles.brand, { paddingHorizontal: hPad }]}>Saved</Text>
         <Text style={[styles.subtitle, { paddingHorizontal: hPad }]}>
-          {saved.length} {saved.length === 1 ? "story" : "stories"} you bookmarked
+          {saved.length} of {saveLimit} {saveLimit === 1 ? "story" : "stories"} you bookmarked
         </Text>
       </View>
 

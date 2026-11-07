@@ -1,6 +1,7 @@
 import {
   ActivityIndicator,
   Linking,
+  Modal,
   Platform,
   Pressable,
   Share,
@@ -40,6 +41,7 @@ import {
   useGetStory,
   useListStories,
   type Story,
+  type StoryExplainer,
 } from "@workspace/api-client-react";
 import { CATEGORY_ICONS, getCategoryMeta } from "@/constants/categories";
 import StoryImage from "@/components/StoryImage";
@@ -167,6 +169,104 @@ const AnimatedGHScrollView = Animated.createAnimatedComponent(GHScrollView);
 const MOBILE = { sheetTop: 350, heroH: 410, topRowH: 60 };
 const DESKTOP_PANEL = { sheetTop: 320, heroH: 390, topRowH: 76, maxW: 760, margin: 24, hPad: 52 };
 
+type StoryStyles = ReturnType<typeof createStyles>;
+
+/** Split one bullet's text into plain and explainer-linked segments.
+ * Each explainer links its first occurrence in this bullet; StoryBody
+ * retires a term once used so it links at most once per story. */
+function linkifyBullet(
+  text: string,
+  explainers: StoryExplainer[],
+): { text: string; explainer?: StoryExplainer }[] {
+  let segs: { text: string; explainer?: StoryExplainer }[] = [{ text }];
+  for (const ex of explainers) {
+    const term = (ex.term || "").trim();
+    if (!term) continue;
+    const next: typeof segs = [];
+    let used = false;
+    for (const seg of segs) {
+      if (used || seg.explainer) {
+        next.push(seg);
+        continue;
+      }
+      const idx = seg.text.toLowerCase().indexOf(term.toLowerCase());
+      if (idx < 0) {
+        next.push(seg);
+        continue;
+      }
+      const before = seg.text.slice(0, idx);
+      const match = seg.text.slice(idx, idx + term.length);
+      const after = seg.text.slice(idx + term.length);
+      if (before) next.push({ text: before });
+      next.push({ text: match, explainer: ex });
+      if (after) next.push({ text: after });
+      used = true;
+    }
+    segs = next;
+  }
+  return segs;
+}
+
+/** The story body: format-v2 bullets with tappable explainer terms
+ * when the story carries them, otherwise the legacy prose summary. */
+function StoryBody({
+  story,
+  styles,
+  isDesktop,
+  onExplainerPress,
+}: {
+  story: Story;
+  styles: StoryStyles;
+  isDesktop: boolean;
+  onExplainerPress: (ex: StoryExplainer) => void;
+}) {
+  const bullets = (story.body_bullets ?? []).filter(
+    (b): b is string => typeof b === "string" && b.trim().length > 0,
+  );
+  const explainers = (story.explainers ?? []).filter(
+    (e): e is StoryExplainer => !!e && typeof e.term === "string" && typeof e.blurb === "string",
+  );
+  if (bullets.length === 0) {
+    return (
+      <Text style={[styles.summary, isDesktop && styles.summaryDesktop]}>
+        {story.summary ?? story.one_liner}
+      </Text>
+    );
+  }
+  const usedTerms = new Set<string>();
+  return (
+    <View>
+      {bullets.map((bullet, i) => {
+        const available = explainers.filter((e) => !usedTerms.has(e.term.toLowerCase()));
+        const segs = linkifyBullet(bullet, available);
+        for (const seg of segs) {
+          if (seg.explainer) usedTerms.add(seg.explainer.term.toLowerCase());
+        }
+        return (
+          <View key={i} style={[styles.bulletRow, { marginTop: i === 0 ? 4 : 12 }]}>
+            <Text style={[styles.bulletDot, isDesktop && styles.summaryDesktop]}>•</Text>
+            <Text style={[styles.summary, styles.bulletText, isDesktop && styles.summaryDesktop]}>
+              {segs.map((seg, j) =>
+                seg.explainer ? (
+                  <Text
+                    key={j}
+                    style={styles.explainerLink}
+                    onPress={() => onExplainerPress(seg.explainer!)}
+                  >
+                    {seg.text}
+                  </Text>
+                ) : (
+                  <Text key={j}>{seg.text}</Text>
+                ),
+              )}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function StoryDetailScreen() {
   const { theme: palette, isDark } = useThemeContext();
   const styles = useMemo(() => createStyles(palette), [palette]);
@@ -179,6 +279,7 @@ export default function StoryDetailScreen() {
   const { prefs: personalizationPrefs } = usePersonalization();
   const { state: streakState } = useStreaks();
   const [stockRange, setStockRange] = useState<StockRange>("1d");
+  const [activeExplainer, setActiveExplainer] = useState<StoryExplainer | null>(null);
   const { story: audioStory, isPlaying, isAudioLoading, playStory, togglePlayPause } =
     useAudio();
   const { isCollapsed, setCollapsed } = useNavChrome();
@@ -710,7 +811,12 @@ export default function StoryDetailScreen() {
                 : ""}
             </Text>
 
-            <Text style={[styles.summary, isDesktop && styles.summaryDesktop]}>{story.summary ?? story.one_liner}</Text>
+            <StoryBody
+              story={story}
+              styles={styles}
+              isDesktop={isDesktop}
+              onExplainerPress={setActiveExplainer}
+            />
 
             {/* How does it affect me? */}
             {(story.life_impact || story.personalized_life_impact) ? (
@@ -1025,6 +1131,27 @@ export default function StoryDetailScreen() {
           <Ionicons name="share-outline" size={20} color="#fff" />
         </GlassButton>
       </View>
+
+      {/* Explainer popup: background on a tapped term in the body */}
+      <Modal
+        visible={activeExplainer !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActiveExplainer(null)}
+      >
+        <Pressable style={styles.explainerBackdrop} onPress={() => setActiveExplainer(null)}>
+          <Pressable
+            style={[styles.explainerSheet, isDesktop && styles.explainerSheetDesktop]}
+            onPress={() => {}}
+          >
+            <Text style={styles.explainerTerm}>{activeExplainer?.term}</Text>
+            <Text style={styles.explainerBlurb}>{activeExplainer?.blurb}</Text>
+            <Pressable style={styles.explainerClose} onPress={() => setActiveExplainer(null)}>
+              <Text style={styles.explainerCloseText}>Got it</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 }
@@ -1558,6 +1685,64 @@ function createStyles(palette: ThemeColors) {
       color: palette.text,
     },
     summaryDesktop: { fontSize: 20, lineHeight: 32 },
+    bulletRow: { flexDirection: "row", gap: 10 },
+    bulletDot: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 19,
+      lineHeight: 31,
+      color: palette.accent,
+    },
+    bulletText: { flex: 1, marginTop: 0 },
+    explainerLink: {
+      color: palette.accent,
+      fontFamily: "Inter_600SemiBold",
+      textDecorationLine: "underline",
+    },
+    explainerBackdrop: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.55)",
+      justifyContent: "flex-end",
+    },
+    explainerSheet: {
+      backgroundColor: palette.bgElevated,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      borderWidth: 1,
+      borderColor: palette.border,
+      padding: 24,
+      gap: 10,
+    },
+    explainerSheetDesktop: {
+      alignSelf: "center",
+      width: "100%",
+      maxWidth: 560,
+      borderRadius: 20,
+      marginBottom: 48,
+    },
+    explainerTerm: {
+      fontFamily: "Inter_700Bold",
+      fontSize: 19,
+      color: palette.text,
+    },
+    explainerBlurb: {
+      fontFamily: "Inter_400Regular",
+      fontSize: 16,
+      lineHeight: 25,
+      color: palette.text,
+    },
+    explainerClose: {
+      alignSelf: "flex-start",
+      marginTop: 6,
+      backgroundColor: palette.accent,
+      borderRadius: 999,
+      paddingHorizontal: 18,
+      paddingVertical: 9,
+    },
+    explainerCloseText: {
+      fontFamily: "Inter_600SemiBold",
+      fontSize: 14,
+      color: palette.onAccent,
+    },
     insightCard: {
       backgroundColor: palette.bgElevated,
       borderRadius: 16,

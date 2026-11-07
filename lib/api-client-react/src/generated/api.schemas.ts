@@ -44,6 +44,13 @@ export type StoryFeaturedPostsItem = {
   url: string;
 };
 
+export interface StoryExplainer {
+  /** Term exactly as it appears in the story body; the app linkifies it in the body text. */
+  term: string;
+  /** Evergreen background note shown in a popup when the term is tapped. */
+  blurb: string;
+}
+
 export interface Story {
   id: string;
   external_id?: string;
@@ -62,6 +69,10 @@ export interface Story {
   image_source?: string | null;
   /** AI-generated story summary */
   summary?: string;
+  /** Story body as 2-3 plain-language bullet sentences (format v2: what happened / context / payoff). Hand-added: the backend serves it via SELECT *; add to the OpenAPI spec on the next client regen. */
+  body_bullets?: string[] | null;
+  /** Tappable background explainers for terms in the body. Hand-added: the backend serves it via SELECT *; add to the OpenAPI spec on the next client regen. */
+  explainers?: StoryExplainer[] | null;
   /** How this story directly affects the reader's life */
   life_impact?: string;
   /** Life impact rewritten for this user's onboarding preferences, when available */

@@ -1141,10 +1141,7 @@ export default function StoryDetailScreen() {
         onRequestClose={() => setActiveExplainer(null)}
       >
         <Pressable style={styles.explainerBackdrop} onPress={() => setActiveExplainer(null)}>
-          <Pressable
-            style={[styles.explainerSheet, isDesktop && styles.explainerSheetDesktop]}
-            onPress={() => {}}
-          >
+          <Pressable style={styles.explainerSheet} onPress={() => {}}>
             <Text style={styles.explainerTerm}>{activeExplainer?.term}</Text>
             <Text style={styles.explainerBlurb}>{activeExplainer?.blurb}</Text>
             <Pressable style={styles.explainerClose} onPress={() => setActiveExplainer(null)}>
@@ -1705,23 +1702,21 @@ function createStyles(palette: ThemeColors) {
     explainerBackdrop: {
       flex: 1,
       backgroundColor: "rgba(0,0,0,0.55)",
-      justifyContent: "flex-end",
+      // The definition popup is a centered card, not a bottom sheet
+      // (owner's call, 2026-11-07) - same on phone and desktop.
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: 24,
     },
     explainerSheet: {
       backgroundColor: palette.bgElevated,
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
+      borderRadius: 20,
       borderWidth: 1,
       borderColor: palette.border,
       padding: 24,
       gap: 10,
-    },
-    explainerSheetDesktop: {
-      alignSelf: "center",
       width: "100%",
       maxWidth: 560,
-      borderRadius: 20,
-      marginBottom: 48,
     },
     explainerTerm: {
       fontFamily: "Inter_700Bold",

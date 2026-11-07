@@ -99,7 +99,9 @@ async def get_story(
     story_id: str,
     user: Optional[dict] = Depends(get_current_user_optional),
 ) -> dict[str, Any]:
-    story = await db.get_story(story_id)
+    # The path param is a public reference: a story UUID or its
+    # slug. Old UUID links keep working unchanged.
+    story = await db.get_story_by_ref(story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
 

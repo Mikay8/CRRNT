@@ -15,6 +15,8 @@ from typing import Any, Optional
 
 import asyncpg
 
+from services.slug import slugify, suffixed
+
 log = logging.getLogger("crrnt.db")
 
 _pool: Optional[asyncpg.Pool] = None
@@ -70,7 +72,33 @@ def _rows(rs: list[asyncpg.Record]) -> list[dict[str, Any]]:
 
 # ── Stories ───────────────────────────────────────────────────────────────────
 
+async def _slug_taken(conn: asyncpg.Connection, slug: str) -> bool:
+    return bool(
+        await conn.fetchval("SELECT 1 FROM stories WHERE slug = $1", slug)
+    )
+
+
+async def unique_slug(
+    conn: asyncpg.Connection, base_slug: str
+) -> str:
+    """First free variant of base_slug: itself, then -2, -3, ..."""
+    candidate = base_slug
+    n = 2
+    while await _slug_taken(conn, candidate):
+        candidate = suffixed(base_slug, n)
+        n += 1
+    return candidate
+
+
 async def insert_story(story: dict[str, Any]) -> dict[str, Any]:
+    story = dict(story)
+    if not story.get("slug"):
+        # Public URLs use a short readable slug derived from the
+        # display title (services/slug.py). Assigned here so every
+        # insert path gets one; collisions take a numeric suffix.
+        base_slug = slugify(story.get("display_title") or story.get("title")) or "story"
+        async with get_pool().acquire() as conn:
+            story["slug"] = await unique_slug(conn, base_slug)
     cols = list(story.keys())
     placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
     sql = (
@@ -85,6 +113,28 @@ async def get_story(story_id: str) -> Optional[dict[str, Any]]:
     async with get_pool().acquire() as conn:
         r = await conn.fetchrow("SELECT * FROM stories WHERE id = $1", story_id)
     return _row(r)
+
+
+async def get_story_by_slug(slug: str) -> Optional[dict[str, Any]]:
+    async with get_pool().acquire() as conn:
+        r = await conn.fetchrow("SELECT * FROM stories WHERE slug = $1", slug)
+    return _row(r)
+
+
+async def get_story_by_ref(ref: str) -> Optional[dict[str, Any]]:
+    """Resolve a public story reference: a UUID or a slug.
+
+    The UUID check comes first and matters: stories.id is a UUID
+    column, so passing it a slug string would raise instead of
+    missing. UUID links issued before slugs existed keep working.
+    """
+    import uuid
+
+    try:
+        uuid.UUID(ref)
+    except (ValueError, AttributeError, TypeError):
+        return await get_story_by_slug(ref)
+    return await get_story(ref)
 
 
 async def get_story_by_external_id(external_id: str) -> Optional[dict[str, Any]]:

@@ -758,6 +758,17 @@ async def set_device_internal(
     return RedirectResponse(url="/admin/analytics", status_code=302)
 
 
+@router.post("/analytics/devices/{device_id}/delete")
+async def delete_device(
+    device_id: str,
+    _: None = Depends(_verify_admin),
+):
+    """Hard-delete a device and its analytics events (the template
+    confirms first — this cannot be undone, unlike marking internal)."""
+    await _safe_db(db.delete_device(device_id), None)
+    return RedirectResponse(url="/admin/analytics", status_code=302)
+
+
 # ── Ingestion actions ─────────────────────────────────────────────────────────
 
 

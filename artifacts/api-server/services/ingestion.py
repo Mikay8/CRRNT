@@ -165,6 +165,8 @@ async def _to_story_row(raw: dict[str, Any]) -> dict[str, Any]:
         "source_url": raw.get("link") or raw.get("source_url"),
         "media_url": raw.get("mediaUrl") or raw.get("media_url"),
         "summary": raw.get("storySummary") or raw.get("summary"),
+        "body_bullets": json.dumps(raw.get("bodyBullets")) if raw.get("bodyBullets") else None,
+        "explainers": json.dumps(raw.get("explainers")) if raw.get("explainers") else None,
         "life_impact": raw.get("lifeImpact") or raw.get("life_impact"),
         "wallet_impact": raw.get("walletImpact") or raw.get("wallet_impact"),
         "stock_note": stock_note,

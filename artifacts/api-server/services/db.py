@@ -44,7 +44,7 @@ def get_pool() -> asyncpg.Pool:
     return _pool
 
 
-_JSONB_COLUMNS = {"featured_posts"}
+_JSONB_COLUMNS = {"featured_posts", "body_bullets", "explainers"}
 
 
 def _serialize(key: str, value: Any) -> Any:

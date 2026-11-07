@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS stories (
   image_source TEXT,
 
   summary TEXT,
+  body_bullets JSONB,
+  explainers JSONB,
   life_impact TEXT,
   wallet_impact TEXT,
   stock_note TEXT,

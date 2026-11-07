@@ -2,9 +2,10 @@
 
 Pass 1 — Claude extracts per story:
   displayTitle (faithful hook headline; the RSS title stays in `title` as
-  the audit copy), storySummary (the whole story in one merged plain-
-  language body with the payoff woven in - no separate life/wallet
-  sections anymore), insight, stock_note, ticker, companyName, category
+  the audit copy), bodyBullets (the story body as 3 plain-language bullet
+  sentences; the prose storySummary other consumers use is the bullets
+  joined), explainers (up to 3 tappable {term, blurb} background notes),
+  insight, stock_note, ticker, companyName, category
 
 Pass 2 — Grok searches X directly (x_search tool) and analyzes sentiment:
   sentimentLabel, sentimentScore, peopleSay
@@ -72,7 +73,10 @@ SYSTEM_PROMPT = (
     "breaking it down over text. Informed but never stuffy. Honest about "
     "uncertainty. Never fear-mongering. Never preachy. Think Vox meets group chat. "
     "Even heavy stories should feel human and accessible - always land on "
-    "clarity, not anxiety.\n\n"
+    "clarity, not anxiety. Write for a general audience of all ages - "
+    "a regular person following the news, not a demographic niche. "
+    "Plain everyday words; no slang or youth-speak; nothing that needs "
+    "a subculture to decode.\n\n"
     "IMPORTANT: Use plain ASCII text only. No smart quotes, no curly quotes, "
     "no em dashes, no en dashes, no ellipsis characters, no Unicode punctuation. "
     "Use straight quotes (\"), hyphens (-), and three dots (...) instead.\n\n"
@@ -88,29 +92,41 @@ SYSTEM_PROMPT = (
     "not state. Never ask a question the story does not answer, and never "
     "use 'why' unless the story actually explains why. No all-caps, no "
     "emoji, no shock words the facts do not earn.\n\n"
-    "Write STORYSUMMARY (the whole story in ONE flow, 60-80 words and "
-    "NEVER fewer than 55, max 520 characters): plain everyday language, "
-    "like you're explaining it to a friend who just asked 'wait, what "
-    "happened?' The reader just saw the display title, so do NOT restate "
-    "it - start with the next most important detail. Explain any term a "
-    "non-expert would not know the first time it appears (tariffs - taxes "
-    "on imported parts; went public - sold shares to regular investors "
-    "for the first time). Short sentences, one idea each, active voice, "
-    "zero unexplained jargon. If the source material is thin, do not stop "
-    "short of 55 words - add the most relevant context the source gives "
-    "(who is involved, why it is happening now, what happens next). Never "
-    "pad with filler, and never say the same thing twice to reach the "
-    "length. "
-    "Weave in the single most important 'why you care' point as AT MOST "
-    "ONE sentence, usually last: a specific price, bill, job, health, or "
-    "team consequence - name the thing ('groceries', 'your rent'), never "
-    "generic lines like 'this could affect jobs'. If a stock is clearly "
-    "central, that sentence may say plainly whether it likely pushes the "
-    "stock up or down and why - no trading language. If the story has no "
-    "real reader stake (pure celebrity drama, a sports result, a cultural "
-    "moment with no ripple), skip the payoff sentence entirely - a clean "
-    "summary beats a forced angle. If the story involves a death, never "
-    "add a money angle - it reads as callous.\n\n"
+    "Write BODYBULLETS: the whole story as an array of exactly 3 "
+    "strings, each one or two short sentences, 55-85 words across all "
+    "three. Plain everyday language, like you're explaining it to a "
+    "friend who just asked 'wait, what happened?' The reader just saw "
+    "the display title, so bullet 1 does NOT restate it - start with "
+    "the next most important detail: what happened, with the key names "
+    "and numbers. Bullet 2 is the context: who is involved, why it is "
+    "happening now, what led here. Bullet 3 is the payoff when the "
+    "story genuinely has one: a specific price, bill, job, health, or "
+    "team consequence for a regular person - name the thing "
+    "('groceries', 'your rent'), never generic lines like 'this could "
+    "affect jobs'. If a stock is clearly central, bullet 3 may say "
+    "plainly whether it likely pushes the stock up or down and why - "
+    "no trading language. If the story has no real reader stake "
+    "(pure celebrity drama, a sports result, a cultural moment with "
+    "no ripple), bullet 3 is instead what happens next or what to "
+    "watch for, from the source - never invent a stake to fill it. "
+    "If the story involves a death, never add a money angle - it "
+    "reads as callous. Short sentences, one idea each, active voice. "
+    "Explain any term a non-expert would not know the first time it "
+    "appears, briefly, inside the bullet (tariffs - taxes on "
+    "imported parts; went public - sold shares to regular investors "
+    "for the first time). If the source material is thin, add the "
+    "most relevant context the source gives rather than padding or "
+    "repeating yourself.\n\n"
+    "Write EXPLAINERS: an array of up to 3 objects with keys term "
+    "and blurb - background a regular reader may need on the people, "
+    "companies, organizations, or terms central to this story. Copy "
+    "term EXACTLY as it appears in your bullets (same words and "
+    "casing) so the app can make it tappable. blurb is 20-40 words "
+    "of background that stays true beyond today's news: who they "
+    "are, what it is, why it generally matters. No claims about "
+    "today's events, no dates, no opinions. Do not explain things "
+    "every adult already knows. Fewer than 3 is fine, and an empty "
+    "array is fine when nothing needs background.\n\n"
     "Write INSIGHT (1 sentence, under 100 characters): a punchy one-liner "
     "that makes someone stop scrolling. Urgent, real, specific.\n\n"
     "TICKER: The most relevant publicly traded US ticker if clearly central "
@@ -126,7 +142,8 @@ SYSTEM_PROMPT = (
     "interest, odd news), or 'both' when it genuinely serves both. Judge "
     "the story itself, not its category label.\n\n"
     "ALWAYS reply with a single JSON object - no prose, no markdown fences - "
-    "with keys: displayTitle (string), storySummary, insight, "
+    "with keys: displayTitle (string), bodyBullets (array of 3 strings), "
+    "explainers (array of {term, blurb}), insight, "
     "ticker (string|null), companyName (string|null), category (string, optional), "
     "vibe (string: 'informed', 'entertained', or 'both')."
 )
@@ -176,6 +193,71 @@ SENTIMENT_SYSTEM_PROMPT = (
     "peopleSay (string|null), featuredPosts (array)."
 )
 
+def _clean_bullets(raw: Any) -> Optional[list[str]]:
+    """Validate Claude's bodyBullets into 2-3 clean bullet strings.
+
+    Returns None when the shape is unusable - the caller then falls
+    back to the prose summary path and the story stores no bullets
+    (the app renders the paragraph instead). Over-long lists keep
+    their content: extra bullets merge into the third.
+    """
+    if not isinstance(raw, list):
+        return None
+    out: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        text = _sanitize(item).lstrip("-* ").strip()
+        if text:
+            out.append(text)
+    if len(out) > 3:
+        out = out[:2] + [" ".join(out[2:])]
+    if len(out) < 2:
+        return None
+    if sum(len(b.split()) for b in out) < 30:
+        # Too thin to be the body - treat as missing rather than ship
+        # fragments as the story.
+        return None
+    return out
+
+
+def _clean_explainers(
+    raw: Any,
+    bullets: list[str],
+    display_title: Optional[str],
+    title: str,
+) -> list[dict[str, str]]:
+    """Validate Claude's explainers into at most 3 {term, blurb} notes.
+
+    An explainer only survives if its term appears (case-insensitive)
+    in the bullets or headlines - that is what lets the app find and
+    link it - and its blurb is a sane background length. Bad entries
+    drop silently; the feature degrades to fewer links.
+    """
+    if not isinstance(raw, list):
+        return []
+    haystack = " ".join(bullets + [display_title or "", title or ""]).lower()
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        term = _sanitize(str(item.get("term") or "")).strip()
+        blurb = _sanitize(str(item.get("blurb") or "")).strip()
+        if not term or not blurb:
+            continue
+        if len(term) > 60 or not 40 <= len(blurb) <= 320:
+            continue
+        key = term.lower()
+        if key in seen or key not in haystack:
+            continue
+        seen.add(key)
+        out.append({"term": term, "blurb": blurb})
+        if len(out) == 3:
+            break
+    return out
+
+
 async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     """Pass 1: Claude enrichment."""
     title = story.get("title") or ""
@@ -193,7 +275,7 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
         log.info("Claude pass 1: '%s'", title[:70])
         msg = await client.messages.create(
             model=MODEL,
-            max_tokens=700,
+            max_tokens=1100,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
         )
@@ -243,7 +325,17 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     wallet_impact = None
     life_impact = None
 
-    story_summary = _sanitize(parsed.get("storySummary") or "")
+    # Format v2: the body is 3 bullets. The prose storySummary every
+    # other consumer uses (audio script, digest, share text, Pass 2
+    # context) is the bullets joined - one source of truth.
+    bullets = _clean_bullets(parsed.get("bodyBullets"))
+    explainers = _clean_explainers(
+        parsed.get("explainers"), bullets or [], display_title, title
+    )
+    if bullets:
+        story_summary = " ".join(bullets)
+    else:
+        story_summary = _sanitize(parsed.get("storySummary") or "")
     if story_summary and len(story_summary.split()) < 50:
         # Measurement only: how often does Haiku land under the floor?
         # The summary still ships - a thin summary beats none.
@@ -275,6 +367,8 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
         "walletImpact": wallet_impact,
         "lifeImpact": life_impact,
         "storySummary": story_summary,
+        "bodyBullets": bullets,
+        "explainers": explainers,
         "peopleSay": None,
         "sentimentLabel": None,
         "sentimentScore": None,

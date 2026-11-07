@@ -93,8 +93,9 @@ SYSTEM_PROMPT = (
     "use 'why' unless the story actually explains why. No all-caps, no "
     "emoji, no shock words the facts do not earn.\n\n"
     "Write BODYBULLETS: the whole story as an array of exactly 3 "
-    "strings, each one or two short sentences, 55-85 words across all "
-    "three. Plain everyday language, like you're explaining it to a "
+    "strings, each ONE sentence of at most 22 words, 45-65 words "
+    "across all three. Readers skim these - every word has to earn "
+    "its place. Plain everyday language, like you're explaining it to a "
     "friend who just asked 'wait, what happened?' The reader just saw "
     "the display title, so bullet 1 does NOT restate it - start with "
     "the next most important detail: what happened, with the key names "
@@ -193,13 +194,36 @@ SENTIMENT_SYSTEM_PROMPT = (
     "peopleSay (string|null), featuredPosts (array)."
 )
 
+# Skimmability caps: the first live bullet batch ran 114-132 words
+# (34-51 per bullet) against a 55-85 prompt target, so the ceiling is
+# enforced here, not just requested in the prompt.
+_BULLET_MAX_WORDS = 30
+_BULLET_TOTAL_MAX_WORDS = 80
+
+
+def _trim_bullet(text: str, max_words: int = _BULLET_MAX_WORDS) -> str:
+    """Drop trailing sentences until the bullet fits the word cap.
+
+    Sentence-aware: a bullet is never cut mid-sentence, and a single
+    sentence longer than the cap is kept whole (it cannot be trimmed
+    without breaking it) - the caller logs those.
+    """
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+", text) if s]
+    while len(sentences) > 1 and len(" ".join(sentences).split()) > max_words:
+        sentences.pop()
+    return " ".join(sentences)
+
+
 def _clean_bullets(raw: Any) -> Optional[list[str]]:
     """Validate Claude's bodyBullets into 2-3 clean bullet strings.
 
     Returns None when the shape is unusable - the caller then falls
     back to the prose summary path and the story stores no bullets
-    (the app renders the paragraph instead). Over-long lists keep
-    their content: extra bullets merge into the third.
+    (the app renders the paragraph instead). Each bullet is trimmed
+    to the word cap first (see _trim_bullet); over-long lists then
+    keep their content by merging extras into the third bullet, which
+    can leave a merged bullet slightly over the cap - the caller's
+    over-ceiling log measures how often that happens.
     """
     if not isinstance(raw, list):
         return None
@@ -209,7 +233,9 @@ def _clean_bullets(raw: Any) -> Optional[list[str]]:
             continue
         text = _sanitize(item).lstrip("-* ").strip()
         if text:
-            out.append(text)
+            # Trim BEFORE any merge: trimming a merged bullet could
+            # amputate an entire original bullet that was folded in.
+            out.append(_trim_bullet(text))
     if len(out) > 3:
         out = out[:2] + [" ".join(out[2:])]
     if len(out) < 2:
@@ -334,6 +360,16 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     )
     if bullets:
         story_summary = " ".join(bullets)
+        over = [len(b.split()) for b in bullets if len(b.split()) > _BULLET_MAX_WORDS]
+        total_words = len(story_summary.split())
+        if over or total_words > _BULLET_TOTAL_MAX_WORDS:
+            # Measurement only: how often does a single sentence still
+            # blow past the cap after trimming? The bullets still ship.
+            log.warning(
+                "Bullets over ceiling after trim: total=%d words, "
+                "over-cap bullets=%s for '%s'",
+                total_words, over, title[:60],
+            )
     else:
         story_summary = _sanitize(parsed.get("storySummary") or "")
     if story_summary and len(story_summary.split()) < 50:

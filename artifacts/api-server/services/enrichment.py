@@ -93,13 +93,21 @@ SYSTEM_PROMPT = (
     "use 'why' unless the story actually explains why. No all-caps, no "
     "emoji, no shock words the facts do not earn.\n\n"
     "Write BODYBULLETS: the whole story as an array of exactly 3 "
-    "strings, each one or two short sentences, 55-85 words across all "
-    "three. Plain everyday language, like you're explaining it to a "
-    "friend who just asked 'wait, what happened?' The reader just saw "
-    "the display title, so bullet 1 does NOT restate it - start with "
-    "the next most important detail: what happened, with the key names "
-    "and numbers. Bullet 2 is the context: who is involved, why it is "
-    "happening now, what led here. Bullet 3 is the payoff when the "
+    "strings, each EXACTLY ONE sentence of at most 20 words - 60 "
+    "words across all three at most, and shorter is better. Readers "
+    "skim these. Plain everyday language, like you're explaining it "
+    "to a friend who just asked 'wait, what happened?' Make every "
+    "sentence earn its place: lead with concrete specifics - a "
+    "person, a number, a place, a moment - never an abstract "
+    "summary. Banned filler: 'represents a broader pattern', "
+    "'highlights', 'underscores', 'amid growing concerns', 'in a "
+    "move that', and any sentence that could run under any story. "
+    "The reader just saw the display title, so bullet 1 does NOT "
+    "restate it - open with the single most interesting concrete "
+    "detail: what happened, with the key names and numbers. Bullet "
+    "2 is the context: who is involved, why it is happening now, "
+    "what led here - still told through specifics, not trends. "
+    "Bullet 3 is the payoff when the "
     "story genuinely has one: a specific price, bill, job, health, or "
     "team consequence for a regular person - name the thing "
     "('groceries', 'your rent'), never generic lines like 'this could "
@@ -110,13 +118,14 @@ SYSTEM_PROMPT = (
     "no ripple), bullet 3 is instead what happens next or what to "
     "watch for, from the source - never invent a stake to fill it. "
     "If the story involves a death, never add a money angle - it "
-    "reads as callous. Short sentences, one idea each, active voice. "
-    "Explain any term a non-expert would not know the first time it "
-    "appears, briefly, inside the bullet (tariffs - taxes on "
-    "imported parts; went public - sold shares to regular investors "
-    "for the first time). If the source material is thin, add the "
-    "most relevant context the source gives rather than padding or "
-    "repeating yourself.\n\n"
+    "reads as callous. Active voice, present tense where natural. "
+    "Do NOT define terms inside the bullets - no appositive "
+    "definitions ('data centers - massive facilities that store "
+    "data -'), no 'which is' explanations. Background belongs in "
+    "EXPLAINERS, where the reader taps the term to see it; a bullet "
+    "that stops to teach reads as padding. If the source material "
+    "is thin, add the most relevant context the source gives "
+    "rather than padding or repeating yourself.\n\n"
     "Write EXPLAINERS: an array of up to 3 objects with keys term "
     "and blurb - background a regular reader may need on the people, "
     "companies, organizations, or terms central to this story. Copy "
@@ -202,13 +211,35 @@ SENTIMENT_SYSTEM_PROMPT = (
     "peopleSay (string|null), featuredPosts (array)."
 )
 
+def _first_sentence(text: str) -> str:
+    """The first sentence of a bullet. Splits on sentence-ending
+    punctuation followed by a capital/digit/quote, so abbreviations
+    like 'U.S.' (followed by a lowercase word) do not split."""
+    parts = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\u201c])", text.strip(), maxsplit=1)
+    return parts[0].strip()
+
+
+# A bullet is ONE sentence (owner's call, 2026-11-07: the two-sentence
+# bullets read as full paragraphs). The prompt asks for at most 20
+# words per sentence; code cannot cut a sentence mid-way without
+# mangling it, so a single over-long sentence ships whole and is
+# logged - the ceiling exists to make over-length visible, and the
+# totals below catch repeat offenders in the ingestion logs.
+_BULLET_MAX_WORDS = 30
+_BULLET_TOTAL_MAX_WORDS = 80
+
+
 def _clean_bullets(raw: Any) -> Optional[list[str]]:
-    """Validate Claude's bodyBullets into 2-3 clean bullet strings.
+    """Validate Claude's bodyBullets into exactly 2-3 one-sentence
+    bullet strings.
 
     Returns None when the shape is unusable - the caller then falls
     back to the prose summary path and the story stores no bullets
-    (the app renders the paragraph instead). Over-long lists keep
-    their content: extra bullets merge into the third.
+    (the app renders the paragraph instead). Each bullet is reduced
+    to its first sentence: one sentence per bullet is a hard rule,
+    not a prompt request. Extra bullets beyond 3 are dropped (with
+    one sentence each, a dropped fourth bullet loses little, and
+    merging would break the one-sentence rule).
     """
     if not isinstance(raw, list):
         return None
@@ -218,15 +249,26 @@ def _clean_bullets(raw: Any) -> Optional[list[str]]:
             continue
         text = _sanitize(item).lstrip("-* ").strip()
         if text:
-            out.append(text)
+            out.append(_first_sentence(text))
     if len(out) > 3:
-        out = out[:2] + [" ".join(out[2:])]
+        log.info("Bullets: dropping %d extra bullet(s)", len(out) - 3)
+        out = out[:3]
     if len(out) < 2:
         return None
-    if sum(len(b.split()) for b in out) < 30:
+    for b in out:
+        if len(b.split()) > _BULLET_MAX_WORDS:
+            log.warning(
+                "Bullets: single sentence over %d-word ceiling (%d words): %s",
+                _BULLET_MAX_WORDS, len(b.split()), b[:60],
+            )
+    total = sum(len(b.split()) for b in out)
+    if total < 30:
         # Too thin to be the body - treat as missing rather than ship
         # fragments as the story.
         return None
+    if total > _BULLET_TOTAL_MAX_WORDS:
+        log.warning("Bullets: body over %d-word ceiling (%d words)",
+                    _BULLET_TOTAL_MAX_WORDS, total)
     return out
 
 

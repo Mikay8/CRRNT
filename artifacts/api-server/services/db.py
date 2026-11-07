@@ -836,6 +836,25 @@ async def set_device_internal(device_id: str, internal: bool) -> None:
         )
 
 
+async def delete_device(device_id: str) -> None:
+    """Remove a device and ALL of its analytics events (owner-requested
+    from the Analytics page). Unlike marking internal — which keeps the
+    events and only excludes them from counts — this is a hard delete:
+    the device's history stops existing, so headline counts recompute
+    without it. If the same physical device uses the app again it
+    re-registers as a brand-new device with no history; that is
+    inherent to the anonymous-UUID design. Events carry no foreign key,
+    so both tables are cleaned explicitly, in one transaction."""
+    async with get_pool().acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM analytics_events WHERE device_id = $1", device_id,
+            )
+            await conn.execute(
+                "DELETE FROM devices WHERE device_id = $1", device_id,
+            )
+
+
 # ── Password reset tokens ──────────────────────────────────────────────────────
 
 async def create_password_reset_token(user_id: str, token: str, ttl: timedelta) -> None:

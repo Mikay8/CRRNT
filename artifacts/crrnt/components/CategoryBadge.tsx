@@ -11,11 +11,12 @@ export function CategoryBadge({ category, size = "sm" }: CategoryBadgeProps) {
   const meta = getCategoryMeta(category);
   if (!meta) return null;
 
-  const dims = size === "lg"
-    ? { padV: 7, padH: 13, font: 14, icon: 15 }
-    : size === "md"
-    ? { padV: 6, padH: 12, font: 13, icon: 14 }
-    : { padV: 4, padH: 9, font: 11, icon: 11 };
+  const dims: { padV: number; padH: number; font: number; icon: number; h?: number } =
+    size === "lg"
+      ? { padV: 7, padH: 13, font: 14, icon: 15, h: 32 }
+      : size === "md"
+      ? { padV: 6, padH: 12, font: 13, icon: 14 }
+      : { padV: 4, padH: 9, font: 11, icon: 11 };
 
   return (
     <View
@@ -25,6 +26,7 @@ export function CategoryBadge({ category, size = "sm" }: CategoryBadgeProps) {
           backgroundColor: meta.color + "22",
           paddingVertical: dims.padV,
           paddingHorizontal: dims.padH,
+          height: dims.h,
         },
       ]}
     >

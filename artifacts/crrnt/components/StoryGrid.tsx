@@ -89,7 +89,7 @@ export default function StoryGrid({
       }
       ListEmptyComponent={width > 0 ? (ListEmptyComponent ?? undefined) : undefined}
       renderItem={({ item: row }) => (
-        <View style={{ flexDirection: "row", gap: GAP, marginBottom: GAP, alignItems: "flex-start" }}>
+        <View style={{ flexDirection: "row", gap: GAP, marginBottom: GAP }}>
           {row.map(({ story, span }) => (
             <View key={story.id} style={{ width: colW * span + GAP * (span - 1) }}>
               <StoryCard story={story} variant={span > 1 ? "feature" : "grid"} fromContext={fromContext} />

@@ -44,7 +44,6 @@ import {
   type StoryExplainer,
 } from "@workspace/api-client-react";
 import { CATEGORY_ICONS, getCategoryMeta } from "@/constants/categories";
-import { storyShareMessage } from "@/utils/url";
 import StoryImage from "@/components/StoryImage";
 import { useAudio, useAudioProgress } from "@/contexts/AudioContext";
 import { useSavedStories } from "@/contexts/SavedStoriesContext";
@@ -654,7 +653,7 @@ export default function StoryDetailScreen() {
     Haptics.selectionAsync().catch(() => undefined);
     capture("story_shared", { story_id: story.id, category: story.category });
     Share.share({
-      message: storyShareMessage(title, story.id),
+      message: [title, story.source_url].filter(Boolean).join("\n"),
     }).catch(() => undefined);
   };
 
@@ -806,7 +805,7 @@ export default function StoryDetailScreen() {
             <Text style={[styles.title, isDesktop && styles.titleDesktop]}>{title}</Text>
 
             <Text style={styles.meta}>
-              <Text style={styles.metaSource}>Source: {displaySource}</Text>
+              <Text style={styles.metaSource}>{displaySource}</Text>
               {story.published_at
                 ? `  ·  ${formatRelativeTime(story.published_at)}  ·  ${formatDateTime(story.published_at)}`
                 : ""}
@@ -1046,7 +1045,7 @@ export default function StoryDetailScreen() {
                         numberOfLines={1}
                       >
                         {nextMeta ? `${nextMeta.label} · ` : ""}
-                        Source: {sourceDomain(nextStory.source_url)}
+                        {sourceDomain(nextStory.source_url)}
                       </Text>
                     </View>
                     <Text style={styles.nextTitle} numberOfLines={3}>
@@ -1337,7 +1336,7 @@ function UpNextPeek({
             </View>
             <Text style={styles.title}>{next.display_title || next.title}</Text>
             <Text style={styles.meta}>
-              <Text style={styles.metaSource}>Source: {sourceDomain(next.source_url)}</Text>
+              <Text style={styles.metaSource}>{sourceDomain(next.source_url)}</Text>
               {next.published_at
                 ? `  ·  ${formatRelativeTime(next.published_at)}  ·  ${formatDateTime(next.published_at)}`
                 : ""}
@@ -1625,7 +1624,10 @@ function createStyles(palette: ThemeColors) {
       backgroundColor: palette.text + "29",
       alignSelf: "center",
     },
-    tagsRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    // flex-end, not center: the chips are 32px and the play button is
+    // 44px, so centering staggers their bottom edges by 6px. Bottom-
+    // aligning puts every tag and the button on one bottom line.
+    tagsRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
     leftPill: {
       height: 32,
       flexDirection: "row",

@@ -121,7 +121,9 @@ SYSTEM_PROMPT = (
     "reads as callous. Active voice, present tense where natural. "
     "Do NOT define terms inside the bullets - no appositive "
     "definitions ('data centers - massive facilities that store "
-    "data -'), no 'which is' explanations. Background belongs in "
+    "data -'), no comma definitions after a named thing ('the "
+    "Cybercab, an autonomous vehicle still in development'), no "
+    "'which is' explanations. Background belongs in "
     "EXPLAINERS, where the reader taps the term to see it; a bullet "
     "that stops to teach reads as padding. If the source material "
     "is thin, add the most relevant context the source gives "
@@ -309,6 +311,57 @@ def _clean_explainers(
     return out
 
 
+def _strip_inline_definitions(
+    bullets: list[str], explainers: list[dict[str, str]]
+) -> list[str]:
+    """Cut appositive definitions that directly follow a tappable term.
+
+    The prompt bans them ("the Cybercab, an autonomous vehicle still
+    in development") because the explainer popup already carries the
+    definition - but a prompt rule slips, so this enforces it in
+    code, the same way the one-sentence rule is enforced. Deliberately
+    conservative: only a short article-led noun phrase (", a ..." /
+    ", an ...") immediately after an explainer term is cut, and
+    never when the clause carries facts (a digit) or is really a
+    relative clause (that/who/which/whose). Relative clauses like
+    "the Cybertruck, which launched in late 2023" are context, not
+    definitions, and stay. Cuts are logged.
+    """
+    terms = [e.get("term", "") for e in explainers if e.get("term")]
+    if not terms:
+        return bullets
+    out: list[str] = []
+    for bullet in bullets:
+        for term in terms:
+            pattern = re.compile(
+                r"(" + re.escape(term) + r")"
+                # The clause runs to the next comma or the sentence
+                # end; a closing comma is part of the match so a
+                # mid-sentence strip removes both commas.
+                r"(,\s+(?:a|an)\s+[^,.]{1,90}?)(,|(?=[.]|$))",
+                re.IGNORECASE,
+            )
+            m = pattern.search(bullet)
+            if not m:
+                continue
+            clause = m.group(2)
+            words = clause.lstrip(", ").split()
+            lowered = " " + " ".join(words).lower() + " "
+            if not 3 <= len(words) <= 9:
+                continue
+            if any(ch.isdigit() for ch in clause):
+                continue
+            if any(w in lowered for w in (" that ", " who ", " which ", " whose ")):
+                continue
+            bullet = bullet[: m.start(2)] + bullet[m.end(0):]
+            log.info(
+                "enrichment: stripped inline definition after %r: %r",
+                term, clause.strip(),
+            )
+        out.append(bullet)
+    return out
+
+
 async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     """Pass 1: Claude enrichment."""
     title = story.get("title") or ""
@@ -383,6 +436,8 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     explainers = _clean_explainers(
         parsed.get("explainers"), bullets or [], display_title, title
     )
+    if bullets and explainers:
+        bullets = _strip_inline_definitions(bullets, explainers)
     if bullets:
         story_summary = " ".join(bullets)
     else:

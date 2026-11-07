@@ -152,7 +152,7 @@ export default function DesktopPlayer() {
 
   const share = () => {
     if (!story) return;
-    Share.share({ message: storyShareMessage(story.display_title || story.title, story.id) }).catch(
+    Share.share({ message: storyShareMessage(story.display_title || story.title, story.id, story.slug) }).catch(
       () => undefined,
     );
   };

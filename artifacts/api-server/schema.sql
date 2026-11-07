@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS stories (
   external_id TEXT UNIQUE,
   title TEXT,
   display_title TEXT,
+  slug TEXT,
   vibe TEXT,
   category TEXT,
   published_at TIMESTAMPTZ,
@@ -186,6 +187,8 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_t
 CREATE INDEX IF NOT EXISTS idx_stories_category ON stories(category);
 CREATE INDEX IF NOT EXISTS idx_stories_published_at ON stories(published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_stories_expires_at ON stories(expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS stories_slug_key
+  ON stories (slug) WHERE slug IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_saved_stories_user_id ON saved_stories(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user_id);
 

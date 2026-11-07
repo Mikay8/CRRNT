@@ -654,7 +654,7 @@ export default function StoryDetailScreen() {
     Haptics.selectionAsync().catch(() => undefined);
     capture("story_shared", { story_id: story.id, category: story.category });
     Share.share({
-      message: storyShareMessage(title, story.id),
+      message: storyShareMessage(title, story.id, story.slug),
     }).catch(() => undefined);
   };
 

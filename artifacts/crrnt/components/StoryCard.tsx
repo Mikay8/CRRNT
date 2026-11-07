@@ -77,6 +77,7 @@ interface StoryCardProps {
 export function StoryCard({ story, variant = "list", fromContext }: StoryCardProps) {
   const desktop = variant !== "list";
   const feature = variant === "feature";
+  const grid = variant === "grid";
   const { toggleSaved, isSaved } = useSavedStories();
   const { user } = useAuth();
   const canSave = canSaveStories(!!user);
@@ -312,7 +313,7 @@ export function StoryCard({ story, variant = "list", fromContext }: StoryCardPro
 
   const cardBody = (
     <Animated.View
-      style={[styles.card, hovered && styles.cardHovered, cardStyle]}
+      style={[styles.card, desktop && styles.cardFill, hovered && styles.cardHovered, cardStyle]}
       onLayout={(e) => {
         cardH.value = e.nativeEvent.layout.height;
       }}
@@ -321,7 +322,7 @@ export function StoryCard({ story, variant = "list", fromContext }: StoryCardPro
         onPress={onPress}
         onHoverIn={() => onHover(true)}
         onHoverOut={() => onHover(false)}
-        style={({ pressed }) => [feature && styles.featureRow, { opacity: pressed ? 0.85 : 1 }]}
+        style={({ pressed }) => [feature && styles.featureRow, desktop && styles.pressFill, { opacity: pressed ? 0.85 : 1 }]}
       >
         <View style={feature ? styles.featureMediaWrap : undefined}>
           <StoryImage
@@ -344,7 +345,7 @@ export function StoryCard({ story, variant = "list", fromContext }: StoryCardPro
           ) : null}
         </View>
 
-        <View style={[styles.body, feature && styles.featureBody]}>
+        <View style={[styles.body, feature && styles.featureBody, grid && styles.bodyFill]}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
               <Pressable
@@ -385,7 +386,7 @@ export function StoryCard({ story, variant = "list", fromContext }: StoryCardPro
             </View>
           </View>
 
-          <Text style={[styles.title, feature && styles.featureTitle]} numberOfLines={feature ? 4 : 3}>
+          <Text style={[styles.title, feature && styles.featureTitle, grid && styles.titleGrid]} numberOfLines={feature ? 4 : 3}>
             {story.display_title || story.title}
           </Text>
 
@@ -393,9 +394,9 @@ export function StoryCard({ story, variant = "list", fromContext }: StoryCardPro
             {story.one_liner}
           </Text>
 
-          <View style={styles.footer}>
+          <View style={[styles.footer, grid && styles.footerPinned]}>
             <Text style={styles.source} numberOfLines={1}>
-              Source: {displaySource}
+              {displaySource}
             </Text>
             <View style={styles.footerRight}>
               {isToday(timestamp) ? (
@@ -520,6 +521,15 @@ function createStyles(palette: ThemeColors) {
       shadowOffset: { width: 0, height: 18 },
       shadowOpacity: 0,
     },
+    // Desktop grid cells stretch to the row height (StoryGrid); the
+    // card, its pressable, and its body fill the cell so the footer
+    // can pin to a shared bottom edge instead of floating under the
+    // insight text at a different height on every card.
+    cardFill: { flex: 1 },
+    pressFill: { flex: 1 },
+    bodyFill: { flex: 1 },
+    titleGrid: { minHeight: 72 },
+    footerPinned: { marginTop: "auto" },
     stamp: {
       position: "absolute",
       top: 18,

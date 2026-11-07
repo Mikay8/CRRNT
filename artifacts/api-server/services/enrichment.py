@@ -93,9 +93,8 @@ SYSTEM_PROMPT = (
     "use 'why' unless the story actually explains why. No all-caps, no "
     "emoji, no shock words the facts do not earn.\n\n"
     "Write BODYBULLETS: the whole story as an array of exactly 3 "
-    "strings, each ONE sentence of at most 22 words, 45-65 words "
-    "across all three. Readers skim these - every word has to earn "
-    "its place. Plain everyday language, like you're explaining it to a "
+    "strings, each one or two short sentences, 55-85 words across all "
+    "three. Plain everyday language, like you're explaining it to a "
     "friend who just asked 'wait, what happened?' The reader just saw "
     "the display title, so bullet 1 does NOT restate it - start with "
     "the next most important detail: what happened, with the key names "
@@ -158,6 +157,15 @@ SENTIMENT_SYSTEM_PROMPT = (
     "actually reacting - not Wall Street, not pundits, not politicians. How are "
     "real people feeling? Angry? Worried? Relieved? Unbothered? Be direct and "
     "specific. Avoid corporate tone entirely.\n\n"
+    "EXCLUDE media voices: posts from news outlets and media accounts "
+    "(TV networks, newspapers, wire services, news sites, and "
+    "aggregator accounts that mostly repost headlines - including the "
+    "outlet that published this story) are NOT public reaction. They "
+    "restate the headline instead of reacting to it, so they add no "
+    "opinion. Never base peopleSay on them and never include them in "
+    "featuredPosts. Count only posts from ordinary people sharing "
+    "their own reaction. If the only relevant posts you can find are "
+    "from media accounts, that is 'not enough data'.\n\n"
     "Search decisively: run 1-3 searches, favoring the most recent posts "
     "relative to today's date, then read what you found and commit to a read "
     "of the room. Do not keep re-searching to find a 'perfect' match - if you "
@@ -194,36 +202,13 @@ SENTIMENT_SYSTEM_PROMPT = (
     "peopleSay (string|null), featuredPosts (array)."
 )
 
-# Skimmability caps: the first live bullet batch ran 114-132 words
-# (34-51 per bullet) against a 55-85 prompt target, so the ceiling is
-# enforced here, not just requested in the prompt.
-_BULLET_MAX_WORDS = 30
-_BULLET_TOTAL_MAX_WORDS = 80
-
-
-def _trim_bullet(text: str, max_words: int = _BULLET_MAX_WORDS) -> str:
-    """Drop trailing sentences until the bullet fits the word cap.
-
-    Sentence-aware: a bullet is never cut mid-sentence, and a single
-    sentence longer than the cap is kept whole (it cannot be trimmed
-    without breaking it) - the caller logs those.
-    """
-    sentences = [s for s in re.split(r"(?<=[.!?])\s+", text) if s]
-    while len(sentences) > 1 and len(" ".join(sentences).split()) > max_words:
-        sentences.pop()
-    return " ".join(sentences)
-
-
 def _clean_bullets(raw: Any) -> Optional[list[str]]:
     """Validate Claude's bodyBullets into 2-3 clean bullet strings.
 
     Returns None when the shape is unusable - the caller then falls
     back to the prose summary path and the story stores no bullets
-    (the app renders the paragraph instead). Each bullet is trimmed
-    to the word cap first (see _trim_bullet); over-long lists then
-    keep their content by merging extras into the third bullet, which
-    can leave a merged bullet slightly over the cap - the caller's
-    over-ceiling log measures how often that happens.
+    (the app renders the paragraph instead). Over-long lists keep
+    their content: extra bullets merge into the third.
     """
     if not isinstance(raw, list):
         return None
@@ -233,9 +218,7 @@ def _clean_bullets(raw: Any) -> Optional[list[str]]:
             continue
         text = _sanitize(item).lstrip("-* ").strip()
         if text:
-            # Trim BEFORE any merge: trimming a merged bullet could
-            # amputate an entire original bullet that was folded in.
-            out.append(_trim_bullet(text))
+            out.append(text)
     if len(out) > 3:
         out = out[:2] + [" ".join(out[2:])]
     if len(out) < 2:
@@ -360,16 +343,6 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     )
     if bullets:
         story_summary = " ".join(bullets)
-        over = [len(b.split()) for b in bullets if len(b.split()) > _BULLET_MAX_WORDS]
-        total_words = len(story_summary.split())
-        if over or total_words > _BULLET_TOTAL_MAX_WORDS:
-            # Measurement only: how often does a single sentence still
-            # blow past the cap after trimming? The bullets still ship.
-            log.warning(
-                "Bullets over ceiling after trim: total=%d words, "
-                "over-cap bullets=%s for '%s'",
-                total_words, over, title[:60],
-            )
     else:
         story_summary = _sanitize(parsed.get("storySummary") or "")
     if story_summary and len(story_summary.split()) < 50:
@@ -467,6 +440,30 @@ async def pick_push_story(stories: list[dict[str, Any]]) -> int:
     return idx
 
 
+# News/media outlet handles whose posts are headline rewrites, not
+# public reaction (Mikayla's call, 2026-11-06). The sentiment prompt
+# already tells Grok to exclude media voices; this list is the
+# deterministic backstop for the big outlets and for the publishers
+# CRRNT itself pulls from. Handles are lowercase, no @.
+_MEDIA_HANDLES = {
+    "abcnews", "ap", "associatedpress", "axios", "bbc", "bbcnews",
+    "bbcbreaking", "bleacherreport", "bloomberg", "business",
+    "businessinsider", "buzzfeednews", "cbsnews", "cbsmornings",
+    "cnbc", "cnn", "cnnbrk", "cnnpolitics", "espn", "forbes",
+    "foxnews", "theguardian", "guardian", "thehill", "huffpost",
+    "latimes", "msnbc", "nbcnews", "newsweek", "npr", "nprpolitics",
+    "nytimes", "nypost", "people", "politico", "politicomag",
+    "popbase", "reuters", "rollingstone", "skynews", "techcrunch",
+    "theatlantic", "thepoliticalhq", "theverge", "time", "tmz",
+    "usatoday", "variety", "voxdotcom", "washingtonpost", "wsj",
+}
+
+
+def _is_media_handle(handle: str) -> bool:
+    """True when a featured-post handle belongs to a news/media outlet."""
+    return handle.strip().lstrip("@").lower() in _MEDIA_HANDLES
+
+
 async def enrich_story_tweets(story: dict[str, Any]) -> dict[str, Any]:
     """Pass 2: Grok searches X directly and analyzes sentiment in one call."""
     title = story.get("title", "")
@@ -524,6 +521,11 @@ async def enrich_story_tweets(story: dict[str, Any]) -> dict[str, Any]:
                 continue
             if real_urls and _status_id(url) not in real_urls:
                 # Grok hallucinated a URL not present in its own search results - drop it.
+                continue
+            if _is_media_handle(handle):
+                # News outlets restate the headline; they are not
+                # public reaction and never get featured.
+                log.info("Sentiment: dropped media-account post @%s", handle)
                 continue
             featured_posts.append({"handle": handle, "text": text, "url": url})
 

@@ -196,4 +196,16 @@ async def get_story_image(story_id: str) -> RedirectResponse:
     if not url:
         raise HTTPException(status_code=503, detail="Image storage temporarily unavailable")
 
-    return RedirectResponse(url)
+    # Cache the redirect itself: repeat views within the hour skip
+    # this API round trip entirely and go straight to the signed URL
+    # (whose bytes are cacheable too — see image_storage). The
+    # presigned URL lives 24h, far beyond this 1h redirect cache, so
+    # a cached redirect never points at an expired signature; image
+    # replacements (re-pull, backfill) become visible within the
+    # hour as redirects are re-fetched and mint fresh URLs.
+    return RedirectResponse(
+        url,
+        headers={
+            "Cache-Control": f"public, max-age={image_storage.REDIRECT_CACHE_SECONDS}"
+        },
+    )

@@ -14,7 +14,9 @@ Provider rules differ and are honored here:
 - Pixabay: hotlinking is not allowed, so the chosen photo is
   downloaded once and hosted from CRRNT's own S3 bucket
   (services/image_storage.py); the story's media_url points at the
-  API's /api/stories/{id}/image redirect.
+  API's /api/stories/{id}/image redirect. One photo never illustrates
+  two stories: callers pass the credit URLs already in use and the
+  picker walks past used results to the next distinct photo.
 
 Fallbacks keep ingestion unbreakable: a failed or empty subject
 search falls back to the generic category query (Unsplash: the
@@ -50,8 +52,16 @@ async def find_for_story(
     provider: str,
     query: Optional[str],
     category: Optional[str],
+    exclude: Any = (),
 ) -> Optional[dict[str, Any]]:
     """Search the configured provider for this story's image.
+
+    `exclude` is a set of Pixabay credit URLs (photo page URLs) already
+    used by other stories: a Pixabay pick never repeats a photo that
+    is already in the feed or was picked earlier in the same run —
+    similar stories derive similar subject queries and would otherwise
+    all land on the same top hit. Unsplash picks ignore it (the pool
+    rotates).
 
     Returns a normalized hit or None:
       unsplash: {"kind", "image_url", "photographer_name",
@@ -59,7 +69,7 @@ async def find_for_story(
       pixabay:  {"kind", "download_url", "credit_name", "credit_url"}
     """
     if provider == "pixabay":
-        return await _find_pixabay(query, category)
+        return await _find_pixabay(query, category, set(exclude))
     return await _find_unsplash(query, category)
 
 
@@ -98,24 +108,35 @@ async def _find_unsplash(
 
 
 async def _find_pixabay(
-    query: Optional[str], category: Optional[str]
+    query: Optional[str], category: Optional[str], exclude: set
 ) -> Optional[dict[str, Any]]:
     # Subject first, then the generic category query — same ladder as
     # Unsplash, minus the pool (Pixabay images are per-story downloads,
-    # never shared pool assets).
+    # never shared pool assets). Within each query, walk the results
+    # and take the first photo not already used by another story; if
+    # every result for a query is used, fall through to the next query
+    # rather than repeat a photo. All queries exhausted -> no image
+    # (the app renders category art) — a duplicate is never chosen.
     candidates = [query] if query else []
     generic = unsplash_pool.CATEGORY_QUERIES.get(category or "")
     if generic and generic not in candidates:
         candidates.append(generic)
     for q in candidates:
         try:
-            hit = await pixabay_images.search_photo(q)
+            hits = await pixabay_images.search_photos(q)
         except Exception as exc:
             log.warning("Pixabay search failed for %r: %s", q, exc)
             return None
-        if hit:
-            return {"kind": "pixabay", **hit}
-        log.info("Pixabay search empty for %r", q)
+        for hit in hits:
+            if hit["credit_url"] not in exclude:
+                return {"kind": "pixabay", **hit}
+        if hits:
+            log.info(
+                "Pixabay: all %d results for %r already used — next query",
+                len(hits), q,
+            )
+        else:
+            log.info("Pixabay search empty for %r", q)
     return None
 
 

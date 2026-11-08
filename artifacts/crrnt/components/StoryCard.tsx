@@ -348,7 +348,7 @@ export function StoryCard({ story, variant = "list", fromContext }: StoryCardPro
             <Text style={[styles.stampText, { color }]}>{action.label.toUpperCase()}</Text>
           </Animated.View>
           {story.image_credit_name ? (
-            <PhotoCredit name={story.image_credit_name} profileUrl={story.image_credit_url} />
+            <PhotoCredit name={story.image_credit_name} profileUrl={story.image_credit_url} source={story.image_source} />
           ) : null}
         </View>
 

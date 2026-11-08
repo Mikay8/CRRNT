@@ -747,6 +747,7 @@ export default function StoryDetailScreen() {
               <PhotoCredit
                 name={story.image_credit_name}
                 profileUrl={story.image_credit_url}
+                source={story.image_source}
                 bottom={16}
               />
             ) : null}

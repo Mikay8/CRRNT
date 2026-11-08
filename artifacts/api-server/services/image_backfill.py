@@ -1,0 +1,157 @@
+"""One-click backfill: give every existing story a Pixabay image.
+
+The admin Settings page has a "Backfill story images from Pixabay"
+button for stories that predate the Pixabay provider (PR #78) — or
+whose stored image URL points anywhere other than CRRNT's own image
+route. For each such story this:
+
+  1. asks Claude (Haiku) for the story's subject search phrase, under
+     the same rules as Pass 1's imageQuery: 2-6 concrete words, never
+     a person's name, never a person standing in for someone;
+  2. searches Pixabay by that subject (generic category query as the
+     fallback), downloads the photo into CRRNT's S3 bucket, and
+     points the story at /api/stories/{id}/image with Pixabay
+     credits — exactly the state ingestion now produces.
+
+Deliberate exclusions:
+- image_source='manual' stories are admin hand-edits (PR #61) and are
+  never overwritten.
+- Stories already on a self-hosted Pixabay image (media_url is the
+  /image route) are skipped, so re-running is cheap and safe.
+
+Per-story failures degrade to "story untouched" and are counted in
+the run summary; nothing raises out of the run. Sequential with a
+short pause between stories — the Pixabay key allows 100 requests
+per 60 seconds and a full feed is ~60 stories.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any, Optional
+
+from services import db, enrichment, pixabay_images, story_images
+
+log = logging.getLogger("crrnt.image_backfill")
+
+_running = False
+
+_QUERY_SYSTEM = (
+    "You pick a stock-photo search phrase for a news story. Reply with "
+    "a JSON object only: {\"imageQuery\": \"...\"}.\n"
+    "imageQuery is the story's concrete visual subject in 2 to 5 plain "
+    "words (e.g. \"concert stage lights\", \"electric vehicle charging\", "
+    "\"basketball arena\"). It must NEVER contain a person's name, and "
+    "the photo must never stand in for a specific person — for a story "
+    "about a singer, search their world (\"concert stage lights\"), not "
+    "a person. No abstract concepts (\"justice\", \"the economy\"), no "
+    "brands unless the brand's product is the subject."
+)
+
+
+async def derive_image_query(story: dict[str, Any]) -> Optional[str]:
+    """Claude-derived subject phrase for an already-enriched story.
+    None on any failure — the caller falls back to the category query."""
+    headline = story.get("display_title") or story.get("title") or ""
+    summary = story.get("summary") or ""
+    if not headline:
+        return None
+    user_prompt = (
+        f"Category: {story.get('category') or ''}\n"
+        f"Headline: {headline}\nSummary: {summary}\n\n"
+        "Reply with the JSON object only."
+    )
+    try:
+        client = enrichment._get_client()
+        msg = await client.messages.create(
+            model=enrichment.MODEL,
+            max_tokens=120,
+            system=_QUERY_SYSTEM,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        text = "".join(
+            b.text for b in msg.content if getattr(b, "type", "") == "text"
+        )
+        parsed = enrichment._parse_json(text)
+    except Exception as exc:
+        log.warning("Backfill query derivation failed for %r: %s", headline[:60], exc)
+        return None
+    return enrichment._clean_image_query(parsed.get("imageQuery"))
+
+
+def needs_backfill(story: dict[str, Any]) -> bool:
+    """True unless the story already shows a properly hosted Pixabay
+    image. A Pixabay-flagged story whose media_url is NOT the /image
+    route (e.g. an external URL set by hand) still needs backfilling —
+    that URL is not served from CRRNT storage."""
+    if story.get("image_source") == "manual":
+        return False
+    media_url = story.get("media_url") or ""
+    if story.get("image_source") == "pixabay" and "/image" in media_url:
+        return False
+    return True
+
+
+async def backfill_story(story: dict[str, Any]) -> str:
+    """Replace one story's image with a hosted Pixabay photo.
+    Returns 'updated', 'no_image', or 'failed'."""
+    story_id = str(story["id"])
+    query = await derive_image_query(story)
+    hit = await story_images.find_for_story(
+        "pixabay", query, story.get("category")
+    )
+    if not hit:
+        log.info("Backfill: no Pixabay image for story %s (query %r)", story_id, query)
+        return "no_image"
+    hosted = await story_images.host_pixabay_image(story_id, hit)
+    if not hosted:
+        log.warning("Backfill: hosting failed for story %s", story_id)
+        return "failed"
+    await db.update_story_image(
+        story_id,
+        hosted["media_url"],
+        hosted.get("credit_name"),
+        hosted.get("credit_url"),
+        "pixabay",
+    )
+    log.info(
+        "Backfill: story %s now on Pixabay (query %r, credit %s)",
+        story_id, query, hosted.get("credit_name"),
+    )
+    return "updated"
+
+
+async def run_backfill() -> dict[str, Any]:
+    """Backfill every story that needs one. Safe to re-run; a second
+    concurrent run is refused. Returns (and logs) the run summary."""
+    global _running
+    if _running:
+        log.warning("Backfill refused — a run is already in progress")
+        return {"error": "already running"}
+    if not pixabay_images.is_configured():
+        log.error("Backfill aborted — PIXABAY_API_KEY is not set")
+        return {"error": "PIXABAY_API_KEY is not set"}
+    _running = True
+    stats = {"considered": 0, "updated": 0, "no_image": 0, "failed": 0, "skipped": 0}
+    try:
+        stories = await db.get_stories(limit=500)
+        for story in stories:
+            if not needs_backfill(story):
+                stats["skipped"] += 1
+                continue
+            stats["considered"] += 1
+            try:
+                outcome = await backfill_story(story)
+            except Exception as exc:
+                log.warning("Backfill failed for story %s: %s", story.get("id"), exc)
+                outcome = "failed"
+            stats[outcome] += 1
+            await asyncio.sleep(0.3)
+    finally:
+        _running = False
+    log.info(
+        "Backfill complete: %(considered)d considered, %(updated)d updated, "
+        "%(no_image)d no image found, %(failed)d failed, %(skipped)d skipped",
+        stats,
+    )
+    return stats

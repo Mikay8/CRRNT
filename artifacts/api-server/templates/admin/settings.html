@@ -95,6 +95,25 @@
       </div>
     </div>
 
+    <!-- Image source -->
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
+      <div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
+        <div class="min-w-0 flex-1">
+          <label for="image_source" class="text-sm font-semibold text-white">Story image source</label>
+          <p class="text-xs text-gray-500 mt-0.5 sm:max-w-md">Where ingestion gets each story's photo. Images are searched by the story's subject. Pixabay images are downloaded into CRRNT's own storage (their license does not allow hotlinking); Unsplash images are hotlinked, and Unsplash requires Production approval before a public app may use them. Needs the matching API key in the environment (status below).</p>
+        </div>
+        <div class="flex items-center gap-2 sm:ml-auto">
+          <select
+            name="image_source"
+            id="image_source"
+            class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
+            <option value="unsplash" {% if cfg.image_source != 'pixabay' %}selected{% endif %}>Unsplash</option>
+            <option value="pixabay" {% if cfg.image_source == 'pixabay' %}selected{% endif %}>Pixabay</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
     <!-- Save + Run -->
     <div class="flex flex-wrap items-center gap-3">
       <button type="submit"

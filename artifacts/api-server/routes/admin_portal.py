@@ -36,7 +36,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from services import app_settings, db, ingestion, ingest_config, log_buffer, metrics, rate_limit, rss, scheduler, unsplash_pool
+from services import app_settings, db, image_backfill, ingestion, ingest_config, log_buffer, metrics, rate_limit, rss, scheduler, unsplash_pool
 
 log = logging.getLogger("crrnt.admin")
 
@@ -280,6 +280,21 @@ async def swap_story_image(story_id: str, _: None = Depends(_verify_admin)):
             )
             await unsplash_pool.mark_used(pool_img["id"])
             await unsplash_pool.trigger_download(pool_img["download_location"])
+    return RedirectResponse(url="/admin/stories", status_code=302)
+
+
+@router.post("/stories/{story_id}/image/repull-pixabay")
+async def repull_story_image(story_id: str, _: None = Depends(_verify_admin)):
+    # One-click fresh Pixabay photo for this story, searched by the
+    # story's subject (same derivation as ingestion/backfill) and
+    # hosted in CRRNT storage. Photos already used by other stories —
+    # and this story's current photo — are excluded, so the result is
+    # always a different, unused image. No usable photo (or no
+    # Pixabay key) leaves the story unchanged. Synchronous: one story
+    # is a search + download + upload, a few seconds.
+    story = await _safe_db(db.get_story(story_id), None)
+    if story:
+        await image_backfill.repull_story_image(story)
     return RedirectResponse(url="/admin/stories", status_code=302)
 
 

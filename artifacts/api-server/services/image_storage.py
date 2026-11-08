@@ -31,7 +31,7 @@ RESPONSE_CACHE_CONTROL = "public, max-age=86400"
 # redirect is cached for (see routes/stories.py): a browser holding
 # a cached redirect must never follow it to an expired signature.
 PRESIGNED_URL_TTL_SECONDS = 86400
-REDIRECT_CACHE_SECONDS = 3600
+REDIRECT_CACHE_SECONDS = 300
 
 
 @lru_cache(maxsize=1)

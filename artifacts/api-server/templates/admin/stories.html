@@ -55,7 +55,7 @@
           <tr class="hover:bg-gray-700/30 transition-colors group">
             <td class="px-5 py-3 align-top">
               {% if s.media_url %}
-              <img src="{{ s.media_url }}" alt="" loading="lazy" class="w-28 h-[4.5rem] object-cover rounded-lg border border-gray-700">
+              <img src="{{ s.thumb_url or s.media_url }}" alt="" loading="lazy" class="w-28 h-[4.5rem] object-cover rounded-lg border border-gray-700">
               <div class="text-gray-500 text-[11px] mt-1 w-28 truncate" title="{{ s.image_credit_name or '' }}">
                 {% if s.image_credit_name %}Photo by {{ s.image_credit_name }}{% endif %}
                 {% if s.image_source == 'manual' %}<span class="text-amber-400">· manual</span>{% endif %}
@@ -140,7 +140,7 @@
       {% for s in stories %}
       <div class="p-4 space-y-3">
         {% if s.media_url %}
-        <img src="{{ s.media_url }}" alt="" loading="lazy" class="w-full aspect-video object-cover rounded-lg border border-gray-700">
+        <img src="{{ s.thumb_url or s.media_url }}" alt="" loading="lazy" class="w-full aspect-video object-cover rounded-lg border border-gray-700">
         <div class="text-gray-500 text-[11px] -mt-1.5">
           {% if s.image_credit_name %}Photo by {{ s.image_credit_name }}{% endif %}
           {% if s.image_source == 'manual' %}<span class="text-amber-400">· manual</span>{% endif %}

@@ -46,13 +46,26 @@ def is_configured() -> bool:
     return bool(_api_key())
 
 
-async def search_photo(query: str) -> Optional[dict[str, Any]]:
-    """Top photo for a subject query, normalized to a hit dict:
-    {"download_url", "credit_name", "credit_url"}. None when the key
-    is missing or the search returns nothing usable."""
+def _normalize(hit: dict[str, Any]) -> Optional[dict[str, Any]]:
+    download_url = hit.get("largeImageURL") or hit.get("webformatURL")
+    if not download_url:
+        return None
+    return {
+        "download_url": download_url,
+        "credit_name": hit.get("user") or "Pixabay",
+        "credit_url": hit.get("pageURL") or "https://pixabay.com/",
+    }
+
+
+async def search_photos(query: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Up to `limit` photos for a subject query, best first, each
+    normalized to a hit dict: {"download_url", "credit_name",
+    "credit_url"}. The credit_url (the photo's Pixabay page) identifies
+    the photo — callers dedupe on it so one photo never illustrates two
+    stories. Empty list when the key is missing or nothing is usable."""
     if not _api_key():
         log.warning("Pixabay search skipped — PIXABAY_API_KEY not set")
-        return None
+        return []
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(
             PIXABAY_API,
@@ -62,21 +75,26 @@ async def search_photo(query: str) -> Optional[dict[str, Any]]:
                 "image_type": "photo",
                 "orientation": "horizontal",
                 "safesearch": "true",
-                "per_page": 5,
+                "per_page": max(limit, 3),
             },
         )
         resp.raise_for_status()
         data = resp.json()
+    out = []
     for hit in data.get("hits") or []:
-        download_url = hit.get("largeImageURL") or hit.get("webformatURL")
-        if not download_url:
-            continue
-        return {
-            "download_url": download_url,
-            "credit_name": hit.get("user") or "Pixabay",
-            "credit_url": hit.get("pageURL") or "https://pixabay.com/",
-        }
-    return None
+        normalized = _normalize(hit)
+        if normalized:
+            out.append(normalized)
+        if len(out) >= limit:
+            break
+    return out
+
+
+async def search_photo(query: str) -> Optional[dict[str, Any]]:
+    """Top photo for a subject query. None when the key is missing or
+    the search returns nothing usable."""
+    results = await search_photos(query, limit=1)
+    return results[0] if results else None
 
 
 async def download(url: str) -> Optional[bytes]:

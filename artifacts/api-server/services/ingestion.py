@@ -276,6 +276,13 @@ async def run_ingestion(
         if provider == "unsplash":
             await unsplash_pool.ensure_pools({s.get("category") for s in enriched if s.get("category")})
 
+        # Pixabay photos already illustrating stories in the feed: the
+        # picker must never hand the same photo to a second story.
+        # Picks made during this run are added as they happen.
+        used_photos: set[str] = set()
+        if provider == "pixabay":
+            used_photos = await db.get_used_pixabay_credit_urls()
+
         inserted_stories: list[dict] = []
         tts_count = 0
         for story in enriched:
@@ -300,8 +307,14 @@ async def run_ingestion(
                 # object key is the story id). No image -> media_url
                 # NULL -> the app falls back to bundled category art.
                 img = await story_images.find_for_story(
-                    provider, story.get("imageQuery"), row.get("category")
+                    provider, story.get("imageQuery"), row.get("category"),
+                    exclude=used_photos,
                 )
+                if img and img["kind"] == "pixabay":
+                    # Claim the photo for the rest of this run, even
+                    # before hosting succeeds, so no second story in
+                    # the same batch can pick it.
+                    used_photos.add(img["credit_url"])
                 if img and img["kind"] == "unsplash":
                     row["media_url"] = img["image_url"]
                     row["image_credit_name"] = img["photographer_name"]

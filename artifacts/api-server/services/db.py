@@ -181,6 +181,18 @@ async def update_story_image(
         )
 
 
+async def get_used_pixabay_credit_urls() -> set[str]:
+    """Pixabay photo-page URLs currently attached to stories. The
+    image picker excludes these so one Pixabay photo never illustrates
+    two stories in the feed."""
+    async with get_pool().acquire() as conn:
+        rs = await conn.fetch(
+            "SELECT DISTINCT image_credit_url FROM stories "
+            "WHERE image_source = 'pixabay' AND image_credit_url IS NOT NULL"
+        )
+    return {r["image_credit_url"] for r in rs}
+
+
 async def get_stories(
     *,
     category: Optional[str] = None,

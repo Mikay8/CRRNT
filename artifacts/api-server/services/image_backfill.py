@@ -17,7 +17,10 @@ Deliberate exclusions:
 - image_source='manual' stories are admin hand-edits (PR #61) and are
   never overwritten.
 - Stories already on a self-hosted Pixabay image (media_url is the
-  /image route) are skipped, so re-running is cheap and safe.
+  /image route) are skipped, so re-running is cheap and safe —
+  UNLESS an earlier (newer) story in the same run holds the same
+  photo: duplicate holders are re-picked from the unused search
+  results, because one photo never illustrates two stories.
 
 Per-story failures degrade to "story untouched" and are counted in
 the run summary; nothing raises out of the run. Sequential with a
@@ -79,34 +82,42 @@ async def derive_image_query(story: dict[str, Any]) -> Optional[str]:
     return enrichment._clean_image_query(parsed.get("imageQuery"))
 
 
-def needs_backfill(story: dict[str, Any]) -> bool:
+def needs_backfill(story: dict[str, Any], claimed: Any = frozenset()) -> bool:
     """True unless the story already shows a properly hosted Pixabay
-    image. A Pixabay-flagged story whose media_url is NOT the /image
-    route (e.g. an external URL set by hand) still needs backfilling —
-    that URL is not served from CRRNT storage."""
+    image that no earlier story in this run has claimed. A
+    Pixabay-flagged story whose media_url is NOT the /image route
+    (e.g. an external URL set by hand) still needs backfilling — that
+    URL is not served from CRRNT storage. And a hosted Pixabay story
+    whose photo was already claimed by a newer story is a duplicate
+    holder: it needs a fresh pick, because one photo never illustrates
+    two stories."""
     if story.get("image_source") == "manual":
         return False
     media_url = story.get("media_url") or ""
     if story.get("image_source") == "pixabay" and "/image" in media_url:
-        return False
+        return (story.get("image_credit_url") or "") in claimed
     return True
 
 
-async def backfill_story(story: dict[str, Any]) -> str:
-    """Replace one story's image with a hosted Pixabay photo.
-    Returns 'updated', 'no_image', or 'failed'."""
+async def backfill_story(
+    story: dict[str, Any], exclude: Any = ()
+) -> tuple[str, Optional[str]]:
+    """Replace one story's image with a hosted Pixabay photo, never
+    one whose credit URL is in `exclude`. Returns (outcome,
+    credit_url): outcome is 'updated', 'no_image', or 'failed';
+    credit_url is the newly stored photo's URL on 'updated'."""
     story_id = str(story["id"])
     query = await derive_image_query(story)
     hit = await story_images.find_for_story(
-        "pixabay", query, story.get("category")
+        "pixabay", query, story.get("category"), exclude=exclude
     )
     if not hit:
         log.info("Backfill: no Pixabay image for story %s (query %r)", story_id, query)
-        return "no_image"
+        return "no_image", None
     hosted = await story_images.host_pixabay_image(story_id, hit)
     if not hosted:
         log.warning("Backfill: hosting failed for story %s", story_id)
-        return "failed"
+        return "failed", None
     await db.update_story_image(
         story_id,
         hosted["media_url"],
@@ -118,7 +129,7 @@ async def backfill_story(story: dict[str, Any]) -> str:
         "Backfill: story %s now on Pixabay (query %r, credit %s)",
         story_id, query, hosted.get("credit_name"),
     )
-    return "updated"
+    return "updated", hosted.get("credit_url")
 
 
 async def run_backfill() -> dict[str, Any]:
@@ -132,25 +143,45 @@ async def run_backfill() -> dict[str, Any]:
         log.error("Backfill aborted — PIXABAY_API_KEY is not set")
         return {"error": "PIXABAY_API_KEY is not set"}
     _running = True
-    stats = {"considered": 0, "updated": 0, "no_image": 0, "failed": 0, "skipped": 0}
+    stats = {"considered": 0, "updated": 0, "deduped": 0, "no_image": 0,
+             "failed": 0, "skipped": 0}
+    # Photos already spoken for, newest story first (get_stories is
+    # published-desc): the first story to hold a photo keeps it, and
+    # any later story showing the same photo is re-picked from the
+    # unused results instead of repeating it.
+    claimed: set[str] = set()
     try:
         stories = await db.get_stories(limit=500)
         for story in stories:
-            if not needs_backfill(story):
+            credit_url = story.get("image_credit_url") or ""
+            hosted_pixabay = (
+                story.get("image_source") == "pixabay"
+                and "/image" in (story.get("media_url") or "")
+            )
+            if not needs_backfill(story, claimed):
+                if credit_url:
+                    claimed.add(credit_url)
                 stats["skipped"] += 1
                 continue
             stats["considered"] += 1
+            if hosted_pixabay:
+                stats["deduped"] += 1
             try:
-                outcome = await backfill_story(story)
+                outcome, new_credit_url = await backfill_story(
+                    story, exclude=claimed
+                )
             except Exception as exc:
                 log.warning("Backfill failed for story %s: %s", story.get("id"), exc)
-                outcome = "failed"
+                outcome, new_credit_url = "failed", None
+            if new_credit_url:
+                claimed.add(new_credit_url)
             stats[outcome] += 1
             await asyncio.sleep(0.3)
     finally:
         _running = False
     log.info(
-        "Backfill complete: %(considered)d considered, %(updated)d updated, "
+        "Backfill complete: %(considered)d considered, %(updated)d updated "
+        "(%(deduped)d duplicate holders among the considered), "
         "%(no_image)d no image found, %(failed)d failed, %(skipped)d skipped",
         stats,
     )

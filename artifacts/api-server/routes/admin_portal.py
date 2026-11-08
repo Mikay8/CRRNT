@@ -492,21 +492,6 @@ async def save_and_run_ingest(request: Request, _: None = Depends(_verify_admin)
     return RedirectResponse(url="/admin/dashboard", status_code=302)
 
 
-@router.post("/images/backfill-pixabay")
-async def backfill_pixabay_images(_: None = Depends(_verify_admin)):
-    # One-click conversion of the existing feed to Pixabay: every story
-    # that isn't already on a self-hosted Pixabay image (and wasn't
-    # hand-set by an admin) gets a subject-matched Pixabay photo in
-    # CRRNT storage. Runs in the background like ingestion; progress
-    # and the summary land in the admin Logs.
-    import asyncio
-
-    from services import image_backfill
-
-    asyncio.create_task(image_backfill.run_backfill())
-    return RedirectResponse(url="/admin/settings", status_code=302)
-
-
 @router.post("/feed-limits/save")
 async def save_feed_limits(request: Request, _: None = Depends(_verify_admin)):
     form = dict(await request.form())

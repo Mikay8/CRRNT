@@ -3,6 +3,7 @@
 Config shape:
   {
     "candidate_multiplier": 3,
+    "image_source": "unsplash" | "pixabay",
     "categories": {
       "celebrity":   {"enabled": true, "count": 10},
       "tech":        {"enabled": true, "count": 10},
@@ -43,8 +44,12 @@ ALL_CATEGORIES = ["celebrity", "tech", "government", "sports", "business", "scie
 _DEFAULT_CANDIDATE_MULTIPLIER = 3
 _MAX_CANDIDATE_MULTIPLIER = 6
 
+IMAGE_SOURCES = ("unsplash", "pixabay")
+_DEFAULT_IMAGE_SOURCE = "unsplash"
+
 _DEFAULTS: dict[str, Any] = {
     "candidate_multiplier": _DEFAULT_CANDIDATE_MULTIPLIER,
+    "image_source": _DEFAULT_IMAGE_SOURCE,
     "categories": {cat: {"enabled": True, "count": 10} for cat in ALL_CATEGORIES},
 }
 
@@ -60,6 +65,10 @@ def _backfill(data: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         multiplier = _DEFAULT_CANDIDATE_MULTIPLIER
     data["candidate_multiplier"] = max(1, min(_MAX_CANDIDATE_MULTIPLIER, multiplier))
+    # Image provider: older configs predate the choice and keep the
+    # historical Unsplash behaviour until the owner flips it in Settings.
+    if data.get("image_source") not in IMAGE_SOURCES:
+        data["image_source"] = _DEFAULT_IMAGE_SOURCE
     data.setdefault("categories", {})
     for cat in ALL_CATEGORIES:
         data["categories"].setdefault(cat, {"enabled": True, "count": 10})
@@ -130,4 +139,5 @@ async def get_run_params() -> dict[str, Any]:
         "per_category_map": per_category_map,
         "candidate_map": candidate_map,
         "feeds": feeds,
+        "image_source": cfg.get("image_source", _DEFAULT_IMAGE_SOURCE),
     }

@@ -147,6 +147,15 @@ SYSTEM_PROMPT = (
     "CATEGORY REFINEMENT: When input category is 'celebrity', set to "
     "'celebrity' for personal drama or 'entertainment' for movie/show/music. "
     "Omit for all others.\n\n"
+    "Write IMAGEQUERY: a stock-photo search phrase of 2-5 words for "
+    "this story's image - the concrete visual subject: a thing, place, "
+    "or scene a photographer could shoot ('electric car factory', "
+    "'basketball arena crowd', 'stock market trading floor'). NEVER "
+    "a person's name, and never a person standing in for someone: if "
+    "the story is about a named person, name their world instead (a "
+    "singer -> 'concert stage lights', a chief executive -> 'glass "
+    "office tower'). No abstract concepts ('inflation', 'democracy'), "
+    "no logos, no words-as-image. Plain lowercase words only.\n\n"
     "VIBE: Classify the story's tone for readers choosing between staying "
     "informed and being entertained. Return 'informed' for hard news a "
     "person reads to know what is happening (politics, economy, health, "
@@ -158,6 +167,7 @@ SYSTEM_PROMPT = (
     "with keys: displayTitle (string), bodyBullets (array of 3 strings), "
     "explainers (array of {term, blurb}), insight, "
     "ticker (string|null), companyName (string|null), category (string, optional), "
+    "imageQuery (string), "
     "vibe (string: 'informed', 'entertained', or 'both')."
 )
 
@@ -511,6 +521,27 @@ def _strip_inline_definitions(
     return out
 
 
+def _clean_image_query(raw: Any) -> Optional[str]:
+    """Validate Claude's stock-photo search phrase for the story image.
+
+    The prompt bans people's names (a stock photo must never stand in
+    for a real person) and abstract concepts; this enforces the shape:
+    2-6 plain words, letters/numbers/spaces only, at most 60 chars.
+    Anything off-shape returns None and the caller falls back to the
+    generic per-category query.
+    """
+    if not isinstance(raw, str):
+        return None
+    cleaned = re.sub(r"[^a-z0-9 ]", " ", raw.lower())
+    words = cleaned.split()
+    if not 2 <= len(words) <= 6:
+        return None
+    query = " ".join(words)
+    if len(query) > 60:
+        return None
+    return query
+
+
 async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
     """Pass 1: Claude enrichment."""
     title = story.get("title") or ""
@@ -621,6 +652,7 @@ async def enrich_story(story: dict[str, Any]) -> dict[str, Any]:
         "ticker": ticker,
         "companyName": company_name,
         "displayTitle": display_title,
+        "imageQuery": _clean_image_query(parsed.get("imageQuery")),
         "vibe": vibe,
         "insight": insight,
         "walletImpact": wallet_impact,

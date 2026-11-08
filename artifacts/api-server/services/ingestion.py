@@ -21,7 +21,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import app_settings, audio_storage, db, enrichment, fish_audio, ranking, rss, unsplash_pool
+from services import app_settings, audio_storage, db, enrichment, fish_audio, image_storage, ingest_config, ranking, rss, story_images, unsplash_pool
 
 log = logging.getLogger("crrnt.ingestion")
 
@@ -188,6 +188,7 @@ async def run_ingestion(
     feeds: Optional[dict[str, list[dict[str, Any]]]] = None,
     ranking_enabled: bool = True,
     candidate_map: Optional[dict[str, int]] = None,
+    image_source: Optional[str] = None,
 ) -> dict[str, Any]:
     """Full ingestion pipeline. Returns a status dict."""
     async with _status_lock:
@@ -261,9 +262,19 @@ async def run_ingestion(
         enriched = await enrichment.enrich_all(raw)
         log.info("Enriched %d stories", len(enriched))
 
+        # Image provider for this run: the scheduler/admin pass the
+        # Settings value through get_run_params(); a direct call without
+        # one reads the stored config. Unknown values keep Unsplash.
+        provider = image_source if image_source in ingest_config.IMAGE_SOURCES else None
+        if provider is None:
+            provider = (await ingest_config.get()).get("image_source", "unsplash")
+        log.info("Image source for this run: %s", provider)
+
         # Fill the Unsplash pool for the categories in this run (no-op when
-        # the pool is already stocked; never raises).
-        await unsplash_pool.ensure_pools({s.get("category") for s in enriched if s.get("category")})
+        # the pool is already stocked; never raises). Unsplash only — the
+        # pool is the subject-search fallback, Pixabay has no pool.
+        if provider == "unsplash":
+            await unsplash_pool.ensure_pools({s.get("category") for s in enriched if s.get("category")})
 
         inserted_stories: list[dict] = []
         tts_count = 0
@@ -281,14 +292,20 @@ async def run_ingestion(
                 if not external_id:
                     row.pop("external_id", None)
 
-                # Pool image REPLACES the RSS publisher image (no publisher
-                # photos). No pool image -> media_url NULL -> the app falls
-                # back to its bundled category art.
-                pool_img = await unsplash_pool.pick_for_story(row.get("category"))
-                if pool_img:
-                    row["media_url"] = pool_img["image_url"]
-                    row["image_credit_name"] = pool_img["photographer_name"]
-                    row["image_credit_url"] = pool_img["photographer_url"]
+                # Image REPLACES the RSS publisher image (no publisher
+                # photos): searched by the story's subject (Pass 1's
+                # imageQuery) from the configured provider. Unsplash
+                # assigns here because its URLs are hotlinked; Pixabay
+                # is downloaded into CRRNT storage after insert (its
+                # object key is the story id). No image -> media_url
+                # NULL -> the app falls back to bundled category art.
+                img = await story_images.find_for_story(
+                    provider, story.get("imageQuery"), row.get("category")
+                )
+                if img and img["kind"] == "unsplash":
+                    row["media_url"] = img["image_url"]
+                    row["image_credit_name"] = img["photographer_name"]
+                    row["image_credit_url"] = img["photographer_url"]
                     row["image_source"] = "unsplash"
                 else:
                     row["media_url"] = None
@@ -298,9 +315,27 @@ async def run_ingestion(
 
                 inserted = await db.insert_story(row)
                 enriched_count += 1
-                if pool_img:
-                    await unsplash_pool.mark_used(pool_img["id"])
-                    await unsplash_pool.trigger_download(pool_img["download_location"])
+                if img and img["kind"] == "unsplash":
+                    if img.get("pool_id"):
+                        await unsplash_pool.mark_used(img["pool_id"])
+                    if img.get("download_location"):
+                        await unsplash_pool.trigger_download(img["download_location"])
+                elif img and img["kind"] == "pixabay":
+                    try:
+                        hosted = await story_images.host_pixabay_image(inserted["id"], img)
+                        if hosted:
+                            await db.update_story_image(
+                                inserted["id"],
+                                hosted["media_url"],
+                                hosted["credit_name"],
+                                hosted["credit_url"],
+                                "pixabay",
+                            )
+                    except Exception as exc:
+                        log.warning(
+                            "Pixabay image hosting failed for story %s: %s",
+                            inserted.get("id"), exc,
+                        )
                 inserted_stories.append({
                     "title": row.get("title"),
                     "category": row.get("category"),
@@ -396,6 +431,8 @@ async def run_cleanup() -> dict[str, int]:
         if save_count == 0:
             if row.get("tts_url"):
                 audio_storage.delete_story_audio(story_id)
+            if row.get("image_source") == "pixabay":
+                image_storage.delete_story_image(story_id)
             await db.delete_story(story_id)
             deleted += 1
         else:

@@ -378,6 +378,8 @@ async def admin_settings(request: Request, _: None = Depends(_verify_admin)):
         "SMTP_HOST": bool(os.environ.get("SMTP_HOST")),
         "SMTP_USER": bool(os.environ.get("SMTP_USER")),
         "SMTP_PASS": bool(os.environ.get("SMTP_PASS")),
+        "UNSPLASH_ACCESS_KEY": bool(os.environ.get("UNSPLASH_ACCESS_KEY")),
+        "PIXABAY_API_KEY": bool(os.environ.get("PIXABAY_API_KEY")),
         "S3_BUCKET": bool(os.environ.get("S3_BUCKET")),
         "S3_ENDPOINT": bool(os.environ.get("S3_ENDPOINT")),
         "S3_ACCESS_KEY_ID": bool(os.environ.get("S3_ACCESS_KEY_ID")),
@@ -423,7 +425,14 @@ def _parse_ingest_config(form: dict) -> dict:
         except (TypeError, ValueError):
             count = 10
         categories[cat] = {"enabled": enabled, "count": count}
-    return {"candidate_multiplier": multiplier, "categories": categories}
+    image_source = form.get("image_source", "unsplash")
+    if image_source not in ingest_config.IMAGE_SOURCES:
+        image_source = "unsplash"
+    return {
+        "candidate_multiplier": multiplier,
+        "categories": categories,
+        "image_source": image_source,
+    }
 
 
 @router.post("/ingest-config/save")

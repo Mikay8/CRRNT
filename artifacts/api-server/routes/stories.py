@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from services import app_settings, audio_storage, db, enrichment, personalization
+from services import app_settings, audio_storage, db, enrichment, image_storage, personalization
 from services.auth_middleware import get_current_user, get_current_user_optional
 
 log = logging.getLogger("crrnt.stories")
@@ -173,5 +173,27 @@ async def get_story_audio(story_id: str) -> RedirectResponse:
     url = audio_storage.presigned_audio_url(s3_key)
     if not url:
         raise HTTPException(status_code=503, detail="Audio storage temporarily unavailable")
+
+    return RedirectResponse(url)
+
+
+# ── Image ─────────────────────────────────────────────────────────────────────
+
+@router.get("/{story_id}/image")
+async def get_story_image(story_id: str) -> RedirectResponse:
+    """Pixabay-sourced story photos live in CRRNT's own bucket (Pixabay's
+    license forbids hotlinking theirs), keyed by story id. The story's
+    stored media_url points here; this redirects to a fresh presigned
+    S3 URL, mirroring the audio route above."""
+    story = await db.get_story(story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    if story.get("image_source") != "pixabay":
+        raise HTTPException(status_code=404, detail="Image not available for this story")
+
+    url = image_storage.presigned_image_url(image_storage.story_image_key(story_id))
+    if not url:
+        raise HTTPException(status_code=503, detail="Image storage temporarily unavailable")
 
     return RedirectResponse(url)

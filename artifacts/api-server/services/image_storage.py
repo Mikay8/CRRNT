@@ -21,6 +21,18 @@ log = logging.getLogger("crrnt.image_storage")
 
 _KEY_PREFIX = "story-images"
 
+# Serving performance: story photos are immutable per story in
+# practice (a replacement overwrites the same key), so both the
+# stored object and its presigned GET responses carry a day of
+# cache headers — repeat views then come from the browser's cache
+# instead of re-downloading 100-500KB every time.
+RESPONSE_CACHE_CONTROL = "public, max-age=86400"
+# A presigned URL must stay valid FAR longer than the /image
+# redirect is cached for (see routes/stories.py): a browser holding
+# a cached redirect must never follow it to an expired signature.
+PRESIGNED_URL_TTL_SECONDS = 86400
+REDIRECT_CACHE_SECONDS = 3600
+
 
 @lru_cache(maxsize=1)
 def _client():
@@ -69,6 +81,7 @@ def upload_story_image(story_id: str, image_bytes: bytes) -> Optional[str]:
             Key=key,
             Body=image_bytes,
             ContentType="image/jpeg",
+            CacheControl=RESPONSE_CACHE_CONTROL,
         )
     except ClientError as exc:
         log.warning("S3 image upload failed for story %s: %s", story_id, exc)
@@ -77,8 +90,10 @@ def upload_story_image(story_id: str, image_bytes: bytes) -> Optional[str]:
     return key
 
 
-def presigned_image_url(key: str, expires_in: int = 3600) -> Optional[str]:
-    """Generate a time-limited GET URL for a stored image object key."""
+def presigned_image_url(key: str, expires_in: int = PRESIGNED_URL_TTL_SECONDS) -> Optional[str]:
+    """Generate a time-limited GET URL for a stored image object key.
+    The response carries cache headers (ResponseCacheControl) so a
+    browser can reuse the downloaded bytes for the URL's lifetime."""
     client = _client()
     bucket = _bucket()
     if not client or not bucket or not key:
@@ -86,7 +101,11 @@ def presigned_image_url(key: str, expires_in: int = 3600) -> Optional[str]:
     try:
         return client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": bucket, "Key": key},
+            Params={
+                "Bucket": bucket,
+                "Key": key,
+                "ResponseCacheControl": RESPONSE_CACHE_CONTROL,
+            },
             ExpiresIn=expires_in,
         )
     except ClientError as exc:

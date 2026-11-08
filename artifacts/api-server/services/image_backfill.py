@@ -132,6 +132,33 @@ async def backfill_story(
     return "updated", hosted.get("credit_url")
 
 
+async def repull_story_image(story: dict[str, Any]) -> str:
+    """Replace ONE story's image with a fresh Pixabay photo — the
+    admin Edit image panel's "Re-pull from Pixabay" action. The search
+    excludes every photo already used by another story in the feed
+    AND this story's current photo, so a re-pull always lands on a
+    different, unused image (never a duplicate, never the same photo
+    again). Returns 'updated', 'no_image', 'failed', or
+    'not_configured'; on anything but 'updated' the story is left
+    exactly as it was."""
+    if not pixabay_images.is_configured():
+        log.warning(
+            "Re-pull refused for story %s — PIXABAY_API_KEY is not set",
+            story.get("id"),
+        )
+        return "not_configured"
+    used = await db.get_used_pixabay_credit_urls()
+    own = story.get("image_credit_url")
+    if own:
+        used.add(own)
+    try:
+        outcome, _ = await backfill_story(story, exclude=used)
+    except Exception as exc:
+        log.warning("Re-pull failed for story %s: %s", story.get("id"), exc)
+        return "failed"
+    return outcome
+
+
 async def run_backfill() -> dict[str, Any]:
     """Backfill every story that needs one. Safe to re-run; a second
     concurrent run is refused. Returns (and logs) the run summary."""

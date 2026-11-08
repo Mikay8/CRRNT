@@ -75,6 +75,9 @@
                   <form method="POST" action="/admin/stories/{{ s.id }}/image/swap">
                     <button type="submit" class="w-full px-2 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs font-medium rounded-lg transition-colors">↻ Swap for a pool photo</button>
                   </form>
+                  <form method="POST" action="/admin/stories/{{ s.id }}/image/repull-pixabay">
+                    <button type="submit" class="w-full px-2 py-1.5 bg-violet-700 hover:bg-violet-600 text-white text-xs font-medium rounded-lg transition-colors">↻ Re-pull from Pixabay</button>
+                  </form>
                   {% if s.media_url %}
                   <form method="POST" action="/admin/stories/{{ s.id }}/image/remove" onsubmit="return confirm('Remove this story image? The app will show category art instead.')">
                     <button type="submit" class="w-full px-2 py-1.5 bg-red-900/50 hover:bg-red-800 text-red-300 text-xs font-medium rounded-lg transition-colors">Remove image</button>
@@ -160,6 +163,9 @@
             </form>
             <form method="POST" action="/admin/stories/{{ s.id }}/image/swap">
               <button type="submit" class="w-full px-3 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm font-medium rounded-lg transition-colors">↻ Swap for a pool photo</button>
+            </form>
+            <form method="POST" action="/admin/stories/{{ s.id }}/image/repull-pixabay">
+              <button type="submit" class="w-full px-3 py-2.5 bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium rounded-lg transition-colors">↻ Re-pull from Pixabay</button>
             </form>
             {% if s.media_url %}
             <form method="POST" action="/admin/stories/{{ s.id }}/image/remove" onsubmit="return confirm('Remove this story image? The app will show category art instead.')">

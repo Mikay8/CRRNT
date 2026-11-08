@@ -24,6 +24,7 @@ Actions (POST, redirect back):
 
 from __future__ import annotations
 
+import hashlib
 import os
 import secrets
 import logging
@@ -174,6 +175,27 @@ async def dashboard(request: Request, _: None = Depends(_verify_admin)):
 # ── Stories ───────────────────────────────────────────────────────────────────
 
 
+def _thumb_url(story: dict) -> Optional[str]:
+    """Admin thumbnail URL for a story. A Pixabay photo lives at the
+    story's permanent /image route, whose file is REPLACED when the
+    photo changes — and that route's redirect is deliberately
+    cacheable, so a browser can keep showing the old photo in the
+    admin list after a re-pull. Appending a version tag derived from
+    the photo's credit URL (the photo's identity — the same value
+    the dedupe uses) makes the thumbnail address change exactly when
+    the photo does, so the admin always displays the current image.
+    The route ignores the query string. Other sources (direct
+    Unsplash/manual URLs, which change WITH the photo) pass through
+    unchanged."""
+    url = story.get("media_url")
+    if not url or story.get("image_source") != "pixabay":
+        return url
+    version = hashlib.md5(
+        (story.get("image_credit_url") or "").encode()
+    ).hexdigest()[:10]
+    return f"{url}?v={version}"
+
+
 @router.get("/stories", response_class=HTMLResponse)
 async def admin_stories(
     request: Request,
@@ -187,6 +209,7 @@ async def admin_stories(
     total = await _safe_db(db.count_stories(), 0)
     view_counts = await _safe_db(db.story_view_counts(), {})
     for s in stories:
+        s["thumb_url"] = _thumb_url(s)
         c = view_counts.get(str(s.get("id")), {})
         s["views"] = c.get("views", 0)
         s["plays"] = c.get("plays", 0)

@@ -6,6 +6,9 @@ Pipeline:
   2. Drop stale, in-batch duplicate, and already-stored articles
   3. Claude ranking — one batched call per category, keep only the
      configured top N per category (falls back to newest-first)
+  3b. Same-event dedup — one batched call grouping the winners
+     against each other and the live feed's headlines; first
+     telling wins (services/event_dedup.py, fails open)
   4. Claude Pass 1 — display_title, summary (merged body), one_liner, stock_note
   5. Grok x_search Pass 2 — sentiment_label, sentiment_score, people_say, featured_posts
   6. Insert story row to Postgres (get UUID; the post-enrichment
@@ -21,7 +24,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from services import app_settings, audio_storage, db, enrichment, fish_audio, image_storage, ingest_config, ranking, rss, story_images, unsplash_pool
+from services import app_settings, audio_storage, db, enrichment, event_dedup, fish_audio, image_storage, ingest_config, ranking, rss, story_images, unsplash_pool
 
 log = logging.getLogger("crrnt.ingestion")
 
@@ -258,6 +261,19 @@ async def run_ingestion(
                 for cat in cat_map
             }
             log.info("Ranking summary: %s", ranking_summary)
+
+        # Same-event dedup across the whole run AND against the live
+        # feed (first telling wins; see services/event_dedup.py) —
+        # after ranking so only winners are compared, before
+        # enrichment so a dropped duplicate costs no Pass 1 /
+        # sentiment / TTS spend. Fails open: any problem inside keeps
+        # every winner.
+        live_stories = await db.get_stories_for_feed(7)
+        live_titles = [
+            (s.get("display_title") or s.get("title") or "")
+            for s in live_stories
+        ]
+        raw = await event_dedup.dedupe_events(raw, live_titles)
 
         enriched = await enrichment.enrich_all(raw)
         log.info("Enriched %d stories", len(enriched))

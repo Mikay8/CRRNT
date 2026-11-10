@@ -11,6 +11,12 @@ export type AuthTokenGetter = () => Promise<string | null> | string | null;
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
+/**
+ * Hard cap on any single API request. React Native's fetch has no
+ * built-in timeout; see the abort wiring in customFetch below.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
+
 // ---------------------------------------------------------------------------
 // Module-level configuration
 // ---------------------------------------------------------------------------
@@ -369,7 +375,31 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  // Every request runs under a hard timeout unless the caller supplied
+  // its own abort signal. React Native's fetch has no built-in timeout,
+  // so a stalled connection (dead proxy, hung network path) leaves the
+  // promise unsettled forever — on the feed that produced an endless
+  // "Loading today's stories…" spinner with no way out (App Store
+  // Guideline 2.1 rejection, Nov 2026). Aborting turns a stall into an
+  // ordinary failure: react-query retries once, then the caller's
+  // error state renders.
+  let response: Response;
+  if (init.signal) {
+    response = await fetch(input, { ...init, method, headers });
+  } else {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      response = await fetch(input, {
+        ...init,
+        method,
+        headers,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
